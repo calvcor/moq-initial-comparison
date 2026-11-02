@@ -21,6 +21,7 @@ services:
       - "${HTTP_PORT:-80}:80"
     volumes:
       - ./edge/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./edge/locations.conf:/etc/nginx/locations.conf:ro
     networks:
       - default
       - core

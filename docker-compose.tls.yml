@@ -1,0 +1,36 @@
+# Capa opcional: un solo certificado de Let's Encrypt (reto DNS de Cloudflare) para el panel (443/tcp),
+# DASH directo (8443/tcp) y el relay de MoQ (4433/udp), para servidores sin proxy HTTPS delante. WebRTC no
+# lo necesita: su vídeo usa DTLS con huella propia y su señalización pasa por el panel.
+# Se activa en el .env con COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml (README, sección 1).
+services:
+  edge:
+    entrypoint: ["/bin/sh", "/tls-entrypoint.sh"]
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      - DASH_HOST=${DASH_HOST:?falta DASH_HOST}
+    volumes:
+      - ./edge/tls.conf.template:/etc/nginx/tls.conf.template:ro
+      - ./edge/tls-entrypoint.sh:/tls-entrypoint.sh:ro
+      - ./certs/dash:/certs:ro
+
+  dash-cert:
+    environment:
+      - CF_Token=${CF_TOKEN:?falta CF_TOKEN}
+
+  # Falla si el certificado aún no existe: restart lo reintenta hasta que dash-cert lo emite. Al renovarse,
+  # el relay detecta el fichero nuevo y lo recarga sin reiniciarse, para las conexiones siguientes.
+  moq-relay:
+    command: >
+      --listen 0.0.0.0:4433
+      --listen-tls-cert /certs/certificates/${DASH_HOST}.crt
+      --listen-tls-key /certs/certificates/${DASH_HOST}.key
+      --web-http-listen 0.0.0.0:8081
+      --auth-public anon/**
+    volumes:
+      - ./certs/dash:/certs:ro
+
+  # MOQ_HOST pasa a ser un nombre (el certificado no vale para la IP); los candidatos ICE siguen con la IP
+  mediamtx:
+    environment:
+      - MTX_WEBRTCADDITIONALHOSTS=${RTC_HOST:?falta RTC_HOST}

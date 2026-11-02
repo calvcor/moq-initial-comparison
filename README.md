@@ -74,6 +74,25 @@ Fuera de `localhost` el navegador solo permite WebTransport y WebCodecs en pági
 
    El pie del reproductor DASH indica el camino en uso ("Directo" o "Vía proxy"), y el CSV lo registra en la columna `dash_path`. Sin `DASH_HOST`, todo sigue funcionando por el proxy.
 
+### Despliegue sin proxy, con un certificado propio
+
+En una red interna, el servidor puede tener su propio certificado de Let's Encrypt, sin proxy delante y sin abrir ningún puerto a Internet (reto DNS de Cloudflare). El mismo certificado sirve para el panel (443/tcp), DASH directo (8443/tcp) y el relay de MoQ (4433/udp); WebRTC no lo necesita, porque su vídeo usa DTLS con huella propia. Lo añade `docker-compose.tls.yml`, que solo se aplica con esta línea del `.env`:
+
+```bash
+COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml
+DASH_HOST=testbed.ejemplo.org
+MOQ_HOST=testbed.ejemplo.org
+PUBLIC_HOST=testbed.ejemplo.org
+RTC_HOST=10.0.0.5
+CF_TOKEN=<token con permisos Zone DNS Edit y Zone Read>
+```
+
+`RTC_HOST` es la IP que se anuncia en los candidatos ICE de WebRTC. El nombre debe resolver a la IP del servidor en la red del navegador; si el DNS local descarta respuestas con IPs privadas (protección *rebind*), hay que declararlo también allí. Al arrancar, el relay se reinicia hasta que `dash-cert` emite el certificado, un par de minutos. El panel se abre en `https://testbed.ejemplo.org`, sin parámetros en el navegador.
+
+El certificado se renueva solo; el panel, DASH y el relay detectan el fichero nuevo y lo recargan sin reiniciarse.
+
+Es otra condición de medida frente al relay autofirmado: sin huella fijada, WebTransport valida la cadena del certificado. Afecta como mucho al saludo inicial de QUIC.
+
 La emulación de red necesita en el kernel los módulos `sch_prio`, `sch_tbf`, `sch_netem` y `cls_u32`. En un contenedor LXC deben estar cargados en el anfitrión; si faltan, todo lo demás funciona y el panel lo indica.
 
 ---

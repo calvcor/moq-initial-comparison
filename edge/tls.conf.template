@@ -1,0 +1,17 @@
+# Panel por HTTPS, con el certificado común (docker-compose.tls.yml). Solo HTTP/1.1, como el puerto 80.
+server {
+    listen 443 ssl;
+    server_name __HOST__;
+
+    ssl_certificate     __CERT__;
+    ssl_certificate_key __KEY__;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # El relay usa este mismo certificado: sin huella, WebTransport lo valida como cualquier otro. Chrome
+    # rechazaría fijarlo, porque serverCertificateHashes exige una validez de 14 días como máximo.
+    location = /certificate.sha256 {
+        return 404;
+    }
+
+    include /etc/nginx/locations.conf;
+}
