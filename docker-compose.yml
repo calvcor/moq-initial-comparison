@@ -42,10 +42,13 @@ services:
     environment:
       - NGINX_IP=172.30.50.10
       - RELAY_IP=172.30.50.11
-      - RTC_IP=172.30.50.12
+      - RTC_SERVER=${RTC_SERVER:-mediasoup}  # servidor de WebRTC al que va UDP 8189 (README, 3.4c)
+      - MEDIAMTX_IP=172.30.50.12
+      - SFU_IP=172.30.50.13
     ports:
       - "${MOQ_PORT:-4433}:4433/udp"   # MoQ / QUIC -> moq-relay:4433 (el navegador va directo)
-      - "8189:8189/udp"                # WebRTC (ICE, DTLS, SRTP) -> mediamtx:8189 (el navegador va directo)
+      - "8189:8189/udp"                # WebRTC (ICE, DTLS, SRTP) -> servidor WebRTC:8189 (el navegador va directo)
+      - "8189:8189/tcp"                # WebRTC con mediasoup: señalización WebSocket -> sfu:8189 (el navegador va directo)
       - "${DASH_PORT:-8443}:8443/tcp"  # LL-DASH con TLS -> nginx-dash:443 (el navegador va directo, si hay DASH_HOST)
     networks:
       default:
@@ -67,7 +70,25 @@ services:
         ipv4_address: 172.30.50.11
     restart: unless-stopped
 
-  # Servidor WebRTC: recibe por RTSP la calidad más alta, sin recodificar, y la sirve por WHEP
+  # SFU de WebRTC (RTC_SERVER=mediasoup, por defecto): recibe por RTP todas las calidades, sin recodificar, y elige
+  # la capa de cada espectador. La versión de mediasoup está fijada en sfu/package.json y sfu/package-lock.json.
+  sfu:
+    build: ./sfu
+    container_name: testbed-sfu
+    environment:
+      # Como en MediaMTX: dirección que se anuncia al navegador en los candidatos ICE
+      - ANNOUNCED_ADDRESS=${MOQ_HOST:-127.0.0.1}
+      - SFU_TRACE=${SFU_TRACE:-}  # 1: traza de la estimación y los sondeos en su registro (diagnóstico)
+      # Con DASH_HOST y su certificado (el de DASH directo), la señalización acepta también wss://, para páginas en HTTPS
+      - DASH_HOST=${DASH_HOST:-}
+    volumes:
+      - ./certs/dash:/certs:ro
+    networks:
+      core:
+        ipv4_address: 172.30.50.13
+    restart: unless-stopped
+
+  # Servidor WebRTC anterior (RTC_SERVER=mediamtx): recibe la calidad más alta, sin recodificar, y la sirve por WHEP
   mediamtx:
     image: bluenviron/mediamtx:${MEDIAMTX_VERSION:-1.21.3}
     container_name: testbed-mediamtx
@@ -143,10 +164,12 @@ services:
       - CAMERA_RTSP_URL=${CAMERA_RTSP_URL:-}
       - CAMERA_FPS=${CAMERA_FPS:-}
       - RTC_PUBLISH_URL=rtsp://172.30.50.12:8554/live
-      - RTC_INGEST=${RTC_INGEST:-udp}  # udp: directo a MediaMTX; rtsp: con el FFmpeg intermedio (versión anterior)
+      - RTC_SERVER=${RTC_SERVER:-mediasoup}  # mediasoup: SFU con simulcast; mediamtx: una calidad, sin adaptación (versión anterior)
+      - RTC_INGEST=${RTC_INGEST:-udp}  # solo con MediaMTX. udp: directo; rtsp: con el FFmpeg intermedio (versión anterior)
       # Solo para mostrarlas en el dashboard: deben coincidir con las etiquetas de imagen de arriba
       - MOQ_RELAY_VERSION=${MOQ_RELAY_VERSION:-0.17.9}
       - MEDIAMTX_VERSION=${MEDIAMTX_VERSION:-1.21.3}
+      - MEDIASOUP_VERSION=3.32.1  # debe coincidir con sfu/package.json
     networks:
       - default
       - core
@@ -157,6 +180,7 @@ services:
       - moq-relay
       - nginx-dash
       - mediamtx
+      - sfu
       - router
     restart: unless-stopped
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CLEAR, PRESETS } from './NetworkPanel';
 import { PLAYER_IDS } from '../lib/samples';
-import type { CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr, LinkProfile, MoqAbr, MoqSwitching, PlayerId, PlayerOptions, StreamConfig } from '../types';
+import type { RtcServer, CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr, LinkProfile, MoqAbr, MoqSwitching, PlayerId, PlayerOptions, StreamConfig } from '../types';
 
 // Editor de campañas (README, 4.8): emisiones, condiciones de red, latencias objetivo y diseño. El servidor
 // sortea las pruebas al crearla; aquí solo se estima cuántas salen y cuánto tardan.
@@ -121,6 +121,7 @@ const uniformTarget = (t: CampaignTarget) => t.dash_ms === t.moq_ms && t.moq_ms 
 const targetsToText = (targets: CampaignTarget[]) => targets.map((t) => (t.dash_ms === null ? 'auto' : String(t.dash_ms))).join(', ');
 
 interface Props {
+  rtcServer?: RtcServer; // servidor de la rama WebRTC, para describirla
   defaultStream: Stream;
   // Plan del que partir: el de la campaña que se duplica o se edita. Sin él, una campaña nueva
   initial?: CampaignPlan;
@@ -129,7 +130,7 @@ interface Props {
   onCreated: (id: string) => void;
 }
 
-export const CampaignEditor: React.FC<Props> = ({ defaultStream, initial, editId, onCreated }) => {
+export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, initial, editId, onCreated }) => {
   const [name, setName] = useState(initial ? (editId ? initial.name : `${initial.name} (copia)`) : '');
   const [streams, setStreams] = useState<Stream[]>(initial?.streams ?? [defaultStream]);
   const [ladders, setLadders] = useState<string[]>((initial?.streams ?? [defaultStream]).map(ladderText));
@@ -137,7 +138,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, initial, editId
   const [sweepParam, setSweepParam] = useState<SweepParam>('rtt');
   const [sweepValues, setSweepValues] = useState(SWEEPS.rtt.example);
   const [sweepBaseRtt, setSweepBaseRtt] = useState(0);
-  const [sweepQueue, setSweepQueue] = useState(200);
+  const [sweepQueue, setSweepQueue] = useState(300);
   const [targetsText, setTargetsText] = useState(initial ? targetsToText(initial.targets) : 'auto, 100, 300, 600, 1000');
   // Objetivos distintos por rama (solo se crean por la API): se conservan tal cual mientras no se edite el texto
   const [keptTargets, setKeptTargets] = useState<CampaignTarget[] | null>(
@@ -290,7 +291,14 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, initial, editId
                     {moqExperiment && <p className="text-amber-300">No es el comportamiento de @moq/watch: la campaña es un experimento declarado (README 6.1 y 6.3).</p>}
                   </>
                 )}
-                {p === 'rtc' && <p className="text-slate-500">Sin ajustes: una calidad, sin adaptación. La latencia objetivo va a jitterBufferTarget.</p>}
+                {p === 'rtc' && (
+                  <p className="text-slate-500">
+                    {rtcServer === 'mediasoup'
+                      ? 'Sin ajustes: mediasoup elige la capa de cada espectador, con la escalera de la emisión.'
+                      : 'Sin ajustes: una calidad, sin adaptación (MediaMTX).'}{' '}
+                    La latencia objetivo va a jitterBufferTarget. El servidor es de todo el banco (RTC_SERVER), no de la campaña.
+                  </p>
+                )}
               </div>
             );
           })}

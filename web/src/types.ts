@@ -12,8 +12,8 @@ export type SourceKind = 'file' | 'camera';
 export interface StreamConfig {
   source: SourceKind;
   gop_size: number;
-  fps: number; // con el bucle, 60; con la cámara la fija el servidor (la de la cámara)
-  rtc_audio: boolean; // audio Opus en la rama WebRTC (recodificado en el servidor); desactivado por defecto
+  fps: number; // con el bucle, la del vídeo (60 o 24); con la cámara la fija el servidor (la de la cámara)
+  rtc_audio: boolean; // audio Opus en la rama WebRTC (sin recodificar); desactivado por defecto
   renditions: Rendition[]; // de mayor a menor; una sola = sin adaptación
   seg_duration: number;
   frag_duration: number;
@@ -59,6 +59,9 @@ export interface NetworkState {
   };
 }
 
+// Servidor de la rama WebRTC (RTC_SERVER en el .env)
+export type RtcServer = 'mediasoup' | 'mediamtx';
+
 export interface ServerStatus {
   status: 'running' | 'stopped';
   config: StreamConfig;
@@ -66,11 +69,14 @@ export interface ServerStatus {
     pipeline: boolean;
   };
   dash_url: string;
-  rtc_ingest?: 'udp' | 'rtsp'; // udp: MediaMTX lee el MPEG-TS por UDP; rtsp: con el FFmpeg intermedio
+  rtc_server?: RtcServer;
+  rtc_ingest?: 'udp' | 'rtsp' | 'rtp'; // rtp: mediasoup; udp: MediaMTX lee el MPEG-TS por UDP; rtsp: con el FFmpeg intermedio
   rtc_path?: string; // path de MediaMTX para WHEP
   dash_path?: 'direct' | 'proxy'; // direct: el navegador va al servidor de DASH por el router; proxy: a través del punto de entrada
   moq_port?: number;
   moq_host?: string | null; // dirección directa para MoQ; null = el host de la página
+  rtc_signal_port?: number; // con mediasoup, puerto TCP de la señalización WebSocket (directa, por el router)
+  rtc_tls_host?: string | null; // nombre del certificado para wss:// en páginas HTTPS (DASH_HOST)
   spki_fingerprint: string;
   master_start_time_ms?: number;
   timecodes?: TimecodeLayout[]; // uno por calidad de la escalera
@@ -199,7 +205,8 @@ export interface SampleRow {
   fps: number | null; // cadencia de la emisión
   gop_size: number | null;
   ladder: string | null; // escalera codificada, p. ej. 1080p@4000|720p@2000
-  rtc_ingest: string | null; // udp o rtsp: cómo le llega el flujo a MediaMTX
+  rtc_server: string | null; // mediasoup o mediamtx: servidor de la rama WebRTC
+  rtc_ingest: string | null; // rtp (mediasoup), udp o rtsp (MediaMTX): cómo le llega el flujo al servidor
   dash_path: string | null; // direct o proxy: si la conexión del navegador atraviesa la red emulada
   seg_duration: number | null;
   frag_duration: number | null;
@@ -271,7 +278,7 @@ export interface SampleRow {
   moq_stage_ingest_ms: number | null;
   moq_stage_transport_ms: number | null;
   moq_stage_player_ms: number | null;
-  // WebRTC: siempre la calidad más alta, sin adaptación
+  // WebRTC: la capa que elige mediasoup, o siempre la calidad más alta con MediaMTX (rtc_server)
   rtc_g2g_ms: number | null;
   rtc_kbps: number | null;
   rtc_net_kbps: number | null;
@@ -289,6 +296,10 @@ export interface SampleRow {
   rtc_player_restarts: number;
   rtc_target_ms: number | null;
   rtc_height: number | null;
+  rtc_rendition_kbps: number | null; // nominal de la capa que llega; con MediaMTX, vacío
+  rtc_quality_switches: number | null; // cambios de altura de lo que llega; con MediaMTX, 0
+  rtc_bw_estimate_kbps: number | null; // estimación de mediasoup hacia el espectador; con MediaMTX, vacío
+  rtc_quality_mode: string | null; // auto (mediasoup) o manual (MediaMTX, sin elección)
   rtc_packets_lost: number | null;
   rtc_stage_encode_ms: number | null;
   rtc_stage_ingest_ms: number | null;

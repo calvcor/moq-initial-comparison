@@ -6,6 +6,8 @@ Este documento explica, de extremo a extremo, cómo viaja el vídeo en cada una 
 
 > **Versiones desplegadas:** relay 0.17.3 y publicador 0.14.3 desde el 13 de octubre de 2026; relay 0.17.4 desde el 14 de octubre y 0.17.5 desde el 15. El publicador estuvo en 0.14.3 hasta el 15 de octubre, cuando pasó a 0.14.5: el 0.14.4 acumula retraso en su entrada sin parar, y el 0.14.5 se queda atrás en cuanto hay un espectador (medido el 15 de octubre; ver el commit de esa fecha). Desde el 19 de octubre: relay 0.17.7, publicador 0.14.7 (sin ese problema), `@moq/watch` 0.6.3, `@moq/net` 0.4.4 y `@moq/hang` 0.5.3. Desde el 23 de octubre, relay 0.17.8: solo retroportes de correcciones (TLS, límites al analizar certificados y rutas); en el servidor, con el bucle, la escalera 1080/720/540 y WebRTC de control, la latencia y los frames de MoQ no cambiaron de forma apreciable: p50 de 86 ms y 59 fps antes; 66 y 109 ms, 49,5 y 59,5 fps en dos pasadas después (WebRTC, que no pasa por el relay, 54 ms antes y 67-75 después). Una pasada antes y dos después, de 45 s: la variación entre pasadas es mayor que la diferencia. Desde el 21 de octubre, el servidor usa un publicador compilado desde la rama principal de moq (`git@bc64b9c`, `MOQ_CLI_FROM=git`; su `--version` dice 0.14.2), que no tiene el límite de ~2 MB/s de entrada de la 0.14.7: con la escalera 2000/1000/350 y un espectador, espera p95 en su entrada de 1 ms frente a 1,2-3,5 s y ningún cambio de calidad en 40 s frente a 34-54 (ver 4.14). Las medidas de MoQ anteriores y posteriores a ese día no son comparables. Desde el 22 de octubre, el dashboard del servidor usa también `@moq/watch` y sus `@moq/*` compilados desde ese mismo commit (`git@bc64b9c`, `MOQ_WATCH_FROM=git`), como ya se hacía en local: el reproductor de MoQ cambia, así que las medidas de MoQ del servidor anteriores y posteriores tampoco son comparables entre sí. Desde el 23 de octubre, ese `@moq/watch` lleva además el parche del experimento de cambio de calidad (README, 6.1; versión `git@bc64b9c+switching`): con su opción por defecto (`seamless`) se comporta como sin parche. Desde el 29 de octubre, relay 0.17.9 (retroportes; el que importa aquí: un publicador reiniciado se impone a su sesión anterior en el relay) y MediaMTX 1.21.3 (sin cambios en WebRTC más allá de dependencias). Lo que este documento describe se observó con las de la tabla (0.17.2 y 0.14.2) salvo que se indique otra cosa. Las versiones en uso se ven en la cabecera del dashboard y quedan en el CSV.
 
+> **Servidor WebRTC:** desde el 2 de noviembre de 2026, mediasoup 3.32.1 por defecto, con `RTC_SERVER=mediamtx` para volver a MediaMTX (README, 3.4c).
+
 > **Audio:** desde el 22 de octubre de 2026 la fuente codifica el audio en **Opus** (antes, AAC-LC), para que las tres ramas lleven el mismo: en MoQ la pista pasa de `1.aac` a `1.opus` y en el MPD de `mp4a.40.2` a `opus`. Los ejemplos de MPD, catálogo y MPEG-TS de los anexos se capturaron con AAC y se dejan así; la estructura es la misma.
 
 | Componente                                                | Versión comprobada    |
@@ -15,7 +17,8 @@ Este documento explica, de extremo a extremo, cómo viaja el vídeo en cada una 
 | Reproductor MoQ (`@moq/watch` / `@moq/net` / `@moq/hang`) | 0.6.2 / 0.4.2 / 0.5.2 |
 | Protocolo MoQ negociado (navegador y publicador)          | `moq-lite-06`         |
 | Reproductor DASH (`dash.js`)                              | 5.2.1                 |
-| Servidor WebRTC (MediaMTX)                                | 1.21.2                |
+| Servidor WebRTC (MediaMTX, con `RTC_SERVER=mediamtx`)     | 1.21.2                |
+| Servidor WebRTC por defecto (mediasoup / mediasoup-client) | 3.32.1 / 3.26.0       |
 | Codificador                                               | FFmpeg 7.1 + libx264  |
 
 ---
@@ -93,7 +96,7 @@ Es el algoritmo con el que el **emisor** decide a qué ritmo puede enviar sin sa
 | :--- | :--- | :--- |
 | DASH | El núcleo Linux del servidor (TCP) | CUBIC, basado en pérdidas |
 | MoQ | El relay (QUIC) | BBRv3 por defecto (`--quic-congestion-control delay`); alternativa `loss` |
-| WebRTC | MediaMTX | No adapta el envío: reenvía el flujo tal cual llega |
+| WebRTC | mediasoup (por defecto) | Estimación por TWCC hacia cada espectador y elección de capa, sin cambiar el codificador. Con `RTC_SERVER=mediamtx`: no adapta el envío, reenvía el flujo tal cual llega |
 
 Con un 1 % de pérdida, CUBIC reduce su ventana en cada pérdida y se queda por debajo del bitrate del vídeo; BBR estima el ancho de banda real y apenas se inmuta. Es una variable de confusión: parte de lo que se observa "en MoQ" frente a "en DASH" con pérdidas es BBR frente a CUBIC.
 
@@ -781,6 +784,8 @@ No es un protocolo, sino una pila de varios, todos obligatorios:
 
 **WHEP** (*WebRTC-HTTP Egress Protocol*) es la forma estándar de hacerlo para reproducir: un único `POST` HTTP con la oferta en el cuerpo, y la respuesta en la contestación. En el testbed va a `/rtc/live/whep`, a través del nginx de entrada. **Solo la señalización pasa por HTTP**; la media va después directa por UDP.
 
+**Con mediasoup (por defecto) no hay WHEP:** mediasoup no habla SDP, y el navegador usa `mediasoup-client` con la señalización propia de `sfu/server.mjs`, por una conexión WebSocket directa al SFU (8189/tcp, a través del router de emulación y no del nginx de entrada). La sesión dura lo que esa conexión (README, 3.4c).
+
 **ICE.** Es el procedimiento para encontrar un camino de red entre los dos extremos. Cada uno reúne **candidatos** (direcciones IP y puertos por los que se le podría alcanzar), los intercambia en el SDP, y prueba combinaciones hasta que una funciona. Normalmente hacen falta servidores **STUN** (para descubrir la IP pública) y **TURN** (para retransmitir cuando no hay camino directo).
 
 Aquí es más sencillo: el servidor tiene una dirección alcanzable y la anuncia directamente como candidato (`MTX_WEBRTCADDITIONALHOSTS`, que toma el valor de `MOQ_HOST`). No hay STUN ni TURN. Todo el tráfico va por un único puerto UDP, el 8189.
@@ -825,7 +830,7 @@ La aplicación solo puede **sugerir** un mínimo con `jitterBufferTarget` (el sl
 
 En una videollamada, el emisor estima el ancho de banda con la realimentación TWCC (algoritmo **GCC**, *Google Congestion Control*) y **ordena al codificador que cambie de bitrate** sobre la marcha. La adaptación ocurre en el codificador, no eligiendo entre versiones ya hechas. Para repartir a muchos se usa **simulcast** (el emisor manda varias calidades y un servidor elige cuál reenviar a cada uno) o **SVC** (un flujo en capas).
 
-**Nada de eso se usa aquí.** El testbed envía una sola calidad, la más alta, sin recodificar. Si el enlace no da para ella, no hay calidad inferior a la que bajar: se pierden paquetes y la imagen se congela. Es una decisión deliberada de alcance, y hay que tenerla presente al comparar: **la rama WebRTC no tiene adaptación de calidad**, las otras dos sí.
+**En este testbed, simulcast con mediasoup desde el 2-11-2026** (README, 3.4c). El codificador no recibe la realimentación: no cambia de bitrate ni atiende peticiones de keyframe, y el servidor solo elige qué calidad ya codificada reenvía. **Con `RTC_SERVER=mediamtx`, nada de eso:** envía una sola calidad, la más alta, sin recodificar. Si el enlace no da para ella, no hay calidad inferior a la que bajar: se pierden paquetes y la imagen se congela, y esa rama no tiene adaptación de calidad, y las otras dos sí. Las secciones 5.7 a 5.9 y las cifras de este documento describen esa versión, salvo que se diga otra cosa.
 
 ### 5.7. El recorrido en este testbed
 
@@ -914,7 +919,7 @@ No se negoció la extensión de retardo de reproducción, con la que un servidor
 | :--- | :--- | :--- | :--- |
 | `RTCRtpReceiver.jitterBufferTarget` | Sin fijar | Slider: automático o de 50 a 2000 ms | Sugiere al navegador un tamaño de búfer de jitter. Es una pista, no una orden. |
 
-No hay selector de calidad ni ABR en la página: MediaMTX envía un único flujo.
+No hay selector de calidad ni ABR en la página: con MediaMTX, el servidor envía un único flujo, y con mediasoup la calidad la elige el servidor.
 
 **Lo que la página puede leer.** `getStats()` devuelve las estadísticas internas del navegador. El testbed las consulta cada 500 ms y usa estas:
 
@@ -978,7 +983,7 @@ Otras que el navegador ofrece y son útiles para diagnosticar: `nackCount` y `pl
 Diferencias entre las ramas que no son del protocolo en sí, y que conviene controlar o citar:
 
 1. **Control de congestión**: CUBIC (DASH) frente a BBRv3 (MoQ). El relay admite `loss` para acercarlos.
-2. **Adaptación**: WebRTC no tiene; DASH y MoQ sí.
+2. **Adaptación**: con mediasoup, la decide el servidor en WebRTC, y el reproductor en DASH y MoQ; con `RTC_SERVER=mediamtx`, WebRTC no tiene.
 3. **Audio**: WebRTC no lo lleva; los otros dos sí (aunque silenciado en el reproductor).
 4. **Búfer**: cada rama tiene un valor por defecto de orden distinto. Comparar latencias es, en buena parte, comparar configuraciones de búfer.
 5. **Implementación**: se mide `dash.js`, `@moq/watch` y el WebRTC del navegador, no los protocolos en abstracto. Otras implementaciones se comportarían distinto.

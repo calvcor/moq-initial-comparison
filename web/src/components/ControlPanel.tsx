@@ -49,8 +49,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       config.frag_duration !== status.config.frag_duration)
   );
 
-  // Al cambiar de fuente se conserva la duración del GOP en segundos: los fps son los del vídeo (60) o los de
-  // la cámara, que se sondea en ese momento. El servidor vuelve a sondearla al arrancar y manda él.
+  // Al cambiar de fuente se conserva la duración del GOP en segundos: los fps son los del vídeo (60 o 24) o los
+  // de la cámara, que se sondea en ese momento. El servidor vuelve a sondearla al arrancar y manda él.
   const setSource = async (next: SourceKind) => {
     let fps = 60;
     if (next === 'camera') {
@@ -311,7 +311,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             onChange={(e) => onConfigChange({ ...config, rtc_audio: e.target.checked })}
             className="accent-indigo-500"
           />
-          <span>Audio en WebRTC (Opus, recodificado en el servidor)</span>
+          <span>Audio en WebRTC (Opus de la fuente, sin recodificar)</span>
         </label>
         <span className="text-[10px] text-slate-500 mt-1 block">
           Desactivado por defecto. Con audio, el navegador sincroniza las dos pistas y puede retrasar el vídeo: es otra condición de medida (queda en el CSV, rtc_audio).

@@ -4,21 +4,25 @@ import { GlassMeter, RateWindow, grabFromVideo, DEFAULT_TIMECODE, WATCHDOG_MS, W
 import { meters } from '../lib/qoe';
 import { RtcTracer } from '../lib/trace';
 import { serverNowMs } from '../lib/clock';
-import type { PlayerMetrics, PlayerPreset, TimecodeLayout } from '../types';
+import { openMediasoup, openWhep, type RtcCallbacks, type SfuStats } from '../lib/rtcSession';
+import type { PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } from '../types';
 
 interface RtcPlayerProps {
   isStreaming: boolean;
-  mtxPath: string; // path de MediaMTX que se pide por WHEP
-  ingest: 'udp' | 'rtsp'; // cómo le llega el flujo a MediaMTX
+  server: 'mediasoup' | 'mediamtx'; // servidor de la rama (RTC_SERVER)
+  renditions: Rendition[]; // escalera de la emisión: con mediasoup, las capas posibles
+  mtxPath: string; // con MediaMTX, path que se pide por WHEP
+  signalUrl: string; // con mediasoup, WebSocket de señalización (sfuSignalUrl)
+  ingest: 'udp' | 'rtsp' | 'rtp'; // cómo le llega el flujo al servidor
   withAudio: boolean; // la rama lleva audio (opción rtc_audio del servidor): se pide también la pista de audio
   audible: boolean; // sonido activado (selector de sonido del dashboard)
   streamStartedMs: number; // hora del servidor (ms epoch) a la que arrancó el empaquetador WebRTC (stream_ids.rtc)
   timecodes?: TimecodeLayout[];
-  preset?: PlayerPreset; // ajustes de una prueba de campaña (WebRTC no tiene calidades: se ignora quality)
+  preset?: PlayerPreset; // ajustes de una prueba de campaña (la calidad la elige el servidor: se ignora quality)
   onMetricsUpdate: (metrics: Partial<PlayerMetrics>) => void;
 }
 
-// Señalización WHEP de MediaMTX, a través del punto de entrada. El vídeo va después directo por UDP.
+// Señalización de MediaMTX por WHEP, a través del punto de entrada. El vídeo va después directo por UDP.
 // El path depende de la ingesta del servidor: liveudp (MPEG-TS por UDP) o live (RTSP, la versión anterior).
 const whepUrl = (path: string) => `/rtc/${path}/whep`;
 
@@ -30,7 +34,7 @@ const whepUrl = (path: string) => `/rtc/${path}/whep`;
 // (keyframe y sondeo de la entrada); desde ahí, 6 s bastan.
 const JOIN_AFTER_START_MS = 8000;
 
-export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, ingest, withAudio, audible, streamStartedMs, timecodes, preset, onMetricsUpdate }) => {
+export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, renditions, mtxPath, signalUrl, ingest, withAudio, audible, streamStartedMs, timecodes, preset, onMetricsUpdate }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLDivElement | null>(null); // zona de vídeo, la que pasa a pantalla completa
 
@@ -51,6 +55,9 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, inge
   const timecodesRef = useRef<TimecodeLayout[]>([DEFAULT_TIMECODE]);
   if (timecodes?.length) timecodesRef.current = timecodes;
   const restartsRef = useRef(0);
+  const switchesRef = useRef(0); // cambios de altura de lo que llega: los decide el servidor
+  const renditionsRef = useRef(renditions);
+  renditionsRef.current = renditions;
   const [attempt, setAttempt] = useState(0);
   const [joinWaitS, setJoinWaitS] = useState<number | null>(null); // espera antes de conectar tras un reinicio
 
@@ -96,54 +103,36 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, inge
     const meter = meterRef.current!;
     const rate = new RateWindow();
     const networkRate = new RateWindow();
-    const connection = new RTCPeerConnection();
-    const transceiver = connection.addTransceiver('video', { direction: 'recvonly' });
-    receiverRef.current = transceiver.receiver;
-    applyTarget(transceiver.receiver, targetRef.current);
-    // Con audio, el navegador sincroniza las dos pistas (mismo MediaStream) y puede retrasar el vídeo
-    if (withAudio) connection.addTransceiver('audio', { direction: 'recvonly' });
-
-    // Las dos pistas en el mismo MediaStream del <video>, lleguen en el orden que lleguen
-    connection.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (stream) {
-        if (video.srcObject !== stream) video.srcObject = stream;
-      } else {
-        const current = video.srcObject instanceof MediaStream ? video.srcObject : new MediaStream();
-        current.addTrack(event.track);
-        video.srcObject = current;
-      }
-      video.play().catch(() => {});
+    const callbacks: RtcCallbacks = {
+      // Las pistas en el mismo MediaStream del <video>, lleguen en el orden que lleguen
+      onTrack: (track, stream) => {
+        if (stream) {
+          if (video.srcObject !== stream) video.srcObject = stream;
+        } else {
+          const current = video.srcObject instanceof MediaStream ? video.srcObject : new MediaStream();
+          current.addTrack(track);
+          video.srcObject = current;
+        }
+        video.play().catch(() => {});
+      },
+      onState: (state) => {
+        if (isAborted) return;
+        if (state === 'connected') setStatus('playing');
+        if (state === 'failed') setStatus('connecting');
+      },
+      onReceiver: (receiver) => {
+        receiverRef.current = receiver;
+        applyTarget(receiver, targetRef.current);
+      },
     };
-    connection.onconnectionstatechange = () => {
-      if (isAborted) return;
-      if (connection.connectionState === 'connected') setStatus('playing');
-      if (connection.connectionState === 'failed') setStatus('connecting');
-    };
+    const session = server === 'mediasoup' ? openMediasoup(signalUrl, withAudio, callbacks) : openWhep(whepUrl(mtxPath), withAudio, callbacks);
 
     async function negotiate() {
       try {
-        await connection.setLocalDescription(await connection.createOffer());
-        // WHEP sin trickle: la oferta se envía con todos los candidatos ya reunidos
-        await new Promise<void>((resolve) => {
-          if (connection.iceGatheringState === 'complete') return resolve();
-          const done = () => connection.iceGatheringState === 'complete' && resolve();
-          connection.addEventListener('icegatheringstatechange', done);
-          setTimeout(resolve, 2000);
-        });
-        if (isAborted) return;
-        const res = await fetch(whepUrl(mtxPath), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/sdp' },
-          body: connection.localDescription!.sdp,
-        });
-        if (!res.ok) throw new Error(`WHEP ${res.status}`);
-        const answer = await res.text();
-        if (isAborted) return;
-        await connection.setRemoteDescription({ type: 'answer', sdp: answer });
+        await session.start();
       } catch (err) {
         if (isAborted) return;
-        // Lo habitual justo tras un arranque: MediaMTX aún no tiene la emisión publicada
+        // Lo habitual justo tras un arranque: el servidor aún no tiene la emisión publicada
         console.warn('[WebRTC] negociación fallida, reintentando:', err);
         retryTimer = setTimeout(() => !isAborted && setAttempt((a) => a + 1), 1500);
       }
@@ -169,14 +158,20 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, inge
     }, 1000);
 
     // Seguimiento de frames concretos por las etapas del recorrido
-    const tracer = new RtcTracer(video, meter, (stages) => onMetricsUpdate({ stages }));
+    // Cada calidad es un flujo distinto para el servidor; con MediaMTX, siempre la más alta
+    const tracer = new RtcTracer(video, meter, () => Math.max(0, renditionsRef.current.findIndex((r) => r.height === video.videoHeight)), (stages) => onMetricsUpdate({ stages }));
 
     // Muestreo de métricas cada 500 ms, de las estadísticas del propio navegador (getStats)
     let lastBuffer = { delay: 0, emitted: 0 };
+    let lastHeight: number | null = null;
+    let sfu: SfuStats | null = null;
+    let ticks = 0;
     const interval = setInterval(async () => {
-      if (isAborted || connection.connectionState !== 'connected') return;
+      if (isAborted || !session.connected()) return;
       try {
-        const report = await connection.getStats();
+        // Lo que decide mediasoup, cada 2 s: es una petición al servidor, no algo que el navegador ya sepa
+        if (session.sfuStats && ticks++ % 4 === 0) session.sfuStats().then((stats) => (sfu = stats));
+        const report = await session.getStats();
         let inbound: any = null;
         let transport: any = null;
         report.forEach((entry: any) => {
@@ -191,6 +186,12 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, inge
         const emitted = inbound.jitterBufferEmittedCount - lastBuffer.emitted;
         const bufferSec = emitted > 0 ? (inbound.jitterBufferDelay - lastBuffer.delay) / emitted : null;
         lastBuffer = { delay: inbound.jitterBufferDelay, emitted: inbound.jitterBufferEmittedCount };
+
+        const height: number | null = inbound.frameHeight ?? null;
+        if (height !== null) {
+          if (lastHeight !== null && height !== lastHeight) switchesRef.current++;
+          lastHeight = height;
+        }
 
         const glass = meter.snapshot();
         onMetricsUpdate({
@@ -213,10 +214,10 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, inge
           contentSkippedMs: glass.contentSkippedMs,
           restarts: restartsRef.current,
           renditionHeight: inbound.frameHeight ?? null,
-          renditionKbps: null,
-          qualitySwitches: 0,
-          bandwidthEstimateKbps: null,
-          qualityMode: 'manual',
+          renditionKbps: server === 'mediasoup' ? renditionsRef.current.find((r) => r.height === height)?.bitrate_kbps ?? null : null,
+          qualitySwitches: switchesRef.current,
+          bandwidthEstimateKbps: sfu?.available_kbps ?? null,
+          qualityMode: server === 'mediasoup' ? 'auto' : 'manual',
           packetsLost: inbound.packetsLost ?? null,
         });
       } catch (_) {
@@ -232,17 +233,17 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, inge
       clearInterval(watchdog);
       tracer.close();
       receiverRef.current = null;
-      connection.close();
+      session.close();
       video.srcObject = null;
     };
-  }, [isStreaming, attempt, withAudio, streamStartedMs, mtxPath]);
+  }, [isStreaming, attempt, withAudio, streamStartedMs, mtxPath, server, signalUrl]);
 
   return (
     <div className="flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
       <div className="flex items-center justify-between px-4 py-2.5 bg-slate-800/80 border-b border-slate-700/50">
         <div className="flex items-center space-x-2">
           <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
-          <h3 className="font-semibold text-sm text-slate-200">WebRTC (WHEP)</h3>
+          <h3 className="font-semibold text-sm text-slate-200">WebRTC ({server === 'mediasoup' ? 'SFU' : 'WHEP'})</h3>
         </div>
         <span className="text-xs px-2 py-0.5 rounded bg-amber-900/50 text-amber-300 border border-amber-700/40 font-mono">SRTP / UDP 8189</span>
       </div>
@@ -298,10 +299,16 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, mtxPath, inge
       </div>
 
       <div className="px-4 py-2 bg-slate-950/60 border-t border-slate-800/60 text-[11px] text-slate-500 flex flex-wrap justify-between gap-x-4 gap-y-1 font-mono">
-        <span title={ingest === 'udp' ? 'MediaMTX lee el MPEG-TS de la fuente por UDP, sin FFmpeg intermedio (RTC_INGEST=udp).' : 'Un FFmpeg remultiplexa el MPEG-TS y lo publica en MediaMTX por RTSP (RTC_INGEST=rtsp, la versión anterior).'}>
-          MediaMTX · {ingest === 'udp' ? 'UDP directo' : 'vía RTSP'} · {whepUrl(mtxPath)}
-        </span>
-        <span>RTCPeerConnection + &lt;video&gt;</span>
+        {server === 'mediasoup' ? (
+          <span title="Un FFmpeg pasa el MPEG-TS a RTP, sin recodificar, y mediasoup elige la capa de este espectador (RTC_SERVER=mediasoup). No atiende peticiones de keyframe: cada cambio espera al siguiente IDR.">
+            mediasoup · RTP · simulcast de {renditions.length}
+          </span>
+        ) : (
+          <span title={ingest === 'udp' ? 'MediaMTX lee el MPEG-TS de la fuente por UDP, sin FFmpeg intermedio (RTC_INGEST=udp).' : 'Un FFmpeg remultiplexa el MPEG-TS y lo publica en MediaMTX por RTSP (RTC_INGEST=rtsp, la versión anterior).'}>
+            MediaMTX · {ingest === 'udp' ? 'UDP directo' : 'vía RTSP'} · {whepUrl(mtxPath)}
+          </span>
+        )}
+        <span>{server === 'mediasoup' ? 'mediasoup-client' : 'RTCPeerConnection'} + &lt;video&gt;</span>
       </div>
     </div>
   );

@@ -9,7 +9,7 @@ interface NetworkPanelProps {
   onApply: (profile: NetworkProfile) => void;
 }
 
-export const CLEAR: LinkProfile = { rate_kbit: null, delay_ms: 0, jitter_ms: 0, loss_pct: 0, queue_ms: 100 };
+export const CLEAR: LinkProfile = { rate_kbit: null, delay_ms: 0, jitter_ms: 0, loss_pct: 0, queue_ms: 300 };
 
 // Perfiles orientativos para arrancar una prueba; no reproducen ninguna red medida
 export const PRESETS: { label: string; profile: NetworkProfile }[] = [

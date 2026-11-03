@@ -32,7 +32,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
    mucho a DASH con pérdidas (README, tabla de métricas): no se mezcla con el posterior.
 3. **No rellenes con valores supuestos.** Sin medida se muestra `--` y en el CSV queda vacío.
 4. **Declara las variables de confusión** en vez de ocultarlas: BBRv3 (relay) frente a CUBIC (DASH),
-   WebRTC sin adaptación, sin audio salvo con `rtc_audio` (el vídeo se sincroniza con el búfer del audio: poco con el bucle,
+   WebRTC sin adaptación con `RTC_SERVER=mediamtx` y con adaptación del SFU, de aplicación propia e ingesta RTP, con mediasoup (README, 3.4c), sin audio salvo con `rtc_audio` (el vídeo se sincroniza con el búfer del audio: poco con el bucle,
    100-200 ms más con la cámara) y sin
    codificador que atienda sus peticiones de keyframe, qué reproductor tiene el sonido (MoQ solo baja el
    audio con él), bitrate del catálogo de MoQ (máximo medido) frente al del MPD
@@ -51,7 +51,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 | Origen LL-DASH | `server/app/origin.py` | En memoria; recalibra `availabilityStartTime` y reescribe `UTCTiming` al origen de la página |
 | Publicador MoQ | `moq import ts` (moq-cli) en el orquestador | El **publicador**; no confundir con el relay |
 | Relay MoQ | contenedor `moq-relay` | Solo reparte; el catálogo lo escribe el publicador |
-| WebRTC | MediaMTX (WHEP) | Lee el MPEG-TS por UDP de la compuerta (paths `liveudp`/`liveudpa`), sin recodificar; `RTC_INGEST=rtsp` en el `.env` vuelve al FFmpeg + RTSP anterior (README, 3.4b) |
+| WebRTC | `sfu/` (mediasoup) y `server/app/rtprelay.py`; o MediaMTX | `RTC_SERVER` en el `.env`. `mediasoup` (por defecto): FFmpeg pasa la escalera a RTP sin recodificar, el relay la junta en un socket y el SFU elige la capa (README, 3.4c). `mediamtx` (versión anterior): una sola calidad por WHEP; lee el MPEG-TS por UDP de la compuerta, y `RTC_INGEST=rtsp` vuelve al FFmpeg + RTSP (README, 3.4b) |
 | Router | `router/agent.py` | DNAT + tc/netem, una cola por protocolo y sentido |
 | Entrada HTTP | `edge/nginx.conf` | Único puerto HTTP (80) |
 | Dashboard | `web/` (React + Vite) | Reproductores (cada uno se puede apagar; el CSV registra los activos en `players`), medidor, esquema de etapas, CSV |
@@ -104,7 +104,8 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   emisión**: si estaba parada, haz `POST /api/stop` justo después (la configuración se queda en memoria).
 - Es un servidor doméstico: **no dejes la emisión en marcha si el usuario la tenía detenida**
   (`POST /api/stop` para la fuente también). Sin permisos para subir prioridades (`renice` a 0 falla).
-- Puertos: 80/tcp (página por NPM), 8443/tcp (DASH directo), 4433/udp (MoQ), 8189/udp (WebRTC).
+- Tras traer `sfu/`, la primera vez hay que construir el SFU y el router (`docker compose up -d --build --no-deps sfu router`). Cambiar `RTC_SERVER` después no reconstruye nada (README, 3.4c).
+- Puertos: 80/tcp (página por NPM), 8443/tcp (DASH directo), 4433/udp (MoQ), 8189/udp (WebRTC), 8189/tcp (señalización WebSocket de mediasoup, con `wss://` y el certificado de `DASH_HOST`).
 - `.env` del servidor (permisos 600, nunca en el repositorio): `MOQ_HOST`, `DASH_HOST`
   (`phd-testing.duckdns.org`), `DUCKDNS_TOKEN`. El certificado de DASH vive en `certs/dash/` y lo
   renueva `dash-cert` (acme.sh, sin correo). Si se borra esa carpeta, reinicia `nginx-dash`.
@@ -143,6 +144,8 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   correspondiente del README.
 
 ## Problemas abiertos conocidos
+
+- mediasoup infraestima el enlace en la rama WebRTC y se queda en capas bajas: bloqueo de su controlador por pérdidas y sobreuso por las ráfagas de keyframes (`FINDINGS/mediasoup-infraestimacion.md`). El resultado depende de la cola del router y del GOP: decláralos. Desde el 3-11-2026 la señalización va por WebSocket y la sesión se cierra con la conexión (antes, al recargar, la anterior seguía enviando ~29 s).
 
 - El publicador de MoQ deja de leer su entrada a ratos con varias calidades (picos de hasta 1-2 s, con
   0.14.3 y con 0.14.7). Provoca las marcas `stalled` del catálogo y los cambios continuos de calidad

@@ -21,6 +21,7 @@ export default defineConfig({
       moq_net: moq('@moq/net'),
       moq_hang: moq('@moq/hang'),
       dashjs: installed('dashjs'),
+      mediasoup_client: installed('mediasoup-client'),
     }),
   },
   plugins: [

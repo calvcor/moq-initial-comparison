@@ -161,8 +161,23 @@ const RTC_UDP_STAGES: Record<string, Partial<Stage>> = {
   },
 };
 
+// Con mediasoup (RTC_SERVER=mediasoup): FFmpeg pasa el MPEG-TS a RTP y el relay junta las pistas en un socket
+const RTC_RTP_STAGES: Record<string, Partial<Stage>> = {
+  ingest: {
+    includes:
+      'Tiempo que el frame, ya codificado, espera a que el FFmpeg que lo pasa a RTP lo acepte. tsgate le entrega los datos por una tubería y se bloquea si no la vacía.',
+    to: 'el instante en que tsgate lo lee y lo escribe hacia FFmpeg',
+  },
+  transport: {
+    nodes: ['FFmpeg (RTP)', 'Relay', 'mediasoup', 'Router (emulación)', 'Red SRTP'],
+    includes:
+      'Paso a RTP (FFmpeg retiene varios frames al leer el MPEG-TS: PROTOCOLOS, 6.4), relay, mediasoup y la red, juntos: no se pueden separar sin instrumentar mediasoup. Incluye las retransmisiones que pida el navegador si hay pérdidas.',
+    from: 'la entrega del frame al FFmpeg que lo pasa a RTP',
+  },
+};
+
 interface PipelineDiagramProps {
-  rtcIngest?: 'udp' | 'rtsp';
+  rtcIngest?: 'udp' | 'rtsp' | 'rtp';
   players: Record<LaneId, boolean>;
   stages: Record<LaneId, StageBreakdown | null | undefined>;
   latency: Record<LaneId, number | null>;
@@ -206,10 +221,10 @@ const Particles: React.FC<{ stages: Stage[]; breakdown?: StageBreakdown | null; 
 };
 
 export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({ rtcIngest, players, stages: data, latency }) => {
-  const allLanes =
-    rtcIngest === 'udp'
-      ? LANES.map((l) => (l.id === 'rtc' ? { ...l, stages: l.stages.map((st) => ({ ...st, ...RTC_UDP_STAGES[st.key] })) } : l))
-      : LANES;
+  const rtcStages = rtcIngest === 'udp' ? RTC_UDP_STAGES : rtcIngest === 'rtp' ? RTC_RTP_STAGES : null;
+  const allLanes = rtcStages
+    ? LANES.map((l) => (l.id === 'rtc' ? { ...l, stages: l.stages.map((st) => ({ ...st, ...rtcStages[st.key] })) } : l))
+    : LANES;
   const [chosen, setSelected] = useState<{ lane: LaneId; key: string }>({ lane: 'dash', key: 'deliver' });
   // Solo los carriles de los reproductores activos; si el elegido se apaga, se muestra el primero que quede
   const lanes = allLanes.filter((l) => players[l.id]);

@@ -564,6 +564,7 @@ export const CampaignPage: React.FC = () => {
           <CampaignEditor
             key={`${status ? 'ready' : 'loading'}-${editor.editId ?? ''}-${editor.initial ? 'plan' : 'new'}`}
             defaultStream={defaultStream}
+            rtcServer={status?.rtc_server}
             initial={editor.initial}
             editId={editor.editId}
             onCreated={(id) => {

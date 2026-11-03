@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { DashPlayer } from './components/DashPlayer';
 import { MoqPlayer } from './components/MoqPlayer';
 import { RtcPlayer } from './components/RtcPlayer';
+import { sfuSignalUrl } from './lib/rtcSession';
 import { MetricsDashboard } from './components/MetricsDashboard';
 import { ControlPanel } from './components/ControlPanel';
 import { NetworkPanel } from './components/NetworkPanel';
@@ -526,7 +527,10 @@ export function App() {
             key={`rtc-${rtcStreamId}`}
             timecodes={serverStatus?.timecodes}
             isStreaming={isStreaming}
+            server={serverStatus?.rtc_server ?? 'mediamtx'}
+            renditions={serverStatus?.config.renditions ?? []}
             mtxPath={serverStatus?.rtc_path ?? 'live'}
+            signalUrl={sfuSignalUrl(serverStatus)}
             ingest={serverStatus?.rtc_ingest ?? 'rtsp'}
             withAudio={rtcAudio}
             streamStartedMs={rtcStreamId}
@@ -556,6 +560,8 @@ export function App() {
             moqMetrics={moqMetrics}
             rtcMetrics={rtcMetrics}
             players={players}
+            rtcServer={serverStatus?.rtc_server ?? 'mediamtx'}
+            rtcAudio={rtcAudio}
             history={history}
             samples={samplesRef.current.filter((r) => r.epoch === measureEpoch)}
             anomalies={serverStatus?.ingest_anomalies}

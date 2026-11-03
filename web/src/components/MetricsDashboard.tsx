@@ -13,7 +13,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import { Info } from 'lucide-react';
 import { getClockSync } from '../lib/clock';
-import type { PlayerMetrics, SampleRow } from '../types';
+import type { PlayerMetrics, RtcServer, SampleRow } from '../types';
 import type { FrameTime } from '../lib/glass';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -23,6 +23,8 @@ interface MetricsDashboardProps {
   moqMetrics: PlayerMetrics;
   rtcMetrics: PlayerMetrics;
   players: { dash: boolean; moq: boolean; rtc: boolean };
+  rtcServer: RtcServer; // servidor de la rama WebRTC: cambia lo que significan sus campos
+  rtcAudio: boolean; // la emisión lleva audio en WebRTC
   history: {
     labels: string[];
     dashLatency: (number | null)[];
@@ -148,20 +150,76 @@ const MOQ_PAYLOAD_HINT = (
   </>
 );
 
-const RTC_NETWORK_HINT = (
+const rtcNetworkHint = (server: RtcServer, withAudio: boolean) => (
   <>
     <p>
-      <b>Qué mide:</b> bytes recibidos por el transporte de la conexión WebRTC (RTP con el vídeo, RTCP y retransmisiones). Media de 10 s.
+      <b>Qué mide:</b> bytes recibidos por el transporte de la conexión WebRTC (RTP con el {withAudio ? 'vídeo y el audio' : 'vídeo'}, RTCP y retransmisiones
+      {server === 'mediasoup' ? ', y las ráfagas con las que mediasoup sondea si cabe más' : ''}). Media de 10 s.
     </p>
     <p>
       <b>Fuente:</b> estadísticas del navegador (<code>RTCPeerConnection.getStats()</code>, transporte, <code>bytesReceived</code>).
     </p>
     <p>
-      <b>No incluye:</b> cabeceras UDP/IP ni las comprobaciones de conectividad ICE. Esta rama no lleva audio.
+      <b>No incluye:</b> cabeceras UDP/IP ni las comprobaciones de conectividad ICE.{withAudio ? '' : ' Esta emisión no lleva audio en WebRTC.'}
     </p>
     {LAYER_WARNING}
   </>
 );
+
+const rtcReportedHint = (server: RtcServer) => (
+  <>
+    <p>
+      <b>No disponible:</b> la API de WebRTC no informa de ninguna latencia respecto al directo, y el navegador no tiene con qué
+      calcularla. Recibe marcas de tiempo RTP, que son relativas (cuánto dista un frame del anterior), no la hora a la que se
+      capturó cada uno.
+    </p>
+    {server === 'mediasoup' ? (
+      <p>
+        El protocolo prevé dos formas de saber esa hora: una extensión de cabecera con la hora de captura, que mediasoup admite pero el FFmpeg que
+        pasa el flujo a RTP no envía, y los informes RTCP del emisor, cuya hora es la de ese FFmpeg y no la de captura.
+      </p>
+    ) : (
+      <p>
+        El protocolo prevé dos formas de saber esa hora: una extensión de cabecera con la hora de captura, que MediaMTX no negocia, y
+        los informes RTCP del emisor, que aquí darían como mucho la hora de llegada a MediaMTX y no la de captura.
+      </p>
+    )}
+    <p>Lo que sí se mide es la glass-to-glass y, como parte de ella, el búfer de jitter.</p>
+  </>
+);
+
+const rtcQualityHint = (server: RtcServer) =>
+  server === 'mediasoup' ? (
+    <>
+      <p>
+        Altura del vídeo que llega al navegador y bitrate nominal de esa calidad. <b>La elige el servidor</b>, mediasoup, y el navegador solo recibe esa, así que
+        aquí no se puede fijar a mano (README, 3.4c).
+      </p>
+      <p>
+        Sube a una capa si la estimación cubre su bitrate medido en la entrada más un 20 %, y sin cubrir ni la más baja deja de enviar vídeo. Cada cambio espera al siguiente keyframe:
+        en este banco nadie atiende las peticiones de keyframe. Con una sola calidad en la escalera no hay nada que elegir.
+      </p>
+    </>
+  ) : (
+    <p>Altura del vídeo recibido. MediaMTX sirve siempre la calidad más alta de la escalera: en esta rama no hay adaptación, y el bitrate de la calidad no se muestra.</p>
+  );
+
+const rtcSwitchesHint = (server: RtcServer) =>
+  server === 'mediasoup' ? (
+    <p>Veces que cambia la altura del vídeo que llega al navegador, leída de <code>getStats()</code> cada 500 ms. Dos cambios seguidos en menos de ese tiempo se ven como uno o ninguno. El registro exacto de mediasoup está en <code>docker logs testbed-sfu</code>.</p>
+  ) : (
+    <p>Siempre 0: MediaMTX envía una sola calidad.</p>
+  );
+
+const rtcEstimateHint = (server: RtcServer) =>
+  server === 'mediasoup' ? (
+    <p>
+      Lo que mediasoup estima que cabe hacia este espectador, a partir de la realimentación TWCC del navegador (retardo, pérdidas y sondeos), y con lo que elige la capa. Lo mide
+      el servidor y se le pregunta cada 2 s. Puede quedarse muy por debajo de la capacidad real durante mucho tiempo: tras una bajada crece despacio (README, 3.4c).
+    </p>
+  ) : (
+    <p>No aplica con MediaMTX: no estima el ancho de banda para elegir calidad, porque solo hay una. Con mediasoup (<code>RTC_SERVER=mediasoup</code>) aquí se ve su estimación.</p>
+  );
 
 const Telemetry: React.FC<{
   title: string;
@@ -172,10 +230,11 @@ const Telemetry: React.FC<{
   reportedHint: React.ReactNode;
   networkHint: React.ReactNode;
   qualityHint: React.ReactNode;
+  switchesHint?: React.ReactNode;
   estimateHint: React.ReactNode;
   metrics: PlayerMetrics;
   stats: ReturnType<typeof summarize>;
-}> = ({ title, engine, color, bufferLabel, bufferHint, reportedHint, networkHint, qualityHint, estimateHint, metrics, stats }) => (
+}> = ({ title, engine, color, bufferLabel, bufferHint, reportedHint, networkHint, qualityHint, switchesHint, estimateHint, metrics, stats }) => (
   <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-xl">
     <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
       <span className={`font-semibold text-sm ${color}`}>{title}</span>
@@ -202,7 +261,7 @@ const Telemetry: React.FC<{
         wide
         hint={qualityHint}
       />
-      <Stat label="Cambios de calidad" value={String(metrics.qualitySwitches)} />
+      <Stat label="Cambios de calidad" value={String(metrics.qualitySwitches)} hint={switchesHint} />
       <Stat label="Ancho de banda estimado" value={fmt(metrics.bandwidthEstimateKbps, 'kbps')} hint={estimateHint} />
       {metrics.moqAbr === 'probe' && (
         <Stat
@@ -241,6 +300,8 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
   moqMetrics,
   rtcMetrics,
   players,
+  rtcServer,
+  rtcAudio,
   history,
   samples,
   anomalies,
@@ -436,32 +497,20 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
         />}
         {players.rtc && <Telemetry
           title="Telemetría WebRTC"
-          engine="RTCPeerConnection"
+          engine={rtcServer === 'mediasoup' ? 'mediasoup · mediasoup-client' : 'MediaMTX · RTCPeerConnection'}
           color="text-amber-400"
           bufferLabel="Búfer de jitter"
-          reportedHint={
-            <>
-              <p>
-                <b>No disponible:</b> la API de WebRTC no informa de ninguna latencia respecto al directo, y el navegador no tiene con qué
-                calcularla. Recibe marcas de tiempo RTP, que son relativas (cuánto dista un frame del anterior), no la hora a la que se
-                capturó cada uno.
-              </p>
-              <p>
-                El protocolo prevé dos formas de saber esa hora: una extensión de cabecera con la hora de captura, que MediaMTX no negocia, y
-                los informes RTCP del emisor, que aquí darían como mucho la hora de llegada a MediaMTX y no la de captura.
-              </p>
-              <p>Lo que sí se mide es la glass-to-glass y, como parte de ella, el búfer de jitter.</p>
-            </>
-          }
+          reportedHint={rtcReportedHint(rtcServer)}
           bufferHint={
             <p>
               Tiempo medio que cada frame pasa en el búfer de jitter del navegador: desde que llega su primer paquete hasta que sale hacia el
               decodificador (<code>jitterBufferDelay / jitterBufferEmittedCount</code> de <code>getStats()</code>).
             </p>
           }
-          networkHint={RTC_NETWORK_HINT}
-          qualityHint={<p>Altura del vídeo recibido. WebRTC sirve siempre la calidad más alta de la escalera: en esta rama no hay adaptación.</p>}
-          estimateHint={<p>No aplica: en esta rama no hay adaptación de calidad en el reproductor.</p>}
+          networkHint={rtcNetworkHint(rtcServer, rtcAudio)}
+          qualityHint={rtcQualityHint(rtcServer)}
+          switchesHint={rtcSwitchesHint(rtcServer)}
+          estimateHint={rtcEstimateHint(rtcServer)}
           metrics={rtcMetrics}
           stats={rtcStats}
         />}

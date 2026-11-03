@@ -56,6 +56,17 @@ RTC_INGEST = "rtsp" if os.getenv("RTC_INGEST", "udp").strip().lower() == "rtsp" 
 # MediaMTX fija las pistas de un path UDP la primera vez que lo lee y no las vuelve a leer: con y sin audio
 # van a paths distintos, cada uno en su puerto (ver docker-compose.yml).
 RTC_UDP_HOST = os.getenv("RTC_UDP_HOST", "172.30.50.12")
+# Servidor de la rama WebRTC. "mediasoup" (por defecto): SFU con simulcast, cada espectador recibe la capa que elige
+# mediasoup. "mediamtx": la versión anterior, una sola calidad sin adaptación. Para volver basta RTC_SERVER=mediamtx en
+# el .env y recrear el router y el orquestador (README, 3.4c): los dos servidores están siempre levantados.
+RTC_SERVER = "mediamtx" if os.getenv("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else "mediasoup"
+SFU_URL = os.getenv("SFU_URL", "http://172.30.50.13:8890")
+SFU_HOST = urlsplit(SFU_URL).hostname
+RTPRELAY = os.path.join(os.path.dirname(__file__), "rtprelay.py")
+# Ingesta de mediasoup: un puerto RTP y su RTCP por pista, en este proceso, hacia el relay
+RTP_FIRST_PORT = 5020
+RTP_VIDEO_PAYLOAD, RTP_AUDIO_PAYLOAD = 96, 111
+RTP_FIRST_SSRC, RTP_AUDIO_SSRC = 0x11110000, 0x11119999
 
 def rtc_path() -> str:
     """Path de MediaMTX que lleva la emisión de WebRTC con la configuración actual."""
@@ -165,7 +176,7 @@ class LinkProfile(BaseModel):
     delay_ms: float = Field(0, ge=0, le=2000)
     jitter_ms: float = Field(0, ge=0, le=500)
     loss_pct: float = Field(0, ge=0, le=50)
-    queue_ms: int = Field(100, ge=10, le=5000)  # cola del cuello de botella; solo actúa con rate_kbit
+    queue_ms: int = Field(300, ge=10, le=5000)  # cola del cuello de botella; solo actúa con rate_kbit. 300 ms, la de RFC 8867
 
 class NetworkProfile(BaseModel):
     down: LinkProfile = LinkProfile()  # servidor -> navegador
@@ -604,9 +615,14 @@ def get_status():
         # través del punto de entrada, que es un proxy. MoQ va siempre directo por UDP al puerto indicado.
         "dash_url": dash_url(),
         "dash_path": "direct" if DASH_HOST else "proxy",
-        # Ingesta de WebRTC y path de MediaMTX que debe pedir el reproductor por WHEP
-        "rtc_ingest": RTC_INGEST,
+        # Servidor de WebRTC, su ingesta y, con MediaMTX, el path que debe pedir el reproductor por WHEP
+        "rtc_server": RTC_SERVER,
+        "rtc_ingest": "rtp" if RTC_SERVER == "mediasoup" else RTC_INGEST,
         "rtc_path": rtc_path(),
+        # Con mediasoup, la señalización va por WebSocket directo al puerto TCP de WebRTC, por el router. En HTTPS hace
+        # falta wss:// con el certificado de DASH_HOST; en HTTP, la dirección directa (moq_host) o la de la página
+        "rtc_signal_port": 8189,
+        "rtc_tls_host": DASH_HOST or None,
         "moq_port": int(os.getenv("MOQ_PORT", "4433")),
         # Vacío: el mismo nombre de host que la página. Detrás de un proxy HTTP ese nombre apunta al proxy,
         # que no reenvía QUIC, y hay que indicar la dirección directa de este servidor.
@@ -696,6 +712,44 @@ def start_moq():
     started_at["moq"] = time.time()
     stream_ids["moq"] = int(started_at["moq"] * 1000)
 
+def start_rtc_mediasoup():
+    """Lleva a mediasoup todas las calidades de UDP 5003, sin recodificar: FFmpeg pasa el MPEG-TS a RTP y el relay junta
+    las pistas en un socket.
+
+    El orden es el de mediasoup, de la calidad más baja a la más alta; la más alta es el primer vídeo del MPEG-TS. Cada
+    calidad es una salida de FFmpeg: en una sola, el muxer retendría los paquetes para intercalarlas.
+    """
+    count = len(current_config.renditions)
+    ssrcs = [RTP_FIRST_SSRC + i for i in range(count)]
+    body = {"cname": "testbed", "video": {"payloadType": RTP_VIDEO_PAYLOAD, "ssrcs": ssrcs[::-1]}}
+    if current_config.rtc_audio:
+        body["audio"] = {"payloadType": RTP_AUDIO_PAYLOAD, "ssrc": RTP_AUDIO_SSRC}
+    try:
+        answer = requests.post(f"{SFU_URL}/ingest", json=body, timeout=5)
+        answer.raise_for_status()
+        port = answer.json()["port"]
+    except (requests.RequestException, KeyError, ValueError) as e:
+        # Lo habitual al levantar todo a la vez: el supervisor lo reintenta
+        logger.warning(f"mediasoup no acepta la ingesta todavía: {e}")
+        return
+    ports, outputs = [], ""
+    def output(mapping: str, ssrc: int, payload: int) -> str:
+        rtp = RTP_FIRST_PORT + len(ports)
+        ports.extend([rtp, rtp + 1])
+        return f"-map {mapping} -c copy -f rtp -ssrc {ssrc} -payload_type {payload} 'rtp://127.0.0.1:{rtp}?pkt_size=1200&rtcpport={rtp + 1}' "
+    for i in range(count):
+        outputs += output(f"0:v:{i}", ssrcs[i], RTP_VIDEO_PAYLOAD)
+    if current_config.rtc_audio:
+        outputs += output("0:a:0", RTP_AUDIO_SSRC, RTP_AUDIO_PAYLOAD)
+    # Si cae cualquiera de las dos partes, cae el grupo entero y el supervisor rehace la ingesta
+    rtc_cmd = (
+        f"(python3 -u {TSGATE} 5003 rtc | "
+        f"ffmpeg -y -fflags nobuffer -analyzeduration {int(PROBE_S * 1_000_000)} -i pipe:0 {outputs}; kill 0) & "
+        f"python3 -u {RTPRELAY} {SFU_HOST}:{port} {' '.join(map(str, ports))}; kill 0"
+    )
+    logger.info(f"Iniciando Empaquetador WebRTC hacia mediasoup ({count} calidades, puerto {port})...")
+    launch("rtc_pipeline", rtc_cmd, "/tmp/ffmpeg_rtc.log")
+
 def start_rtc():
     """Empaquetador WebRTC: lleva a MediaMTX la calidad más alta de UDP 5003, sin recodificar.
 
@@ -705,6 +759,11 @@ def start_rtc():
     """
     kill_proc(processes.get("rtc_pipeline"))
     trace.frame_log.reset("rtc")
+    if RTC_SERVER == "mediasoup":
+        started_at["rtc"] = time.time()
+        stream_ids["rtc"] = int(started_at["rtc"] * 1000)
+        start_rtc_mediasoup()
+        return
     if RTC_INGEST == "udp":
         target, audio = (f"{RTC_UDP_HOST}:5013", " --audio") if current_config.rtc_audio else (f"{RTC_UDP_HOST}:5003", "")
         rtc_cmd = f"python3 -u {TSGATE} 5003 rtc --udp {target} --first-video{audio}"
@@ -726,7 +785,8 @@ class TraceQuery(BaseModel):
     dash_stamps_ms: list[float] = []
     moq_stream: int = 0
     moq_stamps_ms: list[float] = []
-    rtc_stamps_ms: list[float] = []  # WebRTC sirve siempre la calidad más alta (stream 0)
+    rtc_stream: int = 0  # con MediaMTX, siempre la calidad más alta (stream 0); con mediasoup, la capa que se ve
+    rtc_stamps_ms: list[float] = []
 
 @app.post("/api/trace")
 def trace_frames(query: TraceQuery):
@@ -769,7 +829,7 @@ def trace_frames(query: TraceQuery):
         moq.append({"stamp_ms": exact_stamp, "encoded_ms": ms(encoded), "forwarded_ms": ms(forwarded)})
     rtc = []
     for stamp in query.rtc_stamps_ms:
-        exact_stamp, encoded, forwarded, _ = follow("rtc", 0, stamp)
+        exact_stamp, encoded, forwarded, _ = follow("rtc", query.rtc_stream, stamp)
         rtc.append({"stamp_ms": exact_stamp, "encoded_ms": ms(encoded), "forwarded_ms": ms(forwarded)})
     return {"dash": dash, "moq": moq, "rtc": rtc}
 

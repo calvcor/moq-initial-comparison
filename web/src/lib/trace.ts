@@ -128,7 +128,7 @@ export class RtcTracer {
   #samples: (Sample & { receivedMs: number })[] = [];
   #timer: ReturnType<typeof setInterval>;
 
-  constructor(video: HTMLVideoElement, meter: GlassMeter, onResult: (breakdown: StageBreakdown | null) => void) {
+  constructor(video: HTMLVideoElement, meter: GlassMeter, getStream: () => number, onResult: (breakdown: StageBreakdown | null) => void) {
     // En WebRTC el navegador da, con cada frame presentado, la hora a la que recibió su último paquete
     let lastSample = 0;
     const onFrame = (now: number, metadata: VideoFrameCallbackMetadata) => {
@@ -149,7 +149,7 @@ export class RtcTracer {
     this.#timer = setInterval(async () => {
       const samples = this.#samples.splice(0);
       if (!samples.length) return onResult(null);
-      const answer = await askServer({ rtc_stamps_ms: samples.map((s) => s.stampMs) });
+      const answer = await askServer({ rtc_stream: getStream(), rtc_stamps_ms: samples.map((s) => s.stampMs) });
       if (this.#closed) return;
       const rows: Record<string, number>[] = [];
       samples.forEach((sample, i) => {

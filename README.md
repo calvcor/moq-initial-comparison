@@ -63,7 +63,7 @@ Fuera de `localhost` el navegador solo permite WebTransport y WebCodecs en pági
 1. En el servidor, crear un `.env` con el nombre por el que se accederá: `PUBLIC_HOST=testbed.ejemplo.org`. Se usa para el certificado autofirmado del relay.
 2. `docker compose up -d --build`.
 3. En el proxy, un único host que reenvíe `https://testbed.ejemplo.org` a `http://<servidor>:80`. No hace falta definir rutas.
-4. Los puertos **4433/udp** (MoQ) y **8189/udp** (WebRTC) del servidor deben ser alcanzables directamente desde los navegadores: no pasan por el proxy.
+4. Los puertos **4433/udp** (MoQ), **8189/udp** (WebRTC) y **8189/tcp** (señalización de mediasoup) del servidor deben ser alcanzables directamente desde los navegadores: no pasan por el proxy.
 5. Si el nombre público resuelve al proxy y no al servidor (lo habitual con un comodín DNS), añadir al `.env` la dirección directa del servidor para MoQ: `MOQ_HOST=10.0.0.5`. El relay usa un certificado autofirmado fijado por huella, así que vale una IP. La alternativa es que el proxy reenvíe el puerto 4433/udp como *stream*.
 
 6. **DASH directo (recomendado para medir).** Por defecto DASH pasa por el punto de entrada, que es un proxy: la conexión TCP del navegador termina en él y la emulación de red actúa sobre una segunda conexión interna, no sobre la del navegador. Para que DASH vaya extremo a extremo, como MoQ y WebRTC:
@@ -159,10 +159,11 @@ Las dos ramas reciben **el mismo bitstream H.264**: la fuente codifica una sola 
 | `testbed-orchestrator` | Python 3.12 + FastAPI + FFmpeg 7.1 + `moq` CLI 0.14.7 | ninguno | Fuente maestra, empaquetadores, origen LL-DASH en memoria y API de control |
 | `testbed-nginx-dash` | `nginx:alpine` | ninguno | Reenvía `/media/dash/` al origen con `proxy_buffering off` |
 | `testbed-moq-relay` | `moqdev/moq-relay:0.17.9` | ninguno | Relay MoQ con certificado autofirmado |
-| `testbed-mediamtx` | `bluenviron/mediamtx:1.21.3` | ninguno | Servidor WebRTC: recibe la calidad más alta por RTSP y la sirve por WHEP |
+| `testbed-sfu` | `sfu/` (mediasoup 3.32.1) | ninguno | Servidor WebRTC por defecto (`RTC_SERVER=mediasoup`): recibe todas las calidades por RTP y elige la capa de cada espectador (sección 3.4c) |
+| `testbed-mediamtx` | `bluenviron/mediamtx:1.21.3` | ninguno | Servidor WebRTC anterior (`RTC_SERVER=mediamtx`): recibe la calidad más alta por UDP o RTSP y la sirve por WHEP |
 | `testbed-web` | React 19 + Vite + Tailwind, servido por Nginx | ninguno | Dashboard, con cabeceras COOP/COEP para `SharedArrayBuffer` |
 
-Solo se publican tres puertos: **80/tcp** para todo el HTTP, y **4433/udp** (MoQ, QUIC) y **8189/udp** (WebRTC), a los que el navegador va directo. Los dos primeros se pueden cambiar con `HTTP_PORT` y `MOQ_PORT` en un fichero `.env`. `MOQ_HOST` sirve también como dirección que WebRTC anuncia al navegador.
+Solo se publican estos puertos: **80/tcp** para todo el HTTP, y **4433/udp** (MoQ, QUIC), **8189/udp** (WebRTC) y **8189/tcp** (señalización de mediasoup), a los que el navegador va directo. Los dos primeros se pueden cambiar con `HTTP_PORT` y `MOQ_PORT` en un fichero `.env`. `MOQ_HOST` sirve también como dirección que WebRTC anuncia al navegador.
 
 Los puertos UDP 5001 y 5002 son internos al contenedor del orquestador.
 
@@ -316,6 +317,68 @@ python3 tsgate.py 5003 rtc | ffmpeg -fflags nobuffer -analyzeduration 1000000 -i
   Antes de esta medida se había atribuido al audio una subida de 110-180 ms a partir de dos rondas que reconectaban todo en cada cambio; la variación entre sesiones era del mismo orden, así que aquella cifra no valía como medida del efecto. En el CSV, `rtc_audio`.
 - **El reproductor** es un `RTCPeerConnection` sobre un `<video>`, sin ajustes: el búfer de jitter lo decide el navegador. Un slider permite pedirle un búfer concreto (`jitterBufferTarget`); en "auto" no se pide nada.
 - **Métricas propias** de las estadísticas del navegador (`getStats`): bitrate, búfer de jitter y paquetes perdidos. No declara una latencia respecto al directo, así que esa tarjeta queda vacía.
+
+### 3.4c. Rama WebRTC con mediasoup (SFU), por defecto
+
+Desde el 2-11-2026 la rama WebRTC puede usar un SFU, mediasoup, en lugar de MediaMTX, para que tenga adaptación de calidad como las otras dos: recibe todas las calidades de la escalera y mediasoup elige cuál reenvía a cada espectador. La sección 3.4b sigue describiendo la rama con `RTC_SERVER=mediamtx`.
+
+```
+FFmpeg -> UDP 5003 -> tsgate -> FFmpeg (-c copy, una salida RTP por calidad) -> rtprelay.py (un socket) -> mediasoup -> router -> navegador
+```
+
+- **Sin recodificar y sin salida nueva en la fuente.** Lee el mismo UDP 5003 de siempre. La parte de RTP va en el proceso del empaquetador, no en la fuente maestra.
+- **Relay (`server/app/rtprelay.py`).** El muxer RTP de FFmpeg saca una pista por socket y mediasoup solo acepta un origen en su `PlainTransport` (comedia), así que el relay reenvía RTP y RTCP tal cual por un socket. Los Sender Reports son imprescindibles: sin ellos mediasoup no cambia de capa.
+- **Aplicación (`sfu/server.mjs`).** mediasoup es una biblioteca, así que hay una aplicación mínima y propia: ingesta (`/ingest`, solo red interna) y señalización de espectadores por WebSocket, directa al SFU por el router en **8189/tcp** (sin pasar por el proxy de la página, como la aplicación del paper). La sesión vive lo que esa conexión: si la página se recarga, se desmonta el reproductor o Chrome muere, el SFU la cierra en el momento (medido el 3-11-2026 en local: nunca hay dos sesiones al recargar, y al matar Chrome el tráfico de WebRTC cae a cero en menos de 1,2 s; antes, con peticiones HTTP sueltas a `/sfu/sessions`, la sesión vieja seguía enviando ~29 s). En una página HTTPS va por `wss://` con el certificado de `DASH_HOST` (el de DASH directo, montado en el SFU); en HTTP, por `ws://` a `MOQ_HOST` o a la dirección de la página (`rtc_signal_port` y `rtc_tls_host` en `/api/status`). La señalización, incluida la consulta de la capa y la estimación cada 2 s, cruza la cola de WebRTC del router y sufre su perfil, como el vídeo. No fija capas preferidas ni límites, ni `initialAvailableOutgoingBitrate`: la decisión es de mediasoup, con sus valores por defecto. Un worker y un solo puerto UDP (8189, `WebRtcServer`), de modo que el router y sus colas no cambian. El diagnóstico está en `GET http://172.30.50.13:8890/health` desde la red interna, y los cambios de capa, en `docker logs testbed-sfu`.
+- **Reproductor.** `mediasoup-client` en lugar de WHEP (`web/src/lib/rtcSession.ts`); el resto del medidor es el mismo. La calidad no se puede fijar a mano.
+
+**Volver a MediaMTX.** Los dos servidores están siempre levantados; solo cambia a cuál van el UDP 8189 y el reproductor. No hace falta reconstruir nada:
+
+```bash
+echo 'RTC_SERVER=mediamtx' >> .env
+docker compose up -d --no-build --no-deps router orchestrator
+```
+
+Para regresar a mediasoup, se quita esa línea y se repite el segundo comando. Recrear el orquestador pierde la configuración de la emisión (se restaura con `POST /api/config`). Comprobado el 2-11-2026 en local: `GET /api/status` da `rtc_server` y el DNAT del router cambia entre 172.30.50.12 y 172.30.50.13.
+
+**Medido el 2-11-2026 en local** (Mac, Chrome headless, solo WebRTC, un navegador por pasada, sin audio):
+
+| Prueba | Resultado |
+| :--- | :--- |
+| Una calidad (1080p, 4 Mbit/s), sin límite de red, alternando, mediana de los últimos ~36 s de cada pasada de 50 s | MediaMTX 48 y 50 ms; mediasoup 60 y 72 ms: **12-22 ms más** |
+| Escalera 1080p/720p/360p, sin límite | 1080p, 60 fps, ~66 ms. Estimación 8-11 Mbit/s |
+| Bajar a 6 Mbit/s con 1080p en curso | Baja de capa en 2-5 s (a 720p una pasada, a 360p otra), con pérdidas: 228 paquetes en la bajada, 19 NACK y 7 PLI |
+| Quitar el límite tras bajar | Sube muy despacio. Desde 720p: estimación de 2,8 a 4,4 Mbit/s en ~45 s, sin llegar a 1080p. Desde 360p: seguía en 360p tras ~100 s, con la estimación en ~1,6 Mbit/s |
+| 3 Mbit/s y 1,5 Mbit/s | Queda en 360p con estimación de ~1,2 Mbit/s, aunque 720p cabría a 3 Mbit/s. **Si la estimación baja del bitrate de la capa inferior, mediasoup deja de enviar vídeo** (`capa: ninguna` en su registro): congelado, hasta que el vigía del reproductor recrea la conexión a los ~11 s |
+| Con audio (`rtc_audio`) | Dos pistas; latencia de ~98 ms en una pasada, sin comparar con MediaMTX |
+
+Son pasadas sueltas y en local: orientan, pero hace falta una campaña para dar las cifras por buenas, y repetirlo en el servidor. La entrada estaba sana en todas (puntuación de las tres capas 10, sin pérdidas en la ingesta), así que lo lento de la subida y los cortes parecen del estimador de mediasoup, sobre el vídeo tal como le llega, aunque esa atribución es una deducción. No se ha ajustado nada (principio de medida 1). Es deducción, no medida, que la bajada venga de las ráfagas: FFmpeg no reparte en el tiempo las keyframes de 1080p, mediasoup las reenvía sin ritmo y una de ~100 kB no cabe en una cola de 100 ms a 6 Mbit/s (75 kB).
+
+**Campaña local del 2-11-2026** (Mac; solo WebRTC, tres rondas alternando el servidor; escalera 1080p@4000, 720p@2000 y 360p@700; 15 s de calentamiento y 40 s de medida; cola de 100 ms; objetivo auto). Las 36 pruebas fueron válidas, sin anomalías de ingesta ni reinicios del supervisor. Valores de las tres rondas:
+
+| Red | mediasoup: mediana G2G (ms) | mediasoup: parado | mediasoup: calidad | MediaMTX: mediana G2G (ms) | MediaMTX: parado |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Sin límite | 67, 69, 71 | 0 % | 1080p | 60, 53, 56 | 0 % |
+| RTT 50 ms, 1 % de pérdida | 96, 85, 95 | 0,9, 0,5 y 0 % | 1080p | 66, 76, 67 | 2,9, 10 y 18,5 % |
+| 8 Mbit/s | 124, 121, 109 | 0, 21 y 0 % | 360p en dos rondas; 720-1080p en otra | 85, 81, 78 | 36, 15 y 27 % |
+| 5 Mbit/s | 109, 96, 116 | 0 % | 360p | 92, 101, 107 | 71, 70 y 44 % |
+| 3 Mbit/s | 101, 94, 105 | 59, 20 y 3 % | 360p | sin imagen | 97,5 % |
+| 1,5 Mbit/s | 105, 131, 96 (5-6 muestras) | 90-92 % | 360p | sin imagen | 97,5 % |
+
+Con los dos servidores, parado incluye los reinicios del vigía del reproductor (hasta dos por prueba a 3 y 1,5 Mbit/s), que le dan una sesión nueva: parte de la recuperación es del banco, no de mediasoup ni de MediaMTX. A 8 Mbit/s MediaMTX pierde paquetes y se para con una media de unos 4,9 Mbit/s de IP, por debajo de la capacidad: eso sí es una medida de que las ráfagas no caben en la cola de 100 ms. Que sean la causa de que mediasoup caiga a 360p sigue siendo una deducción. Con los tres reproductores a la vez, una prueba por red y mediasoup, no hubo problemas de integración. En ella DASH quedó en ~8,2 s porque el objetivo era auto, así que no sirve para comparar latencia.
+
+**Variables de confusión de esta variante:**
+
+- La aplicación es propia, aunque la decisión de capa sea de mediasoup, y la ingesta es RTP y no WHIP, que sería lo normal con un SFU.
+- Nadie atiende las peticiones de keyframe (mediasoup las envía; el relay las descarta): cada cambio de capa y cada recuperación esperan al siguiente IDR, hasta 1 s con el GOP por defecto. Con Chrome como publicador no pasaría.
+- Leer el MPEG-TS con FFmpeg retiene más frames que MediaMTX (PROTOCOLOS, 6.4): es parte de los 12-22 ms de arriba y no se puede separar del servidor sin instrumentarlo.
+- Las keyframes llegan a la vez en todas las calidades y sin ritmo de envío, porque la fuente es de emisión.
+- Las medidas con mediasoup no se mezclan con las anteriores: el CSV lo registra en `rtc_server`.
+
+**Otras pruebas en local del 2-11-2026.** Una sesión de 4 min a 8 Mbit/s con cola de 100 ms no converge: 21 cambios de calidad y 360p en los últimos 2 min, y la estimación se queda en 1,7-3,4 Mbit/s. Con una cola de 500 ms mejora (1080p o 720p casi todo el tiempo y sin descartes), pero sigue oscilando (19-37 cambios en 80 s, dos pasadas): la cola explica parte, no todo. Con el enlace libre, tres espectadores a la vez: 1080p, 60 fps, 51-57 ms y 3 % de CPU en el SFU. Una grabación de QoE con una bajada a 3 Mbit/s registra los frames de cada capa (715, 95 y 821), con el VMAF aún en cola: la QoE no llegó a calcularse. La etapa de codificación es de ~5 ms en 1080p y ~21 ms en las calidades inferiores, en las tres ramas: viene de la fuente y no de mediasoup, pero una capa baja llega unos 15 ms más tarde.
+
+**Por qué infraestima** (investigado el 2-11-2026, `FINDINGS/mediasoup-infraestimacion.md`). Hay dos causas: tras una pérdida, su controlador por pérdidas solo deja subir la estimación hasta 1,5 × lo confirmado, y con 360p lo confirmado es bajo, así que no sale de ahí; y, aun sin pérdidas, las ráfagas de keyframes parecen provocar sobreuso en su estimador por retardo. `SFU_TRACE=1` en el `.env` deja la estimación y los sondeos en `docker logs testbed-sfu`. Es un comportamiento observado y no se ha ajustado nada.
+
+No se ha probado todavía en el servidor ni con la cámara como fuente.
 
 ### 3.4. Rama MoQ
 
@@ -675,7 +738,7 @@ El router (`router/agent.py`) reenvía los puertos del navegador con DNAT, sin t
 | Retardo (ms) | Sí | El RTT es la suma de bajada y subida |
 | Jitter (ms) | Sí | No puede superar el retardo. **Desordena los paquetes, y mucho** (ver abajo) |
 | Pérdida (%) | Sí | Aleatoria e independiente por paquete |
-| Cola (ms) | Sí | Búfer del cuello de botella; solo actúa con ancho de banda limitado |
+| Cola (ms) | Sí | Búfer del cuello de botella; solo actúa con ancho de banda limitado. Por defecto 300 ms, la de RFC 8867 (antes del 3-11-2026, 100 ms) |
 
 - **Un enlace idéntico por protocolo.** DASH y MoQ tienen cada uno su propia cola con el mismo perfil, así que no compiten entre sí: limitar a 5 Mbit significa 5 Mbit para cada uno.
 - **Los dos sentidos.** Bajada es servidor → navegador y subida es navegador → servidor.
@@ -688,6 +751,7 @@ Limitaciones:
 
 - **En macOS, el extremo TCP del cliente es el proxy de Docker Desktop**, no el navegador. Para DASH la conexión degradada es proxy–Nginx; el control de congestión del servidor sí es el real. QUIC no se ve afectado. En un host Linux no ocurre.
 - **La cola se dimensiona en paquetes** suponiendo paquetes de 1500 bytes, así que su duración real es aproximada.
+- **Cola por defecto de 300 ms desde el 3-11-2026** (antes, 100 ms), en el panel, en la API, en el barrido de las campañas y al restaurar la red. Es la de RFC 8867, la que usan las pruebas de control de congestión de IETF RMCAT. Con 100 ms, las keyframes que WebRTC reenvía de golpe la desbordaban: a 8 Mbit/s, MediaMTX perdía el 12,5 % de los paquetes y mediasoup el 3,4 %, frente al 0,26 % de MoQ y el 0,03 % de DASH (`FINDINGS/mediasoup-infraestimacion.md`). Las medidas anteriores con límite de caudal se hicieron con 100 ms salvo que digan otra cosa; el CSV registra la cola en `net_down_queue_ms` y `net_up_queue_ms`. Los perfiles Móvil y Enlace saturado siguen con su propia cola de 200 ms.
 - **La tabla siguiente es anterior a la escalera de calidades**: se midió con una única calidad y sin tope de tasa en la fuente.
 
 **El jitter de netem desordena los paquetes, y eso hunde a MoQ (medido el 21-10-2026, en local).** netem da a cada paquete un retardo aleatorio propio (uniforme en ±jitter, correlación 25 %) y los entrega por orden de salida, así que dos paquetes que salen juntos pueden llegar con hasta 2×jitter de diferencia y en orden inverso. Con un flujo de prueba numerado por la cola de bajada de MoQ (ráfagas de 6 paquetes cada 16,7 ms):
@@ -953,7 +1017,8 @@ Desde el panel de control:
 | Calidad (por reproductor) | Auto o una calidad fija | Auto usa la adaptación de cada reproductor; fijar una la desactiva |
 | Reproductores activos | Cualquier combinación de LL-DASH, MoQ y WebRTC, con al menos uno | Un reproductor apagado se desmonta: cierra su conexión y no descarga nada, así que no compite con los demás por la red ni por el navegador. Se recuerda en el navegador; cada cambio abre un tramo de medida nuevo. En el CSV, `players` lista los activos y las métricas de los apagados quedan vacías |
 | Sonido | Ninguno (al abrir), LL-DASH, MoQ o WebRTC: uno a la vez | Quita el silencio a ese reproductor. En DASH y WebRTC el audio ya se descargaba; **en MoQ no**: `@moq/watch` solo se suscribe a la pista de audio con el sonido activado. Efecto medido el 22-10-2026 con la cámara a 15 fps, alternando con "Ninguno" (cinco ventanas de 45-90 s por rama): en WebRTC y DASH, ninguno visible (WebRTC 331-430 ms con sonido frente a 344-451 sin él; DASH varía más que cualquier diferencia, 523-847 frente a 509-852); en MoQ, igual en tres ventanas (85-91 ms frente a 83-89) y más alto en dos (127 y 157 ms). En headless no hay altavoz: el navegador reproduce hacia una salida nula. En el CSV, `audio` |
-| Ingesta de WebRTC | `udp` (por defecto) o `rtsp` | `RTC_INGEST` en el `.env`: MediaMTX lee el MPEG-TS por UDP, o un FFmpeg lo publica por RTSP (versión anterior). No es un control del panel: cambiarlo recrea el orquestador (sección 3.4b). En el CSV, `rtc_ingest` |
+| Servidor de WebRTC | `mediasoup` (por defecto) o `mediamtx` | `RTC_SERVER` en el `.env`: SFU con la capa elegida por mediasoup, o una sola calidad sin adaptación (versión anterior). No es un control del panel: cambiarlo recrea el router y el orquestador (sección 3.4c). En el CSV, `rtc_server`, y con mediasoup, `rtc_rendition_kbps`, `rtc_quality_switches`, `rtc_bw_estimate_kbps` y `rtc_quality_mode` |
+| Ingesta de WebRTC (solo con MediaMTX) | `udp` (por defecto) o `rtsp` | `RTC_INGEST` en el `.env`: MediaMTX lee el MPEG-TS por UDP, o un FFmpeg lo publica por RTSP (versión anterior). No es un control del panel: cambiarlo recrea el orquestador (sección 3.4b). En el CSV, `rtc_ingest` |
 | Audio en WebRTC | Desactivado (por defecto) o activado | El Opus de la fuente, sin recodificar. Sube la latencia de WebRTC hasta el búfer del audio: poco con el bucle, 100-200 ms con la cámara (sección 3.4b). En el CSV, `rtc_audio` |
 | Pantalla completa (por reproductor) | Botón arriba a la derecha del vídeo (aparece al pasar el ratón) o doble clic; Esc para salir | Amplía la zona de vídeo, con sus avisos. Solo escala la imagen: el timecode se lee del frame decodificado y el reproductor de MoQ sigue dibujando aunque su canvas quede tapado (`visible: 'always'`). Los otros reproductores siguen midiendo detrás (comprobado en Chrome headless el 22-10-2026). En el CSV, `fullscreen` dice cuál está a pantalla completa |
 | Segmento DASH | 0,5, 1, 2, 4 s | `-seg_duration`; debe ser ≥ GOP |
@@ -976,7 +1041,7 @@ El reproductor de dash.js queda accesible como `window.dashPlayer` en la consola
 
 | Método y ruta | Descripción |
 | :--- | :--- |
-| `GET /api/status` | Estado, configuración, `stream_ids`, reinicios del supervisor, disposición del timecode, anomalías de ingesta, deriva DASH, retraso de la fuente en los últimos 2 s (`source_lag_ms`), red (perfil y contadores del router) , campaña en marcha (`campaign`) y vista previa abierta (`campaign_preview`) |
+| `GET /api/status` | Estado, configuración, descarga de cada vídeo fuente (`sources`; `source` es la de Big Buck Bunny), `stream_ids`, reinicios del supervisor, disposición del timecode, anomalías de ingesta, deriva DASH, retraso de la fuente en los últimos 2 s (`source_lag_ms`), red (perfil y contadores del router) , campaña en marcha (`campaign`) y vista previa abierta (`campaign_preview`) |
 | `POST /api/start` | Arranca los empaquetadores (cuerpo opcional: configuración) |
 | `POST /api/stop` | Detiene todo, incluida la codificación de la fuente. La parada se recuerda entre reinicios: no vuelve a emitir hasta `POST /api/start` |
 | `POST /api/config` | Aplica una configuración y reinicia lo necesario. La escalera va en `renditions: [{height, bitrate_kbps}]`; se sigue aceptando `bitrate_kbps` para una única calidad 1080p. `source`: `file` (bucle, por defecto) o `camera`; con la cámara, `fps` lo fija el servidor y, si no la alcanza, responde 502 con el motivo. `rtc_audio`: audio en la rama WebRTC (por defecto, no) |

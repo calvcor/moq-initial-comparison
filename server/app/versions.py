@@ -36,6 +36,7 @@ installed = {
     "moq_cli": (open("/usr/local/share/moq-cli-build").read().strip() if os.path.exists("/usr/local/share/moq-cli-build") else "")
     or run_version(["moq", "--version"], r"moq (\S+)"),
     "mediamtx": os.getenv("MEDIAMTX_VERSION") or None,
+    "mediasoup": os.getenv("MEDIASOUP_VERSION") or None,
     "ffmpeg": run_version(["ffmpeg", "-version"], r"ffmpeg version (\d+(?:\.\d+)+)"),
 }
 
@@ -66,6 +67,8 @@ SOURCES = {
     "moq_relay": lambda: docker_hub("moqdev/moq-relay"),
     "moq_cli": lambda: github_release("moq-dev/moq", "moq-cli-v"),
     "mediamtx": lambda: docker_hub("bluenviron/mediamtx"),
+    "mediasoup": lambda: npm("mediasoup"),
+    "mediasoup_client": lambda: npm("mediasoup-client"),
     # Los reproductores se empaquetan con el dashboard: su versión instalada la conoce el propio dashboard
     "moq_watch": lambda: npm("@moq/watch"),
     # Dependencias de @moq/watch con la parte de red y el catálogo: pueden cambiar sin que cambie @moq/watch

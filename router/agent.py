@@ -6,7 +6,8 @@ finales y degrada ese tráfico con tc en los dos sentidos:
     navegador -> :8443/tcp -> nginx-dash:443     (LL-DASH directo, con TLS)
     punto de entrada -> :8080/tcp -> nginx-dash:80   (LL-DASH a través del proxy, sin DASH_HOST)
     navegador -> :4433/udp -> moq-relay:4433     (MoQ sobre QUIC)
-    navegador -> :8189/udp -> mediamtx:8189      (WebRTC: ICE, DTLS y SRTP)
+    navegador -> :8189/udp -> sfu o mediamtx:8189 (WebRTC: ICE, DTLS y SRTP; el servidor lo elige RTC_SERVER)
+    navegador -> :8189/tcp -> sfu:8189           (señalización WebSocket de mediasoup; va en la cola de WebRTC)
 
 La ingesta (orquestador -> nginx / relay) va por la red interna sin pasar por aquí, así que la emulación
 solo afecta al tramo servidor-cliente y lo hace igual para las dos ramas.
@@ -21,7 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 NGINX_IP = os.environ["NGINX_IP"]
 RELAY_IP = os.environ["RELAY_IP"]
-RTC_IP = os.environ["RTC_IP"]
+SFU_IP = os.environ["SFU_IP"]
+RTC_IP = os.environ["MEDIAMTX_IP"] if os.environ.get("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else os.environ["SFU_IP"]
 DASH_PORT, DASH_TLS_PORT, MOQ_PORT, CERT_PORT, RTC_PORT = 8080, 8443, 4433, 8081, 8189
 
 # Cada protocolo tiene su propia cola por sentido, con el mismo perfil: los dos ven un enlace idéntico
@@ -35,7 +37,7 @@ QUEUES = {
     "rtc_up": ("1:6", "60", "600"),
 }
 DIRECTIONS = ("down", "up")
-EMPTY = {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 100}
+EMPTY = {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 300}
 MTU_BITS = 1500 * 8
 
 profile = {name: dict(EMPTY) for name in DIRECTIONS}
@@ -63,6 +65,7 @@ def setup():
         ("udp", MOQ_PORT, RELAY_IP, MOQ_PORT),
         ("tcp", CERT_PORT, RELAY_IP, CERT_PORT),
         ("udp", RTC_PORT, RTC_IP, RTC_PORT),
+        ("tcp", RTC_PORT, SFU_IP, RTC_PORT),
     ):
         run(f"iptables -t nat -A PREROUTING -p {proto} --dport {port} -j DNAT --to-destination {dest_ip}:{dest_port}")
     run("iptables -t nat -A POSTROUTING -m conntrack --ctstate DNAT -j MASQUERADE")
@@ -75,6 +78,8 @@ def setup():
         ("moq_up", f"-d {RELAY_IP} -p udp --dport {MOQ_PORT}"),
         ("rtc_down", f"-s {RTC_IP} -p udp --sport {RTC_PORT}"),
         ("rtc_up", f"-d {RTC_IP} -p udp --dport {RTC_PORT}"),
+        ("rtc_down", f"-s {SFU_IP} -p tcp --sport {RTC_PORT}"),
+        ("rtc_up", f"-d {SFU_IP} -p tcp --dport {RTC_PORT}"),
     ):
         run(f"iptables -A FORWARD {rule} -m comment --comment {name}")
 
@@ -95,6 +100,8 @@ def setup():
             run(f"{u32} match ip protocol 17 0xff match ip dst {RELAY_IP}/32 match ip dport {MOQ_PORT} 0xffff flowid {QUEUES['moq_up'][0]}")
             run(f"{u32} match ip protocol 17 0xff match ip sport {RTC_PORT} 0xffff flowid {QUEUES['rtc_down'][0]}")
             run(f"{u32} match ip protocol 17 0xff match ip dst {RTC_IP}/32 match ip dport {RTC_PORT} 0xffff flowid {QUEUES['rtc_up'][0]}")
+            run(f"{u32} match ip protocol 6 0xff match ip sport {RTC_PORT} 0xffff flowid {QUEUES['rtc_down'][0]}")
+            run(f"{u32} match ip protocol 6 0xff match ip dst {SFU_IP}/32 match ip dport {RTC_PORT} 0xffff flowid {QUEUES['rtc_up'][0]}")
     except RuntimeError as e:
         emulation_error = str(e)
         for dev in interfaces():

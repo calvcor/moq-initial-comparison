@@ -9,6 +9,8 @@ const COMPONENTS: { key: string; name: string; where: string }[] = [
   { key: 'moq_net', name: '@moq/net', where: 'dependencia de @moq/watch, fijada en web/package-lock.json' },
   { key: 'moq_hang', name: '@moq/hang', where: 'dependencia de @moq/watch, fijada en web/package-lock.json' },
   { key: 'dashjs', name: 'dash.js', where: 'web/package.json' },
+  { key: 'mediasoup', name: 'mediasoup', where: 'sfu/package.json' },
+  { key: 'mediasoup_client', name: 'mediasoup-client', where: 'web/package.json' },
   { key: 'mediamtx', name: 'MediaMTX', where: 'docker-compose.yml (MEDIAMTX_VERSION)' },
   { key: 'ffmpeg', name: 'FFmpeg', where: 'paquete de Debian de la imagen del orquestador' },
 ];
