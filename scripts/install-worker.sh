@@ -82,12 +82,17 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
-step "Paquetes base"
-as_root apt-get update -q
-as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl ca-certificates gnupg fonts-liberation fonts-dejavu-core
+node_ok() { node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2> /dev/null; }
+# Los paquetes base solo hacen falta para instalar Node o Chrome: si ya están, ni apt ni sudo (al actualizar un
+# trabajador con --desktop no pide contraseña)
+if ! node_ok || ! command -v google-chrome > /dev/null; then
+  step "Paquetes base"
+  as_root apt-get update -q
+  as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -q curl ca-certificates gnupg fonts-liberation fonts-dejavu-core
+fi
 
 step "Node 22"
-if node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2> /dev/null; then
+if node_ok; then
   echo "Ya está: $(node --version)"
 else
   curl -fsSL https://deb.nodesource.com/setup_22.x | as_root bash -
@@ -107,7 +112,8 @@ else
 fi
 # Como el resto del banco, sin actualizaciones solas (CLAUDE.md, versiones de terceros): el panel de trabajadores
 # muestra la versión de cada uno. Para actualizarlo: apt-mark unhold google-chrome-stable && apt-get install ...
-as_root apt-mark hold google-chrome-stable > /dev/null
+# (solo si no lo está ya, para no pedir sudo al actualizar)
+apt-mark showhold 2> /dev/null | grep -qx google-chrome-stable || as_root apt-mark hold google-chrome-stable > /dev/null
 CHROME=$(command -v google-chrome)
 
 if [ "$WITH_DISPLAY" = 1 ]; then
