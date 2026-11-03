@@ -390,7 +390,11 @@ export function App() {
                 </h1>
                 <p className="text-xs text-slate-400">
                   Doctorado en Streaming de Vídeo de Baja Latencia |{' '}
-                  {serverStatus?.config.source === 'camera' ? `Cámara RTSP a ${serverStatus.config.fps} fps` : 'Big Buck Bunny 1080p60'}
+                  {serverStatus?.config.source === 'camera'
+                    ? `Cámara RTSP a ${serverStatus.config.fps} fps`
+                    : serverStatus?.config.source === 'tos'
+                      ? 'Tears of Steel 1080p24'
+                      : 'Big Buck Bunny 1080p60'}
                 </p>
               </div>
             </div>

@@ -42,7 +42,7 @@ Este documento explica, de extremo a extremo, cómo viaja el vídeo en cada una 
 
 ## 1. Lo que comparten las tres ramas
 
-Las tres ramas reciben **exactamente el mismo vídeo codificado**. Hay un único proceso FFmpeg (la "fuente maestra") que lee Big Buck Bunny a ritmo real, quema el timecode y la etiqueta de calidad, codifica con x264 y reparte el resultado por tres puertos UDP locales. A partir de ahí nadie vuelve a codificar: cada rama solo **reempaqueta** los mismos bytes H.264 en su propio formato.
+Las tres ramas reciben **exactamente el mismo vídeo codificado**. Hay un único proceso FFmpeg (la "fuente maestra") que lee Big Buck Bunny (o Tears of Steel, a 24 fps, o la cámara; README, 3.1a y 3.1b) a ritmo real, quema el timecode y la etiqueta de calidad, codifica con x264 y reparte el resultado por tres puertos UDP locales. A partir de ahí nadie vuelve a codificar: cada rama solo **reempaqueta** los mismos bytes H.264 en su propio formato.
 
 ```
                           ┌─ UDP 5001 ─ tsgate ─ ffmpeg (-f dash) ─ PUT ─▶ origen en memoria ─▶ nginx ─▶ router ─▶ navegador (dash.js)

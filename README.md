@@ -26,7 +26,7 @@ cd moq-dash-initial-comparison
 docker compose up -d --build
 ```
 
-El vídeo fuente (Big Buck Bunny 1080p60, 355 MB) no va en el repositorio. La primera vez el orquestador lo descarga de [download.blender.org](https://download.blender.org/demo/movies/BBB/) y lo descomprime en `media/`; el panel muestra el progreso y la emisión arranca sola al terminar. En arranques posteriores se reutiliza. Para usar una copia que ya tengas, déjala en `media/bbb_sunflower_1080p_60fps_normal.mp4` antes de arrancar.
+Los vídeos fuente (Big Buck Bunny 1080p60, 355 MB, y Tears of Steel 1080p, 584 MB; sección 3.1a) no van en el repositorio. La primera vez el orquestador los descarga de [download.blender.org](https://download.blender.org/demo/movies/) y los descomprime en `media/`, uno detrás de otro y antes de arrancar la emisión, para que la descarga no coincida con una medida; el panel muestra el progreso y la emisión arranca sola al terminar. En arranques posteriores se reutilizan. Si falla la descarga de Big Buck Bunny se reintenta cada 30 s; si falla la de Tears of Steel, la emisión arranca igual y se vuelve a intentar al elegirlo como fuente. Para usar copias que ya tengas, déjalas en `media/bbb_sunflower_1080p_60fps_normal.mp4` y `media/tears_of_steel_1080p.mov` antes de arrancar (las rutas y direcciones se cambian con `VIDEO_FILE`, `VIDEO_URL`, `TOS_VIDEO_FILE` y `TOS_VIDEO_URL`).
 
 Abrir <http://localhost> en Chrome o Edge (hace falta WebTransport y WebCodecs). La emisión arranca sola.
 
@@ -102,7 +102,7 @@ La emulación de red necesita en el kernel los módulos `sch_prio`, `sch_tbf`, `
 ```
                     ┌──────────────────────────────────────────────┐
                     │  Fuente maestra (FFmpeg, x264 zerolatency)   │
-                    │  Big Buck Bunny 1080p60 en bucle o cámara    │
+                    │  BBB 1080p60 o ToS 1080p24 en bucle, cámara  │
                     │  + reloj de texto + timecode binario quemado │
                     └────────────┬───────────────────┬─────────────┘
                      MPEG-TS/UDP │ :5001             │ :5002  MPEG-TS/UDP
@@ -204,13 +204,25 @@ ffmpeg -re -stream_loop -1 -i <vídeo> -re -stream_loop -1 -i <vídeo> \
   | Opus | 5,2-5,3 / 6,7-7,6 ms | 47-66 ms | 64-66 ms | 347-350 ms |
 
   Un frame Opus dura 20 ms y uno AAC 21,3 ms. Las medidas anteriores a ese día se hicieron con AAC; los ejemplos de MPD y de catálogo de los anexos de `PROTOCOLOS.md` también.
-- **Escalera de calidades**: la fuente codifica en vivo de 1 a 5 calidades (por defecto 1080p@4000, 720p@2000 y 360p@700 kbps), todas a 60 fps y con el mismo GOP para que sus keyframes coincidan. Viajan como varios vídeos de un mismo MPEG-TS.
+- **Escalera de calidades**: la fuente codifica en vivo de 1 a 5 calidades (por defecto 1080p@4000, 720p@2000 y 360p@700 kbps), todas a la cadencia de la fuente (60 fps con Big Buck Bunny) y con el mismo GOP para que sus keyframes coincidan. Viajan como varios vídeos de un mismo MPEG-TS.
 - **Tope de tasa**: cada calidad lleva `-maxrate` al 120 % y un VBV de 1 s, para que el bitrate nominal sea una referencia fiable para la adaptación y la emulación de red.
 - **Etiqueta de calidad**: cada calidad lleva quemado arriba a la derecha su nombre (`720p 2000 kbps`), para ver de un vistazo cuál se reproduce.
 - **Timecode binario**: se quema en cada calidad después de escalarla. Ver sección 4.
 - **Cuatro salidas**: UDP 5001 (DASH), 5002 (MoQ), 5003 (WebRTC) y 5004, que solo se escucha mientras se graba una prueba de QoE (sección 4.7). Sin nadie escuchando, los paquetes de 5004 se descartan en el kernel. Con la cámara como fuente hay una quinta, 5005, con la referencia para el VMAF (sección 3.1b).
 
 Cambiar el GOP, la escalera o la fuente reinicia la fuente; cambiar segmento o fragmento solo reinicia los empaquetadores. **Detener Pipeline** para también la fuente, que es la que consume CPU, y el servidor queda en reposo; la parada se conserva aunque se reinicie el contenedor o la máquina.
+
+### 3.1a. Segundo vídeo: Tears of Steel
+
+Además de Big Buck Bunny, la fuente puede emitir en bucle *Tears of Steel* (`source: "tos"` en `POST /api/config`, "Tears of Steel en bucle" en el panel y en el editor de campañas): un corto de imagen real con efectos por ordenador, con más grano, movimiento de cámara y cambios de plano que una animación. Se descarga de la web de Blender, `tears_of_steel_1080p.mov.zip` (H.264 Main 1920x800 a 24 fps, MP3 estéreo a 44,1 kHz, 734 s). La página de descargas de la película enlaza un MKV 1080p en espejos que ya no responden (el de Italia no resuelve y los demás dan 404, comprobado el 3-11-2026); el MOV es el mismo vídeo.
+
+Se trata igual que Big Buck Bunny (dos entradas del mismo fichero, `-re`, `setpts=N`), con tres diferencias:
+
+- **Se emite a 24 fps, su cadencia.** No se convierte a 60: duplicaría frames (que x264 codifica casi gratis, así que el contenido sería más fácil de lo que parece) y el frame n emitido dejaría de ser el n del original, que es lo que usa el VMAF (sección 4.7). El servidor fija `fps` a 24 con esta fuente, como con la cámara, y el panel conserva la duración del GOP en segundos al cambiar de fuente (60 frames a 60 fps pasan a 24 a 24 fps).
+- **Bandas negras hasta 1920x1080** (`pad`, sin escalar), antes del reloj y del timecode, como con la cámara. El reloj de texto cae en la banda de arriba. Las bandas entran en el VMAF y en el PSNR igual que el resto de la imagen: el original se compara con las mismas bandas añadidas.
+- **El audio se remuestrea a 48 kHz** (`aresample=48000`) antes del Opus, que no admite 44,1 kHz.
+
+Variables de confusión al comparar con Big Buck Bunny (deducidas del cambio, no medidas todavía): cambian a la vez el contenido y la cadencia. A 24 fps cada frame dura 41,7 ms, así que la latencia se mide con esa resolución y un fragmento CMAF de "1 frame" dura 41,7 ms; cada frame tiene 2,5 veces más bits con el mismo bitrate; el mismo GOP en frames dura 2,5 veces más, y la etapa de entrada de cada rama, que retiene 1-3 frames (PROTOCOLOS, 6.4), retiene 2,5 veces más tiempo; el umbral de parón del medidor (150 ms sin imagen nueva) equivale a 3,6 frames en vez de 9. En el CSV, `source` es `tos` y `fps` es 24.
 
 ### 3.1b. Fuente alternativa: cámara RTSP
 
@@ -1011,7 +1023,7 @@ Desde el panel de control:
 
 | Parámetro | Valores | Efecto |
 | :--- | :--- | :--- |
-| Fuente | Big Buck Bunny en bucle o cámara RTSP (sección 3.1b) | Con la cámara, los fps los fija el servidor (los de la cámara) y hay una salida de referencia para el VMAF. En el CSV, `source` y `fps` |
+| Fuente | Big Buck Bunny en bucle, Tears of Steel en bucle (sección 3.1a) o cámara RTSP (sección 3.1b) | Con un vídeo, los fps son los suyos (60 o 24); con la cámara, los fija el servidor (los de la cámara) y hay una salida de referencia para el VMAF. En el CSV, `source` (`file`, `tos` o `camera`) y `fps` |
 | GOP | 0,25, 0,5, 1 o 2 s, en frames de la cadencia en curso (15 a 120 frames a 60 fps) | Tamaño del grupo MoQ y límite inferior del segmento DASH |
 | Escalera de calidades | 1 a 5; altura 1080/720/540/480/360/240 y bitrate libre | Lo que codifica la fuente. Con una sola no hay adaptación |
 | Calidad (por reproductor) | Auto o una calidad fija | Auto usa la adaptación de cada reproductor; fijar una la desactiva |
@@ -1044,7 +1056,7 @@ El reproductor de dash.js queda accesible como `window.dashPlayer` en la consola
 | `GET /api/status` | Estado, configuración, descarga de cada vídeo fuente (`sources`; `source` es la de Big Buck Bunny), `stream_ids`, reinicios del supervisor, disposición del timecode, anomalías de ingesta, deriva DASH, retraso de la fuente en los últimos 2 s (`source_lag_ms`), red (perfil y contadores del router) , campaña en marcha (`campaign`) y vista previa abierta (`campaign_preview`) |
 | `POST /api/start` | Arranca los empaquetadores (cuerpo opcional: configuración) |
 | `POST /api/stop` | Detiene todo, incluida la codificación de la fuente. La parada se recuerda entre reinicios: no vuelve a emitir hasta `POST /api/start` |
-| `POST /api/config` | Aplica una configuración y reinicia lo necesario. La escalera va en `renditions: [{height, bitrate_kbps}]`; se sigue aceptando `bitrate_kbps` para una única calidad 1080p. `source`: `file` (bucle, por defecto) o `camera`; con la cámara, `fps` lo fija el servidor y, si no la alcanza, responde 502 con el motivo. `rtc_audio`: audio en la rama WebRTC (por defecto, no) |
+| `POST /api/config` | Aplica una configuración y reinicia lo necesario. La escalera va en `renditions: [{height, bitrate_kbps}]`; se sigue aceptando `bitrate_kbps` para una única calidad 1080p. `source`: `file` (Big Buck Bunny en bucle, por defecto), `tos` (Tears of Steel en bucle, a 24 fps; 409 si aún no está descargado) o `camera`; con la cámara, `fps` lo fija el servidor y, si no la alcanza, responde 502 con el motivo. `rtc_audio`: audio en la rama WebRTC (por defecto, no) |
 | `GET /api/camera` | Sondea la cámara: host (sin credenciales), códec, resolución, fps, audio y último error. Con la cámara emitiendo, devuelve lo último que se supo sin abrir otra sesión |
 | `POST /api/network` | Aplica un perfil de red (`down` y `up`) a las tres ramas en el router |
 | `POST /api/trace` | Dadas las marcas de tiempo de frames ya pintados, devuelve cuándo pasó cada uno por los puntos de medida del servidor |
@@ -1090,7 +1102,7 @@ moq-dash-initial-comparison/
 ├── README.md
 ├── CONTEXT_SUMMARY.md            # Decisiones y problemas resueltos
 ├── docker-compose.yml
-├── media/                        # Vídeo fuente; se descarga solo y no se versiona
+├── media/                        # Vídeos fuente; se descargan solos y no se versionan
 ├── edge/
 │   └── nginx.conf                # Entrada HTTP única (puerto 80)
 ├── router/                       # (MediaMTX no tiene carpeta: se configura por variables en docker-compose.yml)
@@ -1165,3 +1177,5 @@ Pendiente:
 ## 12. Créditos
 
 El vídeo de prueba es *Big Buck Bunny* (versión Sunflower, 1080p 60 fps), © Blender Foundation, [bbb3d.renderfarming.net](http://bbb3d.renderfarming.net), bajo licencia [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/).
+
+El segundo vídeo es *Tears of Steel* (1080p, 24 fps), © Blender Foundation, [mango.blender.org](https://mango.blender.org), bajo licencia [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/).

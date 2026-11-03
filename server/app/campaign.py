@@ -288,7 +288,7 @@ class Campaigns:
         if plan.get("content", "continuous") != "restart":
             return False
         streams = plan["streams"] if stream is None else [plan["streams"][stream]]
-        return any(s.get("source", "file") == "file" for s in streams)
+        return any(s.get("source", "file") != "camera" for s in streams)
 
     def create(self, plan: dict) -> dict:
         with self.lock:

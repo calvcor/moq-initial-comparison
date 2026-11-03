@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Square, Settings2, RefreshCw, Plus, X } from 'lucide-react';
-import type { StreamConfig, ServerStatus, Rendition, SourceKind, CameraState } from '../types';
+import type { StreamConfig, ServerStatus, Rendition, SourceKind, CameraState, LoopVideo, VideoState } from '../types';
+import { LOOP_VIDEOS, gopAt, isLoopVideo } from '../lib/sources';
 
 const MAX_RENDITIONS = 5;
 const HEIGHTS = [1080, 720, 540, 480, 360, 240];
@@ -32,9 +33,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   apiBase,
 }) => {
   const isRunning = status?.status === 'running';
-  const source = status?.source;
+  const videos: Partial<Record<LoopVideo, VideoState>> = status?.sources ?? (status?.source ? { file: status.source } : {});
+  const selected = isLoopVideo(config.source) ? config.source : null;
   // El vídeo del bucle solo hace falta si es la fuente elegida
-  const sourceReady = config.source === 'camera' || !source || source.state === 'ready';
+  const sourceReady = !selected || !videos[selected] || videos[selected]?.state === 'ready';
+  // Aviso de descarga: el de la fuente elegida y, si está lista, el de otro vídeo que aún no lo esté
+  const pendingKind = (Object.keys(videos) as LoopVideo[])
+    .filter((k) => videos[k]?.state !== 'ready')
+    .sort((a, b) => Number(b === selected) - Number(a === selected))[0];
+  const source = pendingKind ? videos[pendingKind] : undefined;
+  const sourceLabel = pendingKind ? LOOP_VIDEOS[pendingKind].label : '';
   // Último sondeo de la cámara pedido desde aquí; si no, el que trae el estado del servidor
   const [probed, setProbed] = useState<CameraState | null>(null);
   const [probing, setProbing] = useState(false);
@@ -52,7 +60,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   // Al cambiar de fuente se conserva la duración del GOP en segundos: los fps son los del vídeo (60 o 24) o los
   // de la cámara, que se sondea en ese momento. El servidor vuelve a sondearla al arrancar y manda él.
   const setSource = async (next: SourceKind) => {
-    let fps = 60;
+    let fps = isLoopVideo(next) ? LOOP_VIDEOS[next].fps : 60;
     if (next === 'camera') {
       setProbing(true);
       try {
@@ -66,7 +74,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         setProbing(false);
       }
     }
-    const gop = Math.max(1, Math.round((config.gop_size / config.fps) * fps));
+    const gop = gopAt(config.gop_size, config.fps, fps);
     onConfigChange({ ...config, source: next, fps, gop_size: gop, seg_duration: Math.max(config.seg_duration, gop / fps) });
   };
 
@@ -99,11 +107,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               className={`text-[11px] px-2 py-0.5 rounded-full border ${
                 source.state === 'error' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-sky-500/20 text-sky-300 border-sky-500/30'
               }`}
-              title={source.error ?? 'El vídeo fuente no viene con el repositorio: se descarga de download.blender.org la primera vez.'}
+              title={source.error ?? 'Los vídeos fuente no vienen con el repositorio: se descargan de download.blender.org la primera vez.'}
             >
-              {source.state === 'downloading' && `Descargando vídeo fuente… ${source.progress_pct} %`}
-              {source.state === 'extracting' && 'Descomprimiendo vídeo fuente…'}
-              {source.state === 'error' && 'Fallo al descargar el vídeo fuente; reintentando'}
+              {source.state === 'downloading' && `Descargando ${sourceLabel}… ${source.progress_pct} %`}
+              {source.state === 'extracting' && `Descomprimiendo ${sourceLabel}…`}
+              {source.state === 'error' &&
+                (pendingKind === 'file' ? 'Fallo al descargar Big Buck Bunny; reintentando' : `Fallo al descargar ${sourceLabel}; se reintenta al elegirlo`)}
             </span>
           )}
         </div>
@@ -157,7 +166,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             disabled={probing}
             className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
           >
-            <option value="file">Big Buck Bunny en bucle</option>
+            {(Object.keys(LOOP_VIDEOS) as LoopVideo[]).map((k) => (
+              <option key={k} value={k}>
+                {LOOP_VIDEOS[k].label} en bucle
+              </option>
+            ))}
             <option value="camera" disabled={camera ? !camera.configured : false}>
               Cámara RTSP{camera && !camera.configured ? ' (sin configurar)' : ''}
             </option>
@@ -166,7 +179,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             className={`text-[10px] mt-1 block ${config.source === 'camera' && camera?.error ? 'text-rose-400' : 'text-slate-500'}`}
             title={camera?.error ?? undefined}
           >
-            {config.source === 'file' && '1080p a 60 fps'}
+            {selected && LOOP_VIDEOS[selected].detail}
             {config.source === 'camera' &&
               (probing
                 ? 'Consultando la cámara…'

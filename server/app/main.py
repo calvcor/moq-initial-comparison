@@ -134,10 +134,12 @@ def default_ladder() -> list[Rendition]:
     return [Rendition(height=1080, bitrate_kbps=4000), Rendition(height=720, bitrate_kbps=2000), Rendition(height=360, bitrate_kbps=700)]
 
 class StreamConfig(BaseModel):
-    # Fuente: Big Buck Bunny en bucle ("file") o la cámara RTSP de CAMERA_RTSP_URL ("camera")
-    source: Literal["file", "camera"] = "file"
+    # Fuente: Big Buck Bunny en bucle ("file"), Tears of Steel en bucle ("tos") o la cámara RTSP de
+    # CAMERA_RTSP_URL ("camera"). Los vídeos están en source.VIDEOS.
+    source: Literal["file", "tos", "camera"] = "file"
     gop_size: int = 60           # 1 segundo a 60 fps
-    # Con el bucle, siempre 60 (el del vídeo). Con la cámara la fija el servidor al arrancar: la de la cámara.
+    # Con un vídeo en bucle, la suya (60 Big Buck Bunny, 24 Tears of Steel). Con la cámara la fija el servidor
+    # al arrancar: la de la cámara.
     fps: int = Field(60, ge=1, le=60)
     # Audio en la rama WebRTC (el Opus de la fuente, sin recodificar). Desactivado por defecto: el navegador
     # sincroniza audio y vídeo y retrasa el vídeo (README, sección 3.4b)
@@ -161,8 +163,8 @@ class StreamConfig(BaseModel):
 
     @model_validator(mode="after")
     def sort_ladder(self):
-        if self.source == "file":
-            self.fps = 60
+        if self.source in source.VIDEOS:
+            self.fps = source.VIDEOS[self.source]["fps"]
         # El primer stream es siempre la calidad más alta; no se admiten dos calidades idénticas
         self.renditions = sorted(self.renditions, key=lambda r: (r.height, r.bitrate_kbps), reverse=True)
         if len({(r.height, r.bitrate_kbps) for r in self.renditions}) != len(self.renditions):
@@ -419,7 +421,7 @@ def probe_camera() -> dict:
     return probe
 
 def ensure_master_source(force_restart: bool = False):
-    """Mantiene la fuente FFmpeg maestra emitiendo sin parar: Big Buck Bunny en bucle o la cámara RTSP."""
+    """Mantiene la fuente FFmpeg maestra emitiendo sin parar: un vídeo en bucle o la cámara RTSP."""
     global master_start_time
     if force_restart or processes["master_source"] is None or processes["master_source"].poll() is not None:
         kill_proc(processes.get("master_source"))
@@ -454,12 +456,16 @@ def ensure_master_source(force_restart: bool = False):
             # Vídeo y audio se leen por entradas separadas: el fichero los intercala en bloques de 0,5 s y con
             # una sola entrada a ritmo real el audio llega a ráfagas, el muxer retiene el vídeo hasta tenerlo
             # y las ramas reciben los frames a trompicones y con retardo añadido.
-            inputs = f"-re -stream_loop -1 -i '{VIDEO_FILE}' -re -stream_loop -1 -i '{VIDEO_FILE}' "
-            prepare = "setpts=N/(60*TB)"
+            video = source.VIDEOS[current_config.source]
+            inputs = f"-re -stream_loop -1 -i '{video['path']}' -re -stream_loop -1 -i '{video['path']}' "
+            # A la cadencia del fichero, sin convertirla; Tears of Steel (1920x800) se lleva a 1920x1080 con
+            # bandas negras, como la cámara
+            prepare = (f"{video['prepare']}," if video["prepare"] else "") + f"setpts=N/({fps}*TB)"
             # El audio va en un grafo de filtros propio. En el mismo grafo que el vídeo, FFmpeg pide frames a
             # las dos entradas por turnos según sus marcas de tiempo, y el vídeo avanza al compás de los
             # frames de audio de la fuente (24 ms) en vez de al suyo (16,7 ms).
-            audio_graph = "[1:a:0]asetpts=N/(SR*TB)[a]"
+            # El de Tears of Steel va a 44,1 kHz y Opus solo admite 48 kHz y divisores: se remuestrea.
+            audio_graph = "[1:a:0]" + ("aresample=48000," if current_config.source == "tos" else "") + "asetpts=N/(SR*TB)[a]"
         clock = (
             f"drawtext=fontfile={font_path}:text='%{{pts\\:hms}}.%{{eif\\:mod(t*1000\\,1000)\\:d\\:3}}':"
             f"fontsize=48:fontcolor=white:box=1:boxcolor=black@0.8:x=60:y=60"
@@ -608,7 +614,9 @@ def get_status():
             "pipeline": desired_running,
         },
         "stream_ids": stream_ids,
+        # Estado de Big Buck Bunny (el que hace falta para arrancar) y de cada vídeo
         "source": source.state,
+        "sources": source.states,
         "camera": camera_state,
         "restarts": restarts,
         # Con DASH_HOST, el navegador pide DASH directamente a este servidor por el router; sin él, a
@@ -872,8 +880,13 @@ def start_pipeline(config: Optional[StreamConfig] = None, restart_source: bool =
     """restart_source reinicia la fuente aunque la configuración no cambie (el vídeo vuelve al principio)."""
     global current_config, desired_running
     wanted = config.source if config else current_config.source
-    if wanted == "file" and source.state["state"] != "ready":
-        raise HTTPException(status_code=409, detail="El vídeo fuente todavía se está descargando")
+    if wanted in source.VIDEOS and source.states[wanted]["state"] != "ready":
+        label = source.VIDEOS[wanted]["label"]
+        if source.states[wanted]["state"] == "error":
+            # Un fallo anterior: se vuelve a intentar
+            source.fetch_in_background(wanted)
+            raise HTTPException(status_code=409, detail=f"No se pudo descargar {label}; se reintenta la descarga")
+        raise HTTPException(status_code=409, detail=f"{label} todavía se está descargando")
     with lifecycle:
         need_restart_master = restart_source
         if config:
@@ -1254,7 +1267,7 @@ def supervise():
             logger.error(f"Supervisor: {e}")
 
 def boot():
-    """Deja listo el vídeo fuente (descargándolo si falta) y arranca la emisión."""
+    """Deja listos los vídeos fuente (descargándolos si faltan) y arranca la emisión."""
     while True:
         try:
             source.fetch_video()
@@ -1263,6 +1276,15 @@ def boot():
             logger.error(f"No se pudo obtener el vídeo fuente: {e}; se reintenta en 30 s")
             source.state.update(state="error", error=str(e))
             time.sleep(30)
+    # Los demás, antes de arrancar, para que la primera descarga no coincida con una emisión. Si falla no
+    # bloquea: queda en su estado y se reintenta al elegir ese vídeo.
+    for kind in source.VIDEOS:
+        if kind != "file":
+            try:
+                source.fetch_video(kind)
+            except Exception as e:
+                logger.error(f"No se pudo obtener el vídeo fuente {source.VIDEOS[kind]['label']}: {e}")
+                source.states[kind].update(state="error", error=str(e))
     if os.path.exists(STOPPED_MARKER):
         logger.info("La emisión se detuvo a mano antes del reinicio: no se arranca hasta que se pida")
         return

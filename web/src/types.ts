@@ -6,8 +6,17 @@ export interface Rendition {
   bitrate_kbps: number;
 }
 
-// Fuente de la emisión: Big Buck Bunny en bucle o la cámara RTSP del .env del servidor
-export type SourceKind = 'file' | 'camera';
+// Fuente de la emisión: un vídeo en bucle (Big Buck Bunny, "file", o Tears of Steel, "tos") o la cámara RTSP
+// del .env del servidor
+export type LoopVideo = 'file' | 'tos';
+export type SourceKind = LoopVideo | 'camera';
+
+// Descarga de un vídeo del bucle: se descarga al primer arranque si no está
+export interface VideoState {
+  state: 'ready' | 'downloading' | 'extracting' | 'error';
+  progress_pct: number;
+  error: string | null;
+}
 
 export interface StreamConfig {
   source: SourceKind;
@@ -90,8 +99,9 @@ export interface ServerStatus {
   stream_ids?: { dash: number; moq: number; rtc: number };
   // Reinicios automáticos del supervisor del servidor
   restarts?: { master: number; dash: number; moq: number; rtc: number };
-  // Vídeo fuente: se descarga al primer arranque si no está
-  source?: { state: 'ready' | 'downloading' | 'extracting' | 'error'; progress_pct: number; error: string | null };
+  // Big Buck Bunny (servidores anteriores solo traen este) y cada vídeo del bucle
+  source?: VideoState;
+  sources?: Record<LoopVideo, VideoState>;
   camera?: CameraState;
   campaign?: CampaignBrief | null; // campaña en marcha (README, 4.8)
   campaign_preview?: { campaign: string; run: string; started_ms: number } | null; // vista previa de una prueba (README, 4.8)

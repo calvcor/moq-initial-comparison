@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CLEAR, PRESETS } from './NetworkPanel';
 import { PLAYER_IDS } from '../lib/samples';
+import { LOOP_VIDEOS, gopAt, isLoopVideo } from '../lib/sources';
 import type { RtcServer, CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr, LinkProfile, MoqAbr, MoqSwitching, PlayerId, PlayerOptions, StreamConfig } from '../types';
 
 // Editor de campañas (README, 4.8): emisiones, condiciones de red, latencias objetivo y diseño. El servidor
@@ -346,8 +347,18 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
           <div key={i} className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
               <span className={label}>Fuente</span>
-              <select className={input} value={s.source} onChange={(e) => setStream(i, { source: e.target.value as StreamConfig['source'] })}>
+              <select
+                className={input}
+                value={s.source}
+                onChange={(e) => {
+                  // Entre vídeos del bucle, el GOP conserva su duración en segundos; con la cámara la cadencia no se sabe aquí
+                  const next = e.target.value as StreamConfig['source'];
+                  const gop = isLoopVideo(s.source) && isLoopVideo(next) ? gopAt(s.gop_size, LOOP_VIDEOS[s.source].fps, LOOP_VIDEOS[next].fps) : s.gop_size;
+                  setStream(i, { source: next, gop_size: gop });
+                }}
+              >
                 <option value="file">Big Buck Bunny en bucle</option>
+                <option value="tos">Tears of Steel en bucle (24 fps)</option>
                 <option value="camera">Cámara RTSP</option>
               </select>
             </label>
@@ -369,7 +380,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                 {/* Las mismas opciones que el panel de control; una duración distinta (de la configuración en curso) también se conserva */}
                 {[...new Set([0, 0.1, 0.2, 0.5, 1, s.frag_duration])].map((f) => (
                   <option key={f} value={f}>
-                    {f === 0 ? `1 frame (${s.source === 'camera' ? 'el de la cámara' : '16,7 ms a 60 fps'})` : `${Math.round(f * 1000)} ms`}
+                    {f === 0 ? `1 frame (${s.source === 'camera' ? 'el de la cámara' : s.source === 'tos' ? '41,7 ms a 24 fps' : '16,7 ms a 60 fps'})` : `${Math.round(f * 1000)} ms`}
                   </option>
                 ))}
               </select>

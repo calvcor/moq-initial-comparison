@@ -38,7 +38,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
    audio con él), bitrate del catálogo de MoQ (máximo medido) frente al del MPD
    (nominal), sliders de latencia que significan cosas distintas en cada rama, red del cliente, que sin límite de red la
    estimación de caudal de dash.js sigue al bitrate descargado y no a la red (README, sección 6), que leer el MPEG-TS retiene 1 frame en MediaMTX, 2 en el publicador de MoQ y 3 en FFmpeg, y solo en DASH cae en la etapa de entrada (PROTOCOLOS, 6.4), y que
-   el jitter de netem desordena los paquetes (castiga casi solo a QUIC: README, sección 5), y con la
+   el jitter de netem desordena los paquetes (castiga casi solo a QUIC: README, sección 5), con Tears of Steel, que cambian a la vez contenido y cadencia (24 fps: frames de 41,7 ms; README, 3.1a), y con la
    cámara como fuente, que el contenido no se repite y la latencia no incluye el tramo cámara → servidor, y si el relay usa certificado autofirmado con huella o uno de Let's Encrypt (`docker-compose.tls.yml`; README, sección 1).
 5. **Distingue medida de deducción** al informar. Si algo sale del código y no de una prueba, dilo.
 
@@ -46,7 +46,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 
 | Pieza | Dónde | Notas |
 | :--- | :--- | :--- |
-| Fuente FFmpeg | `server/app/main.py` (`ensure_master_source`) | Big Buck Bunny en bucle o cámara RTSP (`CAMERA_RTSP_URL` en el `.env`); una calidad o escalera de hasta 5; tee MPEG-TS a UDP 5001-5004 y, con la cámara, referencia para el VMAF en 5005 |
+| Fuente FFmpeg | `server/app/main.py` (`ensure_master_source`), vídeos en `server/app/source.py` | Big Buck Bunny (60 fps) o Tears of Steel (24 fps, con bandas; README, 3.1a) en bucle, o cámara RTSP (`CAMERA_RTSP_URL` en el `.env`); una calidad o escalera de hasta 5; tee MPEG-TS a UDP 5001-5004 y, con la cámara, referencia para el VMAF en 5005 |
 | Compuertas | `server/app/tsgate.py` | Arrancan en un IDR, vigilan continuidad y anotan horas por PTS |
 | Origen LL-DASH | `server/app/origin.py` | En memoria; recalibra `availabilityStartTime` y reescribe `UTCTiming` al origen de la página |
 | Publicador MoQ | `moq import ts` (moq-cli) en el orquestador | El **publicador**; no confundir con el relay |

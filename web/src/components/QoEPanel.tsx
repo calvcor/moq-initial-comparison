@@ -369,7 +369,7 @@ export const QoEPanel: React.FC<{
             >
               {recordings.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.id} · {Math.round(r.duration_s)} s{r.source === 'camera' ? ' · cámara' : ''}
+                  {r.id} · {Math.round(r.duration_s)} s{r.source === 'camera' ? ' · cámara' : r.source === 'tos' ? ' · Tears of Steel' : ''}
                   {r.qoe ? ' · QoE' : r.views || r.state !== 'ready' ? '' : ' · sin registros'}
                 </option>
               ))}

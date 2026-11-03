@@ -7,7 +7,7 @@ el flujo que sale del codificador (el mismo que reparten las tres ramas, que no 
 2. Saca el número de frame del PTS, que la fuente pone exacto. La correspondencia entre PTS y número de
    frame la fija el timecode, por mayoría, con las marcas que FFmpeg escribe en su log al quemarlo
    (trace.py; se copian mientras dura la grabación, porque trace.py solo recuerda el último minuto).
-3. El número de frame, módulo los frames del vídeo original, es el fotograma de Big Buck Bunny del que
+3. El número de frame, módulo los frames del vídeo original, es el fotograma del vídeo del bucle del que
    viene: la fuente lo numera en orden de decodificación, sin saltos ni repeticiones (setpts=N), y vuelve
    a empezar en cada vuelta del bucle.
 
@@ -51,7 +51,7 @@ from typing import Callable, Optional
 from pydantic import BaseModel, Field
 
 from . import trace
-from .source import VIDEO_FILE
+from .source import VIDEO_FILE, VIDEOS
 
 logger = logging.getLogger("orchestrator")
 
@@ -215,29 +215,38 @@ class ViewUpload(BaseModel):
     user_agent: str = ""
 
 
-_source_info: Optional[dict] = None
+_source_info: dict[str, dict] = {}
 
 
-def source_info() -> dict:
-    """Frames, primera marca de tiempo y cadencia del vídeo original (se cuentan una vez)."""
-    global _source_info
-    if _source_info is None:
+def source_info(video: str = "file") -> dict:
+    """Frames, primera marca de tiempo y cadencia de un vídeo del bucle (se cuentan una vez por vídeo).
+
+    width y height son los de la imagen emitida, después de su prepare (source.py): Tears of Steel se compara
+    con las bandas negras que se le añaden, que entran en el VMAF y el PSNR igual que el resto de la imagen.
+    """
+    if video not in _source_info:
         out = subprocess.run(
             NICE + ["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets",
-                    "-show_entries", "stream=nb_read_packets,start_time,r_frame_rate,width,height",
-                    "-of", "json", VIDEO_FILE],
+                    "-show_entries", "stream=nb_read_packets,start_time,r_frame_rate",
+                    "-of", "json", VIDEOS[video]["path"]],
             capture_output=True, text=True, check=True,
         ).stdout
         stream = json.loads(out)["streams"][0]
         num, den = stream["r_frame_rate"].split("/")
-        _source_info = {
+        _source_info[video] = {
+            "video": video,
             "frames": int(stream["nb_read_packets"]),
             "start_time": float(stream["start_time"]),
             "fps": int(num) / int(den),
-            "width": stream["width"],
-            "height": stream["height"],
+            "width": VIDEOS[video]["width"],
+            "height": VIDEOS[video]["height"],
         }
-    return _source_info
+    return _source_info[video]
+
+
+def looped_video(meta: dict) -> str:
+    """Vídeo del bucle de una grabación; las anteriores a Tears of Steel no lo guardan y son de Big Buck Bunny."""
+    return meta.get("source") if meta.get("source") in VIDEOS else "file"
 
 
 _vmaf_version: Optional[str] = None
@@ -707,13 +716,13 @@ class Recordings:
         index = self.index(rec_id)
         if index and index["source"].get("kind") == "camera":
             return index["source"]
-        return {"kind": "file", **source_info()}
+        return {"kind": "file", **source_info(looped_video(self.read(rec_id, "meta.json")))}
 
     def _build_index(self, rec_id: str, stamps: dict) -> list[dict]:
         meta = self.read(rec_id, "meta.json")
         camera = meta.get("source") == "camera"
         # Con la cámara no hay vídeo en bucle: el número de frame es directamente el de la referencia
-        src = None if camera else source_info()
+        src = None if camera else source_info(looped_video(meta))
         ticks = round(90000 / meta["fps"])
         streams, summary = [], []
         for i, layout in enumerate(meta["timecodes"]):
@@ -863,7 +872,7 @@ class Recordings:
         """Órdenes de FFmpeg que escriben en crudo, por stdout y en orden, los frames numbers del original.
 
         numbers va en orden creciente: o un tramo consecutivo (VMAF) o varios sueltos (comprobación).
-        Con el bucle, cada tramo consecutivo se lee con un -ss propio y se parte en dos si cruza el final
+        Con el bucle, el original pasa por el mismo prepare que en la emisión (source.py) y cada tramo consecutivo se lee con un -ss propio y se parte en dos si cruza el final
         del vídeo: con -stream_loop, FFmpeg no vuelve al frame 0 después de un -ss. Con -ss delante de -i
         descarta lo anterior a esa hora absoluta; el frame k está en start_time + k/fps.
         Con la cámara se decodifica la referencia desde el principio y se escogen los frames por su PTS
@@ -885,10 +894,13 @@ class Recordings:
                 runs[-1][1] += 1
             else:
                 runs.append([k, 1])
+        video = VIDEOS[ref.get("video", "file")]
+        if video["prepare"]:
+            vf = f"{video['prepare']},{vf}"
         cmds = []
         for k, take in runs:
             seek = ref["start_time"] + k / ref["fps"] - 0.25 / ref["fps"]
-            cmds.append(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{seek:.6f}", "-i", VIDEO_FILE,
+            cmds.append(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{seek:.6f}", "-i", video["path"],
                          "-map", "0:v:0", "-frames:v", str(take), "-vf", vf, "-f", "rawvideo", "-"])
         return cmds
 
