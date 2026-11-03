@@ -345,6 +345,14 @@ export interface SampleRow {
   moq_up_dropped: number | null;
   rtc_down_dropped: number | null;
   rtc_up_dropped: number | null;
+  // Carga del hilo principal de la página desde la fila anterior (lib/mainThread.ts): refrescos de pantalla en que
+  // no se ejecutó requestAnimationFrame, el mayor intervalo entre dos, y frames de 50 ms o más (Long Animation
+  // Frames API; vacíos si el navegador no la tiene)
+  main_refreshes_missed: number;
+  main_raf_gap_max_ms: number | null;
+  main_long_frames: number | null;
+  main_long_frame_ms: number | null;
+  main_long_frame_max_ms: number | null;
   tab_hidden: boolean;
   versions: string | null; // componentes de terceros desplegados, p. ej. moq-relay=0.17.2;moq-cli=0.14.2
 }

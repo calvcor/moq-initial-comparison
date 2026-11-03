@@ -311,7 +311,7 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
   onExport,
   onReset,
 }) => {
-  const [metricTab, setMetricTab] = useState<'latency' | 'bitrate' | 'frametime'>('latency');
+  const [metricTab, setMetricTab] = useState<'latency' | 'bitrate' | 'frametime' | 'main'>('latency');
 
   const steady = samples.filter((r) => r.elapsed_s >= WARMUP_S && !r.tab_hidden);
   const dashStats = summarize(steady.map((r) => r.dash_g2g_ms));
@@ -412,6 +412,26 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
       },
     },
   };
+
+  // Carga del hilo principal (lib/mainThread.ts), de las filas de cada segundo del tramo: las últimas 25, como
+  // las demás gráficas. Refrescos perdidos a la izquierda y tiempo en frames largos a la derecha
+  const mainRows = samples.slice(-25);
+  const mainChartData = {
+    labels: mainRows.map((r) => `${r.elapsed_s} s`),
+    datasets: [
+      { label: 'Refrescos perdidos (por s)', data: mainRows.map((r) => r.main_refreshes_missed), borderColor: '#e879f9', backgroundColor: '#e879f9', yAxisID: 'y' },
+      { label: 'Frames de 50 ms o más (ms por s)', data: mainRows.map((r) => r.main_long_frame_ms), borderColor: '#94a3b8', backgroundColor: '#94a3b8', yAxisID: 'y1' },
+    ].map((d) => ({ ...d, borderWidth: 1.5, pointRadius: 1.5, tension: 0 })),
+  };
+  const mainChartOptions = {
+    ...chartOptions,
+    scales: {
+      ...chartOptions.scales,
+      y: { ...chartOptions.scales.y, min: 0, title: { display: true, text: 'refrescos perdidos', color: '#94a3b8' } },
+      y1: { position: 'right' as const, min: 0, grid: { display: false }, ticks: { color: '#94a3b8' }, title: { display: true, text: 'ms en frames largos', color: '#94a3b8' } },
+    },
+  };
+  const lastMain = samples.at(-1);
 
   const frameTimeChartOptions = {
     ...chartOptions,
@@ -535,6 +555,12 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
             Retraso de la fuente: {sourceLagMs == null ? '--' : `${Math.round(sourceLagMs)} ms`}
           </span>
           <span
+            className={(lastMain?.main_refreshes_missed ?? 0) > 3 ? 'text-amber-400' : 'text-slate-400'}
+            title="Carga del hilo principal de esta página en el último segundo: refrescos de pantalla en que no llegó a pintar y tiempo en frames de 50 ms o más (Long Animation Frames API). MoQ pinta en ese hilo; el <video> de DASH y WebRTC, no."
+          >
+            Hilo principal: {lastMain ? `${lastMain.main_refreshes_missed} refrescos perdidos · ${lastMain.main_long_frame_ms ?? '--'} ms en frames largos` : '--'}
+          </span>
+          <span
             className={playerRestarts + serverRestarts ? 'text-amber-400' : 'text-slate-400'}
             title="Recuperaciones automáticas. Servidor: el supervisor relanzó la fuente o un empaquetador caído o colgado. Reproductores: llevaban 10 s sin imagen nueva y se recrearon."
           >
@@ -560,7 +586,9 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
               ? 'Evolución de Latencia Glass-to-Glass (ms)'
               : metricTab === 'bitrate'
                 ? 'Evolución de Bitrate Recibido (kbps)'
-                : 'Tiempo en pantalla de cada frame, últimos 10 s (ms)'}
+                : metricTab === 'frametime'
+                  ? 'Tiempo en pantalla de cada frame, últimos 10 s (ms)'
+                  : 'Carga del hilo principal de esta página'}
           </h4>
           <div className="flex space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
             <button
@@ -593,6 +621,17 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
             >
               Tiempo en pantalla (ms)
             </button>
+            <button
+              onClick={() => setMetricTab('main')}
+              title="Lo que hace esta página (reproductores, medidor, panel) en su hilo principal. MoQ pinta en él; el <video> de DASH y WebRTC, no."
+              className={`px-3 py-1 rounded transition-colors ${
+                metricTab === 'main'
+                  ? 'bg-blue-600 text-white font-medium'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Hilo principal
+            </button>
           </div>
         </div>
 
@@ -606,6 +645,8 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
             // (tiempo en pantalla) a categorías, y al volver a latencia o bitrate la página se quedaba en blanco
             metricTab === 'frametime' ? (
               <Line key="frametime" data={frameTimeChartData} options={frameTimeChartOptions} />
+            ) : metricTab === 'main' ? (
+              <Line key="main" data={mainChartData} options={mainChartOptions} />
             ) : (
               <Line key={metricTab} data={metricTab === 'latency' ? latencyChartData : bitrateChartData} options={chartOptions} />
             )

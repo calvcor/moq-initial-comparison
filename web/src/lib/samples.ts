@@ -4,11 +4,15 @@ import { RateWindow } from './glass';
 import { getClockSync } from './clock';
 import { meters } from './qoe';
 import { rateTrackers } from './playbackRate';
+import { mainThread } from './mainThread';
 import { versionsLabel } from '../components/VersionsPanel';
 import type { PlayerId, PlayerMetrics, SampleRow, ServerStatus, VersionReport } from '../types';
 
 export type { PlayerId } from '../types';
 export const PLAYER_IDS: PlayerId[] = ['dash', 'moq', 'rtc'];
+
+// La carga del hilo principal se vigila desde que la página que construye las filas carga este módulo
+mainThread.start();
 
 // Métricas de un reproductor sin medida: así queda también uno desactivado, para que el CSV lo deje vacío
 export const INITIAL_METRICS: Record<PlayerId, PlayerMetrics> = {
@@ -142,6 +146,8 @@ export function buildSampleRow({ epoch, epochStartedAt, active, metrics, status,
   // Avance del contenido desde la fila anterior; recogerlo lo vacía, como los parones
   const content = Object.fromEntries(PLAYER_IDS.map((p) => [p, active[p] ? meters[p]?.takeContent() : undefined]));
   const spans = Object.fromEntries(PLAYER_IDS.map((p) => [p, stallSpans(p, active[p])])) as Record<PlayerId, ReturnType<typeof stallSpans>>;
+  // Carga del hilo principal desde la fila anterior; recogerla la vacía
+  const main = mainThread.take();
   return {
   time_iso: new Date().toISOString(),
   epoch: epoch,
@@ -280,6 +286,11 @@ export function buildSampleRow({ epoch, epochStartedAt, active, metrics, status,
   moq_up_dropped: status?.network?.stats.moq_up.dropped ?? null,
   rtc_down_dropped: status?.network?.stats.rtc_down?.dropped ?? null,
   rtc_up_dropped: status?.network?.stats.rtc_up?.dropped ?? null,
+  main_refreshes_missed: main.refreshesMissed,
+  main_raf_gap_max_ms: main.rafGapMaxMs,
+  main_long_frames: main.longFrames,
+  main_long_frame_ms: main.longFrameMs,
+  main_long_frame_max_ms: main.longFrameMaxMs,
   tab_hidden: document.hidden,
   versions: versionsLabel(versions),
 };

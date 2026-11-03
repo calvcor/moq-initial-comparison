@@ -179,6 +179,20 @@ def summarize_source(samples: list[dict]) -> dict:
     }
 
 
+def summarize_main(rows: list[dict], measure_s: float) -> dict:
+    """Carga del hilo principal de la página durante la medida (columnas main_* de las filas): refrescos perdidos
+    por segundo, fracción del tiempo en frames de 50 ms o más y el más largo. Es de la página, la misma para los
+    reproductores que tenía montados."""
+    missed = column(rows, "main_refreshes_missed")
+    long_ms = column(rows, "main_long_frame_ms")
+    long_max = column(rows, "main_long_frame_max_ms")
+    return {
+        "main_refreshes_missed_per_s": rounded(sum(missed) / measure_s, 2) if missed and measure_s else None,
+        "main_long_frame_share": rounded(sum(long_ms) / (measure_s * 1000), 4) if long_ms and measure_s else None,
+        "main_long_frame_max_ms": rounded(max(long_max)) if long_max else None,
+    }
+
+
 class Campaigns:
     def __init__(self, root: str):
         self.root = root
@@ -768,8 +782,9 @@ class Campaigns:
             }
             ip = [s for s in self.ip.pop(run["id"], []) if s["phase"] == "measuring"]
             source = summarize_source(ip)
+            main = summarize_main(rows, plan["measure_s"])
             for p in run["players"]:
-                run["summary"]["players"][p].update(summarize_ip(p, ip), **source)
+                run["summary"]["players"][p].update(summarize_ip(p, ip), **source, **main)
             # Del montaje a la primera fila con latencia medida, con la resolución de una fila por segundo
             for p in run["players"]:
                 first = next((r["t_server_ms"] for r in warmup if r.get(f"{p}_g2g_ms") is not None), None)
@@ -951,6 +966,8 @@ class Campaigns:
     # Columnas de cada reproductor que se devuelven en las series (las mismas del CSV de muestras)
     # stall_spans y stall_open_since_ms: parones exactos, en reloj del servidor (desde el 28-10-2026)
     SERIES_FIELDS = ("g2g_ms", "kbps", "height", "stall_ms", "frametime_p95_ms", "stall_spans", "stall_open_since_ms", "playback_rate", "content_speed", "content_skipped_ms")
+    # Columnas de la página, comunes a los reproductores: se repiten en cada uno para dibujarlas junto a sus métricas
+    PAGE_SERIES_FIELDS = ("main_refreshes_missed", "main_long_frame_ms")
 
     def series(self, cid: str, ids: list[str]) -> dict:
         """Por prueba, sus filas del último intento (calentamiento y medida) con el tiempo relativo.
@@ -982,6 +999,8 @@ class Campaigns:
                         # El búfer va en una columna distinta en cada reproductor (BUFFER_COLUMN): aquí, en ms
                         buffer = row.get(BUFFER_COLUMN[p])
                         point[f"{p}_buffer_ms"] = round(buffer * 1000) if isinstance(buffer, (int, float)) else None
+                        for field in self.PAGE_SERIES_FIELDS:
+                            point[f"{p}_{field}"] = row.get(field)
                     out[run["id"]]["rows"].append(point)
         except OSError:
             pass

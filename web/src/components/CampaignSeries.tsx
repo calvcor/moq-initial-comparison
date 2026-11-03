@@ -53,6 +53,19 @@ const METRICS: Record<string, Metric> = {
   skipped: { label: 'Contenido no reproducido en cada segundo', unit: 'ms', field: 'content_skipped_ms' },
   // Media de cada segundo; solo DASH cambia la velocidad del vídeo
   rate: { label: 'Velocidad de reproducción', unit: '×', field: 'playback_rate', only: 'dash' },
+  // De la página del trabajador (lib/mainThread.ts, desde el 3-11-2026), la misma para todos sus reproductores
+  main_missed: {
+    label: 'Refrescos perdidos en el hilo principal',
+    unit: 'por s',
+    field: 'main_refreshes_missed',
+    note: 'Es de la página, el mismo valor en los tres protocolos: refrescos de pantalla de cada segundo en que el hilo principal no llegó a pintar (requestAnimationFrame no se ejecutó). MoQ pinta en ese hilo y pierde frames cuando sube; el <video> de DASH y WebRTC presenta fuera de él.',
+  },
+  main_long: {
+    label: 'Tiempo en frames largos del hilo principal',
+    unit: 'ms por s',
+    field: 'main_long_frame_ms',
+    note: 'Es de la página, el mismo valor en los tres protocolos: duración sumada de los frames de 50 ms o más de cada segundo (Long Animation Frames API de Chrome; vacío en navegadores sin ella).',
+  },
 };
 
 interface Series {
