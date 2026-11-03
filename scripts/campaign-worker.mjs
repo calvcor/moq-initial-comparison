@@ -101,7 +101,15 @@ if (process.platform === 'darwin') {
   spawn('caffeinate', ['-i', '-s', '-w', String(process.pid)], { stdio: 'ignore' }).unref();
 }
 
+// Responde un Chrome en el puerto de depuración
+const portInUse = () => fetch(`http://127.0.0.1:${PORT}/json/version`).then(() => true, () => false);
+
 async function launch() {
+  // Con otro Chrome ya en este puerto (p. ej. otro trabajador en la misma máquina sin --port propio), este script
+  // tomaría su pestaña y le cambiaría la página: el 3-11-2026 un trabajador sin nombre convirtió así en anónimo a
+  // un trabajador independiente (mac-test). Se espera un poco por si es el Chrome anterior que aún se cierra
+  for (let i = 0; i < 20 && (await portInUse()); i++) await sleep(500);
+  if (await portInUse()) throw new Error(`El puerto de depuración ${PORT} ya lo usa otro Chrome (¿otro trabajador en esta máquina?): elige otro con --port`);
   profile = mkdtempSync(join(tmpdir(), 'campaign-worker-'));
   const kiosk = NAME && browserMode === 'kiosk';
   const flags = [
@@ -177,7 +185,11 @@ async function launch() {
   ws.send(JSON.stringify({ id: ++id, method: 'Page.enable' }));
   // Se abre en about:blank y se navega después: abrir la URL directamente ha dado pestañas sin el
   // reproductor de MoQ (CLAUDE.md)
-  const navigate = () => ws.send(JSON.stringify({ id: ++id, method: 'Page.navigate', params: { url: workerUrl() } }));
+  const navigate = () => {
+    navigatedAt = Date.now();
+    ws.send(JSON.stringify({ id: ++id, method: 'Page.navigate', params: { url: workerUrl() } }));
+  };
+  navigateTo = navigate;
   navigate();
   log(`Trabajador abierto en ${workerUrl()}`);
   call = (method, params = {}) =>
@@ -190,22 +202,36 @@ async function launch() {
   return navigate;
 }
 
-// Petición por el protocolo de depuración a la pestaña abierta (la pone launch)
+// Petición por el protocolo de depuración a la pestaña abierta, y volver a abrir en ella la página del trabajador
+// (las pone launch)
 let call = async () => null;
+let navigateTo = () => {};
+// Cuándo se abrió por última vez la página: mientras carga no se comprueba su dirección (volver a abrirla abortaría
+// la carga y Chrome mostraría su página de error)
+let navigatedAt = 0;
+const NAVIGATE_GRACE_MS = 10_000;
 
 // Trabajador independiente: la página publica en window.__workerViewport el tamaño que pide el servidor, y aquí
 // se le da a la ventana (sin escalado: un píxel CSS por píxel). La página no monta hasta que encaja.
 // Con el modo de Chrome (window.__workerBrowser) igual: si pide otro, se cierra Chrome y el bucle principal lo
-// relanza en ese modo.
+// relanza en ese modo. Y si la pestaña deja de ser la de este trabajador (otra dirección o sin su nombre), se le
+// devuelve: sin su nombre late como trabajador único y el panel lo da por desconectado.
 let blindWarned = false;
 async function fitViewport() {
   const res = await call('Runtime.evaluate', {
-    expression: 'JSON.stringify({ want: window.__workerViewport ?? null, mode: window.__workerBrowser ?? null, w: innerWidth, h: innerHeight })',
+    expression: 'JSON.stringify({ href: location.href, want: window.__workerViewport ?? null, mode: window.__workerBrowser ?? null, w: innerWidth, h: innerHeight })',
     returnByValue: true,
   });
   const value = res?.result?.result?.value;
   if (!value) return;
-  const { want, mode, w, h } = JSON.parse(value);
+  const { href, want, mode, w, h } = JSON.parse(value);
+  const url = new URL(href);
+  const foreign = url.origin !== new URL(BASE).origin || url.searchParams.get('name') !== NAME;
+  if (href !== 'about:blank' && foreign && Date.now() - navigatedAt > NAVIGATE_GRACE_MS) {
+    log(`La pestaña estaba en ${href}, no en la de este trabajador: se vuelve a abrir`);
+    navigateTo();
+    return;
+  }
   if (want) wantedViewport = want;
   if (mode && mode !== browserMode) {
     if (mode === 'kiosk' && !HAS_DISPLAY) {
