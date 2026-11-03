@@ -465,6 +465,16 @@ export interface Campaign {
   workers?: PoolWorker[]; // los trabajadores independientes del plan
   worker_browsers?: Record<string, WorkerBrowser>; // su modo de Chrome, fijado al empezar la campaña
   versions?: Record<string, string | null>;
+  queue_position?: number; // puesto en la cola de campañas (1 = la siguiente)
+}
+
+// Cola de campañas: al terminar una, arranca la primera. halted: detenida por una cancelación hasta reanudarla;
+// held_by: la campaña en pausa que la retiene
+export interface CampaignQueue {
+  ids: string[];
+  halted: boolean;
+  held_by: string | null;
+  campaigns: { id: string; name: string; state: CampaignState; eta_s: number }[];
 }
 
 export interface CampaignBrief {

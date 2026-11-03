@@ -228,6 +228,10 @@ class Campaigns:
         self.pool: dict[str, dict] = {}
         # Vista previa de una prueba (preview): su red y su emisión aplicadas, y cómo estaba todo antes
         self.preview: Optional[dict] = None
+        # Cola de campañas (queue.json): al terminar una, el planificador arranca la primera. Una cancelación la
+        # detiene (queue_halted) hasta que se reanude a mano: cancelar es una intervención y no se sigue solo
+        self.queue: list[str] = []
+        self.queue_halted = False
         # Los pone main.py
         self.apply_stream: Callable[..., None] = lambda config, restart=False: None
         self.apply_network: Callable[[dict], None] = lambda profile: None
@@ -250,6 +254,13 @@ class Campaigns:
         with open(tmp, "w") as f:
             json.dump(campaign, f)
         os.replace(tmp, self.path(campaign["id"], "campaign.json"))
+
+    def save_queue(self):
+        os.makedirs(self.root, exist_ok=True)
+        tmp = os.path.join(self.root, "queue.json.part")
+        with open(tmp, "w") as f:
+            json.dump({"ids": self.queue, "halted": self.queue_halted}, f)
+        os.replace(tmp, os.path.join(self.root, "queue.json"))
 
     def save_pool(self):
         """Los trabajadores independientes registrados y su modo de Chrome (no su estado, que es de cada latido)."""
@@ -288,6 +299,13 @@ class Campaigns:
                 self.log(campaign, "Orquestador reiniciado: se retoma la campaña y se repite la prueba en curso")
                 self.save(campaign)
                 self.active = cid
+        try:
+            with open(os.path.join(self.root, "queue.json")) as f:
+                saved = json.load(f)
+            self.queue = [cid for cid in saved.get("ids", []) if self.queueable(cid)]
+            self.queue_halted = bool(saved.get("halted"))
+        except (OSError, ValueError, AttributeError):
+            pass
 
     def log(self, campaign: dict, message: str):
         logger.info(f"Campaña {campaign['id']}: {message}")
@@ -379,6 +397,8 @@ class Campaigns:
         out.update(counts=counts, total_runs=len(campaign["runs"]), eta_s=round(self.estimate_s(campaign)))
         if campaign["id"] == self.active:
             out["worker"] = self.worker_view()
+        if campaign["id"] in self.queue:
+            out["queue_position"] = self.queue.index(campaign["id"]) + 1
         if campaign["plan"].get("workers"):
             # El estado de los trabajadores independientes de la campaña, esté en marcha o no
             names = set(campaign["plan"]["workers"].values())
@@ -492,6 +512,9 @@ class Campaigns:
             if cid not in self.campaigns:
                 raise KeyError(cid)
             del self.campaigns[cid]
+            if cid in self.queue:
+                self.queue.remove(cid)
+                self.save_queue()
             for name in os.listdir(self.path(cid)):
                 os.remove(self.path(cid, name))
             os.rmdir(self.path(cid))
@@ -520,9 +543,13 @@ class Campaigns:
                 campaign["worker_browsers"] = {n: self.pool[n]["browser"] if n in self.pool else "headless"
                                                for n in set(campaign["plan"]["workers"].values())}
             campaign["state"] = "running"
+            campaign.pop("holds_queue", None)
             self.log(campaign, "Campaña en marcha")
             self.save(campaign)
             self.active = cid
+            if cid in self.queue:
+                self.queue.remove(cid)
+                self.save_queue()
             self.wake.set()
 
     def pause(self, cid: str):
@@ -532,6 +559,8 @@ class Campaigns:
             if campaign["state"] != "running":
                 raise RuntimeError(f"La campaña está {campaign['state']}")
             campaign["state"] = "paused"
+            # Mientras siga en pausa, la cola espera: no arranca la siguiente hasta reanudarla o cancelarla
+            campaign["holds_queue"] = True
             self.log(campaign, "Campaña en pausa")
             self.save(campaign)
             self.wake.set()
@@ -541,6 +570,13 @@ class Campaigns:
             campaign = self.campaigns[cid]
             if campaign["state"] not in ("running", "paused", "ready"):
                 raise RuntimeError(f"La campaña está {campaign['state']}")
+            if cid in self.queue:
+                self.queue.remove(cid)
+            # Cancelar la que está en marcha (o en pausa) detiene la cola; quitar una que esperaba en ella, no
+            if (campaign["state"] == "running" or campaign.get("holds_queue")) and self.queue:
+                self.queue_halted = True
+            campaign.pop("holds_queue", None)
+            self.save_queue()
             campaign["state"] = "aborted"
             self.log(campaign, "Campaña cancelada")
             self.save(campaign)
@@ -548,6 +584,82 @@ class Campaigns:
             if cid != self.active and campaign["restore"] is not None:
                 # En pausa no hay planificador que restaure: se hace aquí
                 threading.Thread(target=self.restore, args=(campaign,), daemon=True).start()
+
+    # --- cola ---
+
+    def queueable(self, cid: str) -> bool:
+        campaign = self.campaigns.get(cid)
+        return campaign is not None and campaign["state"] in ("ready", "paused") and cid != self.active
+
+    def queue_view(self) -> dict:
+        with self.lock:
+            held = [c["id"] for c in self.campaigns.values() if c["state"] == "paused" and c.get("holds_queue")]
+            return {"ids": list(self.queue), "halted": self.queue_halted, "held_by": held[0] if held else None,
+                    "campaigns": [{"id": c, "name": self.campaigns[c]["name"], "state": self.campaigns[c]["state"],
+                                   "eta_s": round(self.estimate_s(self.campaigns[c]))} for c in self.queue]}
+
+    def enqueue(self, cid: str):
+        """Al final de la cola. Si no hay ninguna en marcha (ni la cola detenida), arranca ya."""
+        with self.lock:
+            if cid in self.queue:
+                raise RuntimeError("La campaña ya está en la cola")
+            if not self.queueable(cid):
+                raise RuntimeError(f"Solo se encolan campañas listas o en pausa (esta está {self.campaigns[cid]['state']})")
+            self.queue.append(cid)
+            self.log(self.campaigns[cid], f"En la cola, puesto {len(self.queue)}")
+            self.save(self.campaigns[cid])
+            self.save_queue()
+        self.start_next()
+
+    def dequeue(self, cid: str):
+        with self.lock:
+            if cid not in self.queue:
+                raise RuntimeError("La campaña no está en la cola")
+            self.queue.remove(cid)
+            self.log(self.campaigns[cid], "Fuera de la cola")
+            self.save(self.campaigns[cid])
+            self.save_queue()
+
+    def reorder_queue(self, ids: list[str]):
+        """Nuevo orden: las mismas campañas que ya hay en la cola."""
+        with self.lock:
+            if sorted(ids) != sorted(self.queue):
+                raise RuntimeError("El nuevo orden debe tener las mismas campañas que la cola")
+            self.queue = list(ids)
+            self.save_queue()
+
+    def resume_queue(self):
+        with self.lock:
+            self.queue_halted = False
+            self.save_queue()
+        self.start_next()
+
+    def start_next(self):
+        """Arranca la primera de la cola si no hay ninguna activa (ni en pausa con el planificador parado)."""
+        while True:
+            with self.lock:
+                if self.active or self.queue_halted or not self.queue:
+                    return
+                cid = self.queue[0]
+                held = [c["id"] for c in self.campaigns.values() if c["state"] == "paused" and c.get("holds_queue")]
+                if held and cid not in held:
+                    return
+                if not self.queueable(cid):
+                    self.queue.pop(0)
+                    self.save_queue()
+                    continue
+            try:
+                self.start(cid)
+                with self.lock:
+                    self.log(self.campaigns[cid], "Arrancada desde la cola")
+                    self.save(self.campaigns[cid])
+                return
+            except RuntimeError as e:
+                with self.lock:
+                    if cid in self.queue:
+                        self.queue.remove(cid)
+                    self.save_queue()
+                    self.log(self.campaigns[cid], f"No se pudo arrancar desde la cola: {e}")
 
     def restore(self, campaign: dict):
         restore = campaign.get("restore") or {}
@@ -950,6 +1062,9 @@ class Campaigns:
             self.save(campaign)
         if campaign["state"] in ("done", "aborted"):
             self.restore(campaign)
+        # La siguiente de la cola parte de lo que acaba de restaurar esta (y lo restaura igual al acabar)
+        if campaign["state"] == "done":
+            self.start_next()
 
     def requeue(self, campaign: dict, run: dict):
         with self.lock:

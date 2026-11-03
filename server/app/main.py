@@ -1155,9 +1155,32 @@ def upload_campaign_rows(cid: str, batch: CampaignRows):
     except KeyError:
         raise HTTPException(status_code=404, detail="Campaña no encontrada")
 
+@app.get("/api/campaigns-queue")
+def get_campaign_queue():
+    """Cola de campañas: en orden, si está detenida por una cancelación y qué campaña en pausa la retiene."""
+    return campaigns.queue_view()
+
+class CampaignQueueOrder(BaseModel):
+    ids: list[str]
+
+@app.put("/api/campaigns-queue")
+def reorder_campaign_queue(req: CampaignQueueOrder):
+    try:
+        campaigns.reorder_queue(req.ids)
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return campaigns.queue_view()
+
+@app.post("/api/campaigns-queue/resume")
+def resume_campaign_queue():
+    """Reanuda la cola detenida por una cancelación: arranca la primera si no hay ninguna activa."""
+    campaigns.resume_queue()
+    return campaigns.queue_view()
+
 @app.post("/api/campaigns/{cid}/{action}")
-def control_campaign(cid: str, action: Literal["start", "pause", "abort"]):
-    """start (o reanudar), pause (la prueba en curso se repetirá) o abort (restaura la red y la emisión)."""
+def control_campaign(cid: str, action: Literal["start", "pause", "abort", "enqueue", "dequeue"]):
+    """start (o reanudar), pause (la prueba en curso se repetirá), abort (restaura la red y la emisión),
+    enqueue (al final de la cola; arranca ya si no hay ninguna activa) o dequeue (la saca de la cola)."""
     campaign_or_404(cid)
     try:
         getattr(campaigns, action)(cid)

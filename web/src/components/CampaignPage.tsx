@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ChartLine, Check, Copy, Download, Eye, FlaskConical, Pause, Pencil, Play, RotateCcw, Server, Settings2, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Square, Trash2, X } from 'lucide-react';
 import { CampaignEditor, DEFAULT_PLAYER_OPTIONS, formatDuration } from './CampaignEditor';
 import { CampaignWorker } from './CampaignWorker';
 import { WorkersModal } from './WorkersModal';
 import { PLAYER_IDS } from '../lib/samples';
 import { CampaignResults } from './CampaignResults';
 import { CampaignPreview, stopPreview, type Preview } from './CampaignPreview';
-import type { Campaign, CampaignPlan, CampaignRun, PlayerId, ServerStatus } from '../types';
+import type { Campaign, CampaignPlan, CampaignQueue, CampaignRun, PlayerId, ServerStatus } from '../types';
 
 // Página de campañas de medida (/campaign; README, 4.8): editor, monitor y, en la misma pestaña o en otra
 // (/campaign?worker=1), el trabajador que monta los reproductores. Con el trabajador activo el monitor se
@@ -239,7 +239,7 @@ const Monitor: React.FC<{
       setError(String((e as Error).message));
     }
   };
-  const act = async (action: 'start' | 'pause' | 'abort') => {
+  const act = async (action: 'start' | 'pause' | 'abort' | 'enqueue' | 'dequeue') => {
     try {
       await call(`/api/campaigns/${campaign.id}/${action}`, 'POST');
       setError(null);
@@ -303,6 +303,24 @@ const Monitor: React.FC<{
               <Play className="w-3.5 h-3.5" /> {campaign.state === 'paused' ? 'Reanudar' : 'Arrancar'}
             </button>
           )}
+          {(campaign.state === 'ready' || campaign.state === 'paused') &&
+            (campaign.queue_position ? (
+              <button
+                className="flex items-center gap-1 px-3 py-1 rounded border border-slate-700 text-slate-300 hover:border-rose-500"
+                title="Sacarla de la cola; no cambia nada más"
+                onClick={() => act('dequeue')}
+              >
+                <ListX className="w-3.5 h-3.5" /> Sacar de la cola ({campaign.queue_position}.ª)
+              </button>
+            ) : (
+              <button
+                className="flex items-center gap-1 px-3 py-1 rounded border border-emerald-700 text-emerald-300 hover:border-emerald-500"
+                title="Al final de la cola: arranca sola cuando terminen las de delante. Si no hay ninguna en marcha, arranca ya"
+                onClick={() => act('enqueue')}
+              >
+                <ListPlus className="w-3.5 h-3.5" /> Encolar
+              </button>
+            ))}
           {campaign.state === 'running' && (
             <button
               className="flex items-center gap-1 px-3 py-1 rounded bg-amber-700 hover:bg-amber-600 text-white"
@@ -448,6 +466,83 @@ const Monitor: React.FC<{
   );
 };
 
+// Cola de campañas (README, 4.8): al terminar la que está en marcha, el servidor arranca la primera. Una
+// cancelación la detiene hasta reanudarla, y una campaña en pausa la retiene hasta reanudarla o cancelarla
+const QueuePanel: React.FC<{ queue: CampaignQueue; onChanged: () => void; onSelect: (id: string) => void }> = ({ queue, onChanged, onSelect }) => {
+  const [error, setError] = useState<string | null>(null);
+  const run = async (f: () => Promise<unknown>) => {
+    try {
+      await f();
+      setError(null);
+      onChanged();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+  const move = (i: number, d: number) => {
+    const ids = [...queue.ids];
+    [ids[i], ids[i + d]] = [ids[i + d], ids[i]];
+    run(() => call('/api/campaigns-queue', 'PUT', { ids }));
+  };
+  const total = queue.campaigns.reduce((t, c) => t + c.eta_s, 0);
+  return (
+    <div className="bg-slate-900 border border-emerald-900/60 rounded-xl px-4 py-3 space-y-2 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="font-semibold text-emerald-200">Cola de campañas</span>
+        <span className="text-slate-500">
+          {queue.campaigns.length} {queue.campaigns.length === 1 ? 'campaña' : 'campañas'} · unas {formatDuration(total)} en total
+        </span>
+        {queue.halted ? (
+          <>
+            <span className="text-amber-300">Detenida por una cancelación: no arranca ninguna hasta reanudarla.</span>
+            <button
+              className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white"
+              onClick={() => run(() => call('/api/campaigns-queue/resume', 'POST'))}
+            >
+              <Play className="w-3 h-3" /> Reanudar la cola
+            </button>
+          </>
+        ) : queue.held_by ? (
+          <span className="text-amber-300">
+            En espera: <span className="font-mono">{queue.held_by}</span> está en pausa; sigue al reanudarla o cancelarla.
+          </span>
+        ) : (
+          <span className="text-slate-500">Arranca la siguiente al terminar la que está en marcha.</span>
+        )}
+      </div>
+      <ol className="space-y-1">
+        {queue.campaigns.map((c, i) => (
+          <li key={c.id} className="flex items-center gap-2">
+            <span className="w-5 text-right font-mono text-slate-500">{i + 1}.</span>
+            <button className="text-slate-200 hover:text-indigo-300" onClick={() => onSelect(c.id)}>
+              {c.name}
+            </button>
+            <Badge state={c.state} />
+            <span className="text-slate-500">unas {formatDuration(c.eta_s)}</span>
+            <span className="ml-auto flex items-center gap-1">
+              <button className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30" disabled={i === 0} title="Subir" onClick={() => move(i, -1)}>
+                <ArrowUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30"
+                disabled={i === queue.campaigns.length - 1}
+                title="Bajar"
+                onClick={() => move(i, 1)}
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+              </button>
+              <button className="p-0.5 text-slate-400 hover:text-rose-400" title="Sacar de la cola" onClick={() => run(() => call(`/api/campaigns/${c.id}/dequeue`, 'POST'))}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          </li>
+        ))}
+      </ol>
+      {error && <p className="text-rose-400">{error}</p>}
+    </div>
+  );
+};
+
 export const CampaignPage: React.FC = () => {
   // Trabajador independiente (?worker=1&name=...): solo el trabajador, sin monitor ni editor (README 4.8, trabajadores independientes)
   const workerName = new URLSearchParams(window.location.search).get('name');
@@ -465,6 +560,7 @@ const CampaignMonitorPage: React.FC = () => {
   const [worker, setWorker] = useState(() => new URLSearchParams(window.location.search).get('worker') === '1');
   const [managing, setManaging] = useState(false);
   const [list, setList] = useState<Campaign[]>([]);
+  const [queue, setQueue] = useState<CampaignQueue | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Campaign | null>(null);
   // Vista previa de una prueba: el servidor aplica su red y su emisión y aquí se montan sus reproductores
@@ -503,6 +599,9 @@ const CampaignMonitorPage: React.FC = () => {
           setList(all);
           setSelectedId((id) => id ?? all.find((c) => c.state === 'running')?.id ?? all[0]?.id ?? null);
         })
+        .catch(() => {});
+      call('/api/campaigns-queue')
+        .then(setQueue)
         .catch(() => {});
     load();
     const timer = setInterval(load, worker ? 15000 : 5000);
@@ -598,6 +697,7 @@ const CampaignMonitorPage: React.FC = () => {
               }}
             >
               {c.name} <Badge state={c.state} />
+              {c.queue_position && <span className="text-[10px] text-emerald-300 font-mono">cola {c.queue_position}.ª</span>}
             </button>
           ))}
           <button
@@ -607,6 +707,8 @@ const CampaignMonitorPage: React.FC = () => {
             + Nueva campaña
           </button>
         </div>
+
+        {queue && queue.ids.length > 0 && <QueuePanel queue={queue} onChanged={refresh} onSelect={setSelectedId} />}
 
         {editing ? (
           <CampaignEditor
