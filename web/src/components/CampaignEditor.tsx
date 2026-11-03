@@ -165,20 +165,27 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
     const timer = setInterval(load, 3000);
     return () => clearInterval(timer);
   }, [workerMode]);
-  // A cada reproductor sin trabajador, uno libre: el que lleve su nombre (p. ej. lxc-moq) o el primero que quede
+  // A cada reproductor sin trabajador, uno libre: el que lleve su nombre (p. ej. lxc-moq) o el primero que quede. Un
+  // trabajador reproduce un solo protocolo a la vez: a la vez, uno distinto por reproductor; de uno en uno, si no
+  // quedan libres, se repite el que haya (sus pruebas se hacen una tras otra en él)
+  const together = playerMode === 'together';
   useEffect(() => {
     if (workerMode !== 'pool') return;
     setWorkerOf((current) => {
       const next = { ...current };
-      const free = () => pool.filter((w) => w.connected && !w.busy && !Object.values(next).includes(w.name));
+      const usable = pool.filter((w) => w.connected && !w.busy);
+      const free = () => usable.filter((w) => !Object.values(next).includes(w.name));
       for (const p of PLAYER_IDS) {
         if (!players.includes(p) || next[p]) continue;
-        const pick = free().find((w) => w.name.toLowerCase().includes(p)) ?? free()[0];
+        const pick = free().find((w) => w.name.toLowerCase().includes(p)) ?? free()[0] ?? (together ? undefined : usable[0]);
         if (pick) next[p] = pick.name;
       }
       return next;
     });
-  }, [pool, players, workerMode]);
+  }, [pool, players, workerMode, together]);
+  // A la vez, dos reproductores en el mismo trabajador no pueden ir
+  const sharedTogether =
+    workerMode === 'pool' && together && players.some((p) => players.some((q) => q !== p && workerOf[p] && workerOf[p] === workerOf[q]));
   const [quality, setQuality] = useState<number | null>(initial?.quality ?? null);
   const [options, setOptions] = useState<PlayerOptions>({ ...DEFAULT_PLAYER_OPTIONS, ...(initial?.player_options ?? {}) });
   const setOption = <K extends keyof PlayerOptions>(key: K, value: PlayerOptions[K]) => setOptions((o) => ({ ...o, [key]: value }));
@@ -224,6 +231,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
     if (!players.length) return setError('Elige al menos un reproductor');
     const workers = workerMode === 'pool' ? Object.fromEntries(players.map((p) => [p, workerOf[p] ?? ''])) : null;
     if (workers && Object.values(workers).some((w) => !w)) return setError('Navegadores independientes: elige el trabajador de cada reproductor');
+    if (sharedTogether) return setError('Con «Todos a la vez», cada reproductor necesita su propio trabajador: elige otros, o haz las pruebas de uno en uno');
     const plan: CampaignPlan = {
       name: name.trim() || `Campaña ${new Date().toLocaleString()}`,
       streams,
@@ -360,11 +368,11 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
           </label>
         </div>
         <div className="space-y-2">
-          <label className="flex flex-col gap-1 w-fit" title="Una pestaña: un solo navegador monta todos los reproductores (la casilla «Esta pestaña es el trabajador» o el script sin --name). Navegadores independientes: cada reproductor en su navegador, en trabajadores que se anuncian por su nombre (scripts/campaign-worker.mjs --name); su ventana la fija el servidor con la calidad más alta de la emisión.">
+          <label className="flex flex-col gap-1 w-fit" title="Una pestaña: un solo navegador monta todos los reproductores (la casilla «Esta pestaña es el trabajador» o el script sin --name). Navegadores independientes: trabajadores que se anuncian por su nombre (scripts/campaign-worker.mjs --name) y reproducen un solo protocolo a la vez, a toda su ventana (la calidad más alta de la emisión). Con «Todos a la vez», uno distinto por reproductor; «De uno en uno», varios reproductores pueden compartir trabajador y sus pruebas se hacen una tras otra en él.">
             <span className={label}>Trabajador</span>
             <select className={input} value={workerMode} onChange={(e) => setWorkerMode(e.target.value as 'tab' | 'pool')}>
               <option value="tab">Una pestaña (todos los reproductores en el mismo navegador)</option>
-              <option value="pool">Navegadores independientes (uno por reproductor)</option>
+              <option value="pool">Navegadores independientes (un reproductor en cada uno)</option>
             </select>
           </label>
           {workerMode === 'pool' && (
@@ -388,7 +396,12 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                         </option>
                       ))}
                     </select>
-                    {others.length > 0 && <span className="text-amber-300">Comparte navegador con {others.map((q) => PLAYER_LABEL[q]).join(', ')}</span>}
+                    {others.length > 0 &&
+                      (together ? (
+                        <span className="text-rose-300">También lo tiene {others.map((q) => PLAYER_LABEL[q]).join(', ')}: a la vez, uno por reproductor</span>
+                      ) : (
+                        <span className="text-slate-500">Compartido con {others.map((q) => PLAYER_LABEL[q]).join(', ')}: una prueba tras otra</span>
+                      ))}
                   </label>
                 );
               })}

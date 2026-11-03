@@ -222,7 +222,8 @@ class CampaignRequest(BaseModel):
     # interferencia entre ellos en el navegador)
     player_mode: Literal["together", "each"] = "together"
     # None: un solo trabajador monta todos los reproductores (la pestaña, como hasta ahora). Si no, el trabajador
-    # independiente (por su nombre) que monta cada reproductor, cada uno en su navegador (README 4.8, trabajadores independientes)
+    # independiente (por su nombre) que monta cada reproductor; cada uno reproduce uno solo a la vez, así que con
+    # player_mode together son distintos, y con each pueden repetirse (README 4.8, trabajadores independientes)
     workers: Optional[dict[Literal["dash", "moq", "rtc"], str]] = None
     # None: la adaptación de cada reproductor; una altura fija la desactiva
     quality: Optional[int] = Field(None, ge=144, le=1080)
@@ -258,6 +259,10 @@ class CampaignRequest(BaseModel):
                 raise ValueError(f"Nombre de trabajador no válido: {', '.join(bad)}")
             # Solo los de los reproductores de la campaña
             self.workers = {p: w for p, w in self.workers.items() if p in self.players}
+            # Un trabajador independiente reproduce un solo protocolo a la vez: a la vez, uno por reproductor; de uno
+            # en uno, pueden compartirlo (sus pruebas se hacen una tras otra en él)
+            if self.player_mode == "together" and len(set(self.workers.values())) < len(self.workers):
+                raise ValueError("Con los reproductores a la vez, cada uno necesita su propio trabajador independiente")
         return self
 
 def campaign_guard():
