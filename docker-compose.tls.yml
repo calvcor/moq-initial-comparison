@@ -1,6 +1,7 @@
 # Capa opcional: un solo certificado de Let's Encrypt (reto DNS de Cloudflare) para el panel (443/tcp),
-# DASH directo (8443/tcp) y el relay de MoQ (4433/udp), para servidores sin proxy HTTPS delante. WebRTC no
-# lo necesita: su vídeo usa DTLS con huella propia y su señalización pasa por el panel.
+# DASH directo (8443/tcp) y el relay de MoQ (4433/udp), para servidores sin proxy HTTPS delante. El vídeo de
+# WebRTC usa DTLS con huella propia; la señalización de mediasoup (8189/tcp, wss://) usa este mismo
+# certificado (lo monta docker-compose.yml) y la de MediaMTX pasa por el panel.
 # Se activa en el .env con COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml (README, sección 1).
 services:
   edge:
@@ -34,3 +35,8 @@ services:
   mediamtx:
     environment:
       - MTX_WEBRTCADDITIONALHOSTS=${RTC_HOST:?falta RTC_HOST}
+
+  # Igual para el SFU (RTC_SERVER=mediasoup): anuncia RTC_HOST, no el nombre de MOQ_HOST
+  sfu:
+    environment:
+      - ANNOUNCED_ADDRESS=${RTC_HOST:?falta RTC_HOST}
