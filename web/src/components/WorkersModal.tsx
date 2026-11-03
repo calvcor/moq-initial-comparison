@@ -31,18 +31,38 @@ const chromeVersion = (w: PoolWorker) => String(w.info.user_agent ?? '').match(/
 const LOCAL = ['localhost', '127.0.0.1', '[::1]'];
 const suggestInsecure = () => window.location.protocol === 'http:' && !LOCAL.includes(window.location.hostname);
 
-/** Comando para instalar un trabajador en una máquina Debian/Ubuntu (scripts/install-worker.sh, que sirve el orquestador). */
+// Dónde va el trabajador, y con ello qué comando se copia
+type Target = 'server' | 'desktop' | 'terminal';
+const TARGETS: Record<Target, { label: string; help: string }> = {
+  server: {
+    label: 'Servidor o LXC',
+    help: 'Debian o Ubuntu (amd64) con systemd, como root (en un LXC, desde su consola): instala Node 22, Google Chrome (fijado) y el trabajador como servicio del sistema (moq-worker), que arranca con la máquina. Sin pantalla, salvo que se marque Xvfb.',
+  },
+  desktop: {
+    label: 'PC con pantalla (Linux)',
+    help: 'Debian o Ubuntu (amd64) con escritorio, desde una terminal de tu sesión y con tu usuario, sin sudo (lo pide solo para instalar lo que falte): el trabajador queda como servicio de tu usuario, arranca con tu sesión gráfica y abre Chrome en tu pantalla.',
+  },
+  terminal: {
+    label: 'Mac u otro equipo, en esta terminal',
+    help: 'Cualquier equipo con Node 22 y Google Chrome ya instalados (en macOS, con pantalla): descarga el trabajador y lo ejecuta en la terminal, con tu usuario y tu pantalla, mientras esté abierta. Ctrl+C lo cierra.',
+  },
+};
+
+/** Comando para instalar o lanzar un trabajador (scripts/install-worker.sh o el script del trabajador, que sirve el orquestador). */
 const AddWorker: React.FC = () => {
   const origin = window.location.origin;
+  const [target, setTarget] = useState<Target>('server');
   const [name, setName] = useState('');
   const [display, setDisplay] = useState(false);
   const [insecure, setInsecure] = useState(suggestInsecure);
   const [copied, setCopied] = useState(false);
   const valid = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(name);
+  const args = `--url ${origin} --name ${valid ? name : '<nombre>'}${insecure ? ' --insecure' : ''}`;
   const command =
-    `curl -fsSL ${origin}/api/worker/install.sh | bash -s -- --url ${origin} --name ${valid ? name : '<nombre>'}` +
-    (display ? ' --display' : '') +
-    (insecure ? ' --insecure' : '');
+    target === 'terminal'
+      ? `mkdir -p ~/moq-worker && curl -fsSL ${origin}/api/worker/campaign-worker.mjs -o ~/moq-worker/campaign-worker.mjs && node ~/moq-worker/campaign-worker.mjs ${args}`
+      : `curl -fsSL ${origin}/api/worker/install.sh | bash -s -- ${args}` +
+        (target === 'desktop' ? ' --desktop' : display ? ' --display' : '');
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(command);
@@ -61,10 +81,18 @@ const AddWorker: React.FC = () => {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2">
       <div className="font-semibold text-slate-200">Añadir un trabajador</div>
-      <p className="text-slate-400">
-        En una máquina Debian o Ubuntu (amd64) con systemd, p. ej. un LXC, como root: instala Node 22, Google Chrome (fijado) y el
-        trabajador como servicio (moq-worker), que se anuncia aquí con ese nombre. Repetirlo lo actualiza.
-      </p>
+      <div className="flex flex-wrap gap-1">
+        {(Object.keys(TARGETS) as Target[]).map((t) => (
+          <button
+            key={t}
+            className={`px-2 py-1 rounded border ${t === target ? 'border-indigo-500 bg-indigo-900/40 text-white' : 'border-slate-700 text-slate-400 hover:text-white'}`}
+            onClick={() => setTarget(t)}
+          >
+            {TARGETS[t].label}
+          </button>
+        ))}
+      </div>
+      <p className="text-slate-400">{TARGETS[target].help} Se anuncia aquí con ese nombre; repetirlo lo actualiza.</p>
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-slate-500">Nombre</span>
@@ -75,9 +103,11 @@ const AddWorker: React.FC = () => {
             onChange={(e) => setName(e.target.value.trim())}
           />
         </label>
-        <label className="flex items-center gap-1.5 text-slate-300" title="Instala Xvfb y da a Chrome una pantalla virtual de 1920x1080, para poder abrirlo en una ventana en quiosco">
-          <input type="checkbox" checked={display} onChange={(e) => setDisplay(e.target.checked)} /> Con pantalla (Xvfb)
-        </label>
+        {target === 'server' && (
+          <label className="flex items-center gap-1.5 text-slate-300" title="Instala Xvfb y da a Chrome una pantalla virtual de 1920x1080, para poder abrirlo en una ventana en quiosco. Solo para máquinas sin pantalla: en un PC con pantalla, elige PC con pantalla.">
+            <input type="checkbox" checked={display} onChange={(e) => setDisplay(e.target.checked)} /> Pantalla virtual (Xvfb)
+          </label>
+        )}
         <label className="flex items-center gap-1.5 text-slate-300" title="El orquestador va por IP sin HTTPS: Chrome lo tratará como origen seguro (hace falta para MoQ)">
           <input type="checkbox" checked={insecure} onChange={(e) => setInsecure(e.target.checked)} /> Sin HTTPS (--insecure)
         </label>
