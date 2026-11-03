@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ChartLine, Check, Copy, Download, Eye, FlaskConical, Pause, Pencil, Play, RotateCcw, Settings2, Square, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ChartLine, Check, Copy, Download, Eye, FlaskConical, Pause, Pencil, Play, RotateCcw, Server, Settings2, Square, Trash2, X } from 'lucide-react';
 import { CampaignEditor, DEFAULT_PLAYER_OPTIONS, formatDuration } from './CampaignEditor';
 import { CampaignWorker } from './CampaignWorker';
+import { WorkersModal } from './WorkersModal';
+import { PLAYER_IDS } from '../lib/samples';
 import { CampaignResults } from './CampaignResults';
 import { CampaignPreview, stopPreview, type Preview } from './CampaignPreview';
 import type { Campaign, CampaignPlan, CampaignRun, PlayerId, ServerStatus } from '../types';
@@ -391,10 +393,34 @@ const Monitor: React.FC<{
           ) : (
             <span>Sin prueba en curso</span>
           )}
-          <span className={worker?.connected ? 'text-emerald-300' : 'text-amber-300'}>
-            {worker?.connected ? `Trabajador ${worker.id} conectado` : 'Esperando a un trabajador: abre /campaign?worker=1 en una pestaña visible'}
-          </span>
+          {plan.workers ? (
+            // Trabajadores independientes: uno por reproductor (README 4.8, trabajadores independientes)
+            PLAYER_IDS.filter((p) => plan.players.includes(p)).map((p) => {
+              const name = plan.workers![p]!;
+              const w = campaign.workers?.find((x) => x.name === name);
+              return (
+                <span key={p} className={w?.connected ? 'text-emerald-300' : 'text-amber-300'}>
+                  {p}: {name} {w?.connected ? (w.mounted ? `· ${w.mounted}` : '· conectado') : '· sin conexión'}
+                </span>
+              );
+            })
+          ) : (
+            <span className={worker?.connected ? 'text-emerald-300' : 'text-amber-300'}>
+              {worker?.connected ? `Trabajador ${worker.id} conectado` : 'Esperando a un trabajador: abre /campaign?worker=1 en una pestaña visible'}
+            </span>
+          )}
         </div>
+      )}
+      {campaign.state !== 'running' && plan.workers && (
+        <p className="text-slate-400">
+          Navegadores independientes:{' '}
+          {PLAYER_IDS.filter((p) => plan.players.includes(p))
+            .map((p) => {
+              const w = campaign.workers?.find((x) => x.name === plan.workers![p]);
+              return `${p} → ${plan.workers![p]}${w?.connected ? '' : ' (sin conexión)'}`;
+            })
+            .join(' · ')}
+        </p>
       )}
       {error && <p className="text-rose-300">{error}</p>}
 
@@ -423,7 +449,21 @@ const Monitor: React.FC<{
 };
 
 export const CampaignPage: React.FC = () => {
+  // Trabajador independiente (?worker=1&name=...): solo el trabajador, sin monitor ni editor (README 4.8, trabajadores independientes)
+  const workerName = new URLSearchParams(window.location.search).get('name');
+  if (workerName && new URLSearchParams(window.location.search).get('worker') === '1') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 p-2 font-sans">
+        <CampaignWorker name={workerName} />
+      </div>
+    );
+  }
+  return <CampaignMonitorPage />;
+};
+
+const CampaignMonitorPage: React.FC = () => {
   const [worker, setWorker] = useState(() => new URLSearchParams(window.location.search).get('worker') === '1');
+  const [managing, setManaging] = useState(false);
   const [list, setList] = useState<Campaign[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Campaign | null>(null);
@@ -516,8 +556,15 @@ export const CampaignPage: React.FC = () => {
               <p className="text-xs text-slate-400">Pruebas desatendidas por condición de red y latencia objetivo (README, 4.8)</p>
             </div>
           </div>
+          <button
+            className="ml-auto flex items-center gap-1.5 text-xs text-slate-300 hover:text-white"
+            onClick={() => setManaging(true)}
+            title="Trabajadores independientes (un navegador por reproductor): estado, lo que están midiendo, modo de Chrome y borrado"
+          >
+            <Server className="w-4 h-4" /> Trabajadores
+          </button>
           <label
-            className="ml-auto flex items-center gap-2 text-xs text-slate-300 cursor-pointer"
+            className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer"
             title="Esta pestaña monta los reproductores de cada prueba y sube sus medidas. Un solo trabajador a la vez; la pestaña tiene que quedar visible."
           >
             <input type="checkbox" checked={worker} onChange={toggleWorker} />
@@ -525,6 +572,7 @@ export const CampaignPage: React.FC = () => {
           </label>
         </header>
 
+        {managing && <WorkersModal onClose={() => setManaging(false)} />}
         {worker && <CampaignWorker />}
 
         {preview && (

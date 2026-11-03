@@ -79,6 +79,32 @@ Es compatible con que las keyframes, sincronizadas y sin ritmo de envío, se vea
 
 Con la cola de 100 ms, un GOP de 4 s es inestable: una pasada acaba en 1080p (objetivo 4589) y otra atrapada en 360p (objetivo 1544), según caiga o no en el bloqueo. Además se para bastante más (24-39 % de las muestras), porque nadie atiende las peticiones de keyframe y cada recuperación puede esperar hasta 4 s.
 
+## Con la cola de 300 ms
+
+La misma batería de campañas que con 100 ms (README, 3.4c), repetida el 3-11-2026 en local con la cola de 300 ms, la de RFC 8867, que es ya la de por defecto: tres rondas alternando mediasoup y MediaMTX, la escalera 1080p@4000, 720p@2000 y 360p@700, 15 s de calentamiento y 40 s de medida, sin audio. Las 36 pruebas fueron válidas (la tercera ronda se repitió entera porque el trabajador perdió su pestaña). Cifras de las tres pruebas de cada condición:
+
+| Bajada | Servidor | Cola | Altura media | Envío (kbit/s) | Parado | Cambios de calidad | Descartes en la cola |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 8 Mbit/s | mediasoup | 100 ms | 378, 783, 396 | 1089, 2517, 1053 | 0, 21, 0 % | 1, 10, 1 | 19, 595, 30 |
+| 8 Mbit/s | mediasoup | 300 ms | 918, 801, 864 | 3067, 2539, 2899 | 2,4, 4,6, 10,5 % | 16, 13, 13 | 5, 16, 136 |
+| 8 Mbit/s | MediaMTX | 100 ms | 1080 | 3826-4020 | 36, 15, 27 % | 0 | 2495-3276 |
+| 8 Mbit/s | MediaMTX | 300 ms | 1080 | 3768-4023 | 3,4, 0,5, 5,3 % | 0 | 98, 0, 48 |
+| 5 Mbit/s | mediasoup | 100 ms | 360 | 743-853 | 0 % | 0 | 0 |
+| 5 Mbit/s | mediasoup | 300 ms | 558, 396, 621 | 1380, 839, 1649 | 10, 5, 0 % | 16, 5, 16 | 211, 72, 0 |
+| 5 Mbit/s | MediaMTX | 100 ms | 1080 | 3750-3844 | 71, 70, 44 % | 0 | 17716-24770 |
+| 5 Mbit/s | MediaMTX | 300 ms | 1080 | 3297-3780 | 54, 49, 52 % | 0 | 21039-40644 |
+| 3 Mbit/s | mediasoup | 100 ms | 360-379 | 584-690 | 59, 20, 3 % | 1-2 | 46-194 |
+| 3 Mbit/s | mediasoup | 300 ms | 378-462 | 831-940 | 9, 11, 37 % | 2-10 | 0-264 |
+| 1,5 Mbit/s | mediasoup | 100 ms | 360 | 125-162 | 92, 91, 90 % | 0 | 28-43 |
+| 1,5 Mbit/s | mediasoup | 300 ms | 360-378 | 158-545 | 87, 85, 54 % | 0-2 | 0-142 |
+
+- **La cola de 100 ms explicaba buena parte de la infrautilización de mediasoup.** A 8 Mbit/s envía casi el triple (2,5-3,1 Mbit/s frente a ~1,1 en dos de tres pruebas) y pasa la mayor parte del tiempo en 720p o 1080p. A 5 Mbit/s ya no se queda siempre en 360p.
+- **No la explicaba toda.** No se estabiliza en 1080p a 8 Mbit/s, cambia de calidad 13-16 veces en 40 s y se para algo más que con 100 ms. Es lo esperable si queda la causa 2: con menos pérdidas, el controlador por pérdidas suelta antes y el estimador por retardo hace oscilar la capa.
+- **A MediaMTX también le cambia mucho.** A 8 Mbit/s pasa del 15-36 % de tiempo parado al 0,5-5 %, porque sus keyframes de 1080p ya caben. A 5 y 3 Mbit/s no cambia: 1080p no cabe y la cola se llena igual.
+- **La latencia apenas cambia.** La mediana de mediasoup a 8 Mbit/s sigue en 108-124 ms, y la de MediaMTX en 78-91 ms: la cola más profunda casi no se llena en estado estable.
+- **Sin límite de caudal y con RTT de 50 ms y 1 % de pérdida, la cola no actúa**, y las cifras son iguales que con 100 ms dentro de lo que varían entre pruebas. Esa variación sirve de referencia: MediaMTX pasó de un 3-19 % a un 0-3 % de tiempo parado con RTT de 50 ms sin que cambiara nada que le afecte.
+- **Variable de confusión:** entre las dos baterías, la señalización de mediasoup pasó a WebSocket. Con la de 100 ms, una sesión anterior pudo seguir enviando hasta ~29 s por la misma cola al cambiar de prueba; no se sabe si pasó, y lo haría peor, no mejor, a esa batería.
+
 ## Qué significa para las medidas
 
 - Es comportamiento de mediasoup con nuestra fuente, sin ajustar nada (principio de medida 1). El banco sigue usando el worker original: los interruptores solo existieron en una imagen de laboratorio, ya borrada.

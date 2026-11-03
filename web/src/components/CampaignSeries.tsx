@@ -34,6 +34,7 @@ const METRICS: Record<string, Metric> = {
   kbps: { label: 'Bitrate de vídeo recibido', unit: 'kbit/s', field: 'kbps' },
   ip_down: { label: 'Tráfico IP de bajada en el router', unit: 'kbit/s', field: 'ip_down_kbps', source: 'ip' },
   ip_up: { label: 'Tráfico IP de subida en el router', unit: 'kbit/s', field: 'ip_up_kbps', source: 'ip' },
+  drops_down: { label: 'Descartes en la cola de bajada, en cada segundo', unit: 'paquetes', field: 'ip_down_dropped', source: 'ip', note: 'Paquetes que descartó la cola de este protocolo en el router, de las lecturas del orquestador (desde el 3-11-2026). Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.' },
   // Lo lee el servidor cada segundo (desde el 30-10-2026); es de la emisión, el mismo en las tres ramas
   source_lag: {
     label: 'Retraso de la fuente',
@@ -362,8 +363,11 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
       .filter((id) => byId[id].players.includes(p))
       .map((id) => {
         const color = together || view === 'metrics' ? PLAYER_COLOR[p] : RUN_COLORS[selected.indexOf(id) % RUN_COLORS.length];
-        // Los segundos sin valor se quedan como y: null, para que la línea se corte ahí (spanGaps: false)
-        const points = ((metric.source === 'ip' ? data[id]?.ip : data[id]?.rows) ?? []).map((row) => ({ x: row.t_s, y: (row[`${p}_${metric.field}`] as number | null) ?? null, phase: row.phase }));
+        // Los segundos sin valor se quedan como y: null, para que la línea se corte ahí (spanGaps: false). Con
+        // trabajadores independientes, las filas de otro navegador no traen la clave del reproductor y no cuentan
+        const points = ((metric.source === 'ip' ? data[id]?.ip : data[id]?.rows) ?? [])
+          .filter((row) => `${p}_${metric.field}` in row)
+          .map((row) => ({ x: row.t_s, y: (row[`${p}_${metric.field}`] as number | null) ?? null, phase: row.phase }));
         return {
           label: together ? `${PLAYER_LABEL[p]}, ${id} (rep. ${byId[id].rep + 1})` : `${id} (rep. ${byId[id].rep + 1})`,
           protocol: p,

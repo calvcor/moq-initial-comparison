@@ -13,12 +13,12 @@ from typing import Literal, Optional
 from urllib.parse import urlsplit
 import requests
 from pydantic import BaseModel, Field, model_validator
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
 from . import qoe, source, trace, versions
-from .campaign import campaigns
+from .campaign import WORKER_NAME, campaigns
 from .origin import origin, router as origin_router
 from .source import VIDEO_FILE
 
@@ -221,6 +221,9 @@ class CampaignRequest(BaseModel):
     # together: los reproductores a la vez en cada prueba; each: una prueba por reproductor (control de la
     # interferencia entre ellos en el navegador)
     player_mode: Literal["together", "each"] = "together"
+    # None: un solo trabajador monta todos los reproductores (la pestaña, como hasta ahora). Si no, el trabajador
+    # independiente (por su nombre) que monta cada reproductor, cada uno en su navegador (README 4.8, trabajadores independientes)
+    workers: Optional[dict[Literal["dash", "moq", "rtc"], str]] = None
     # None: la adaptación de cada reproductor; una altura fija la desactiva
     quality: Optional[int] = Field(None, ge=144, le=1080)
     player_options: PlayerOptions = PlayerOptions()
@@ -246,6 +249,15 @@ class CampaignRequest(BaseModel):
                 raise ValueError(f"{network.label}: el jitter no puede superar el retardo")
         if len(set(self.players)) != len(self.players):
             raise ValueError("Reproductores repetidos")
+        if self.workers is not None:
+            missing = [p for p in self.players if not self.workers.get(p)]
+            if missing:
+                raise ValueError(f"Sin trabajador para: {', '.join(missing)}")
+            bad = [w for w in self.workers.values() if not re.fullmatch(WORKER_NAME, w)]
+            if bad:
+                raise ValueError(f"Nombre de trabajador no válido: {', '.join(bad)}")
+            # Solo los de los reproductores de la campaña
+            self.workers = {p: w for p, w in self.workers.items() if p in self.players}
         return self
 
 def campaign_guard():
@@ -1128,11 +1140,13 @@ class CampaignRows(BaseModel):
     """Filas de cada segundo de una prueba, las del CSV del dashboard más t_server_ms (reloj del servidor)."""
     run_id: str
     rows: list[dict] = Field(..., max_length=600)
+    # El trabajador independiente que las midió (None: el trabajador único)
+    worker: Optional[str] = Field(None, pattern=WORKER_NAME)
 
 @app.post("/api/campaigns/{cid}/samples")
 def upload_campaign_rows(cid: str, batch: CampaignRows):
     try:
-        return {"stored": campaigns.add_rows(cid, batch.run_id, batch.rows)}
+        return {"stored": campaigns.add_rows(cid, batch.run_id, batch.rows, batch.worker)}
     except KeyError:
         raise HTTPException(status_code=404, detail="Campaña no encontrada")
 
@@ -1202,6 +1216,9 @@ def campaign_series(cid: str, runs: str):
 class WorkerBeat(BaseModel):
     """Latido del trabajador de campañas: quién es y qué prueba tiene montada (None si ninguna)."""
     worker_id: str = Field(..., min_length=1, max_length=80)
+    # Con nombre, un trabajador independiente (un navegador por reproductor, README 4.8, trabajadores independientes): se anuncia y espera a
+    # que una campaña lo elija. Sin nombre, el trabajador único de siempre (la pestaña o el script sin --name)
+    name: Optional[str] = Field(None, pattern=WORKER_NAME)
     mounted: Optional[str] = None
     # Cuándo creó los reproductores de esa prueba, en reloj del servidor (para medir el arranque)
     mounted_at_ms: Optional[float] = None
@@ -1209,8 +1226,62 @@ class WorkerBeat(BaseModel):
 
 @app.post("/api/campaigns-worker")
 def campaign_worker(beat: WorkerBeat):
-    """Devuelve lo que debe tener montado el trabajador. Un solo trabajador a la vez."""
-    return campaigns.heartbeat(beat.worker_id, beat.mounted, beat.mounted_at_ms, beat.info)
+    """Devuelve lo que debe tener montado el trabajador. Sin nombre, un solo trabajador a la vez."""
+    return campaigns.heartbeat(beat.worker_id, beat.mounted, beat.mounted_at_ms, beat.info, beat.name)
+
+# El trabajador de campañas y su instalador (scripts/, montado en el contenedor), para instalar un trabajador
+# independiente en cualquier máquina con un comando (README 4.8, trabajadores independientes)
+SCRIPTS_DIR = "/app/scripts"
+
+def read_script(name: str) -> str:
+    try:
+        with open(os.path.join(SCRIPTS_DIR, name)) as f:
+            return f.read()
+    except OSError:
+        raise HTTPException(status_code=404, detail=f"No está {name}: falta el volumen ./scripts del orquestador")
+
+@app.get("/api/worker/campaign-worker.mjs", response_class=PlainTextResponse)
+def worker_script():
+    return PlainTextResponse(read_script("campaign-worker.mjs"), media_type="text/javascript")
+
+@app.get("/api/worker/install.sh", response_class=PlainTextResponse)
+def worker_installer(request: Request):
+    """El instalador, con este orquestador como dirección por defecto: la de la petición (tras un proxy, la que
+    diga X-Forwarded-Proto). El comando del panel la pasa además con --url."""
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    script = read_script("install-worker.sh").replace("__ORCHESTRATOR_URL__", f"{proto}://{host}")
+    return PlainTextResponse(script, media_type="text/x-shellscript")
+
+@app.get("/api/campaigns-workers")
+def campaign_workers():
+    """Los trabajadores independientes registrados: conectados o no, qué tienen montado y qué campaña los usa."""
+    return campaigns.pool_view()
+
+class WorkerSettings(BaseModel):
+    # headless o una ventana en quiosco (necesita pantalla); se fija en cada campaña al empezarla
+    browser: Literal["headless", "kiosk"]
+
+@app.patch("/api/campaigns-workers/{name}")
+def set_campaign_worker(name: str, req: WorkerSettings):
+    """Cambia el modo de Chrome de un trabajador independiente (no si lo usa una campaña en marcha o en pausa)."""
+    try:
+        return campaigns.set_worker_browser(name, req.browser)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No existe el trabajador {name}")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+@app.delete("/api/campaigns-workers/{name}")
+def forget_campaign_worker(name: str):
+    """Borra un trabajador independiente desconectado del registro."""
+    try:
+        campaigns.forget_worker(name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No existe el trabajador {name}")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"deleted": name}
 
 def campaign_snapshot() -> dict:
     """Lo que el planificador necesita saber de la emisión y la red, sin pasar por la API."""

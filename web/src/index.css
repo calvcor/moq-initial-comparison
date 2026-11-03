@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+/* Trabajador independiente de campañas (CampaignWorker con nombre, README 4.8, trabajadores independientes): la zona de vídeo del único
+   reproductor ocupa toda la ventana, que el servidor pide del tamaño de la calidad más alta, así que el
+   navegador compone la imagen a 1:1. El resto de la tarjeta del reproductor queda debajo, sin verse. */
+.worker-bare [data-player] {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+  z-index: 50;
+}
+.worker-bare [data-player] button {
+  display: none;
+}

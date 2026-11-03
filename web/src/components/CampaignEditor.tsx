@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { CLEAR, PRESETS } from './NetworkPanel';
 import { PLAYER_IDS } from '../lib/samples';
 import { LOOP_VIDEOS, gopAt, isLoopVideo } from '../lib/sources';
-import type { RtcServer, CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr, LinkProfile, MoqAbr, MoqSwitching, PlayerId, PlayerOptions, StreamConfig } from '../types';
+import type { RtcServer, CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr, LinkProfile, MoqAbr, MoqSwitching, PlayerId, PlayerOptions, PoolWorker, StreamConfig } from '../types';
+import { WorkersModal } from './WorkersModal';
 
 // Editor de campañas (README, 4.8): emisiones, condiciones de red, latencias objetivo y diseño. El servidor
 // sortea las pruebas al crearla; aquí solo se estima cuántas salen y cuánto tardan.
@@ -147,6 +148,37 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
   );
   const [players, setPlayers] = useState<PlayerId[]>(initial?.players ?? [...PLAYER_IDS]);
   const [playerMode, setPlayerMode] = useState<'together' | 'each'>(initial?.player_mode ?? 'together');
+  // Quién monta los reproductores: la pestaña trabajador (un solo navegador, como hasta ahora) o un trabajador
+  // independiente por reproductor, elegido entre los que se han anunciado (README 4.8, trabajadores independientes)
+  const [workerMode, setWorkerMode] = useState<'tab' | 'pool'>(initial?.workers ? 'pool' : 'tab');
+  const [workerOf, setWorkerOf] = useState<Partial<Record<PlayerId, string>>>(initial?.workers ?? {});
+  const [pool, setPool] = useState<PoolWorker[]>([]);
+  const [managing, setManaging] = useState(false);
+  useEffect(() => {
+    if (workerMode !== 'pool') return;
+    const load = () =>
+      fetch('/api/campaigns-workers')
+        .then((res) => (res.ok ? res.json() : []))
+        .then(setPool)
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 3000);
+    return () => clearInterval(timer);
+  }, [workerMode]);
+  // A cada reproductor sin trabajador, uno libre: el que lleve su nombre (p. ej. lxc-moq) o el primero que quede
+  useEffect(() => {
+    if (workerMode !== 'pool') return;
+    setWorkerOf((current) => {
+      const next = { ...current };
+      const free = () => pool.filter((w) => w.connected && !w.busy && !Object.values(next).includes(w.name));
+      for (const p of PLAYER_IDS) {
+        if (!players.includes(p) || next[p]) continue;
+        const pick = free().find((w) => w.name.toLowerCase().includes(p)) ?? free()[0];
+        if (pick) next[p] = pick.name;
+      }
+      return next;
+    });
+  }, [pool, players, workerMode]);
   const [quality, setQuality] = useState<number | null>(initial?.quality ?? null);
   const [options, setOptions] = useState<PlayerOptions>({ ...DEFAULT_PLAYER_OPTIONS, ...(initial?.player_options ?? {}) });
   const setOption = <K extends keyof PlayerOptions>(key: K, value: PlayerOptions[K]) => setOptions((o) => ({ ...o, [key]: value }));
@@ -190,6 +222,8 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
     if (!ladderOk.every(Boolean)) return setError('Escalera: altura@kbps separadas por comas, p. ej. 1080@4000, 720@2000');
     if (!networks.length) return setError('Añade al menos una condición de red');
     if (!players.length) return setError('Elige al menos un reproductor');
+    const workers = workerMode === 'pool' ? Object.fromEntries(players.map((p) => [p, workerOf[p] ?? ''])) : null;
+    if (workers && Object.values(workers).some((w) => !w)) return setError('Navegadores independientes: elige el trabajador de cada reproductor');
     const plan: CampaignPlan = {
       name: name.trim() || `Campaña ${new Date().toLocaleString()}`,
       streams,
@@ -197,6 +231,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
       targets,
       players: PLAYER_IDS.filter((p) => players.includes(p)),
       player_mode: playerMode,
+      workers,
       quality,
       player_options: options,
       repetitions,
@@ -323,6 +358,52 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
               ))}
             </select>
           </label>
+        </div>
+        <div className="space-y-2">
+          <label className="flex flex-col gap-1 w-fit" title="Una pestaña: un solo navegador monta todos los reproductores (la casilla «Esta pestaña es el trabajador» o el script sin --name). Navegadores independientes: cada reproductor en su navegador, en trabajadores que se anuncian por su nombre (scripts/campaign-worker.mjs --name); su ventana la fija el servidor con la calidad más alta de la emisión.">
+            <span className={label}>Trabajador</span>
+            <select className={input} value={workerMode} onChange={(e) => setWorkerMode(e.target.value as 'tab' | 'pool')}>
+              <option value="tab">Una pestaña (todos los reproductores en el mismo navegador)</option>
+              <option value="pool">Navegadores independientes (uno por reproductor)</option>
+            </select>
+          </label>
+          {workerMode === 'pool' && (
+            <div className="flex flex-wrap items-end gap-3">
+              {PLAYER_IDS.filter((p) => players.includes(p)).map((p) => {
+                const chosen = workerOf[p];
+                const others = PLAYER_IDS.filter((q) => q !== p && players.includes(q) && workerOf[q] && workerOf[q] === chosen);
+                return (
+                  <label key={p} className="flex flex-col gap-1">
+                    <span className={label}>{PLAYER_LABEL[p]}</span>
+                    <select className={input} value={chosen ?? ''} onChange={(e) => setWorkerOf((all) => ({ ...all, [p]: e.target.value || undefined }))}>
+                      <option value="">Elige un trabajador</option>
+                      {/* El elegido aparece aunque ya no se anuncie, para no perderlo al editar */}
+                      {chosen && !pool.some((w) => w.name === chosen) && <option value={chosen}>{chosen} (sin conexión)</option>}
+                      {pool.map((w) => (
+                        <option key={w.name} value={w.name}>
+                          {w.name}
+                          {' · '}
+                          {w.browser === 'kiosk' ? 'quiosco' : 'headless'}
+                          {!w.connected ? ' (sin conexión)' : w.busy ? ` (en uso: ${w.busy})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {others.length > 0 && <span className="text-amber-300">Comparte navegador con {others.map((q) => PLAYER_LABEL[q]).join(', ')}</span>}
+                  </label>
+                );
+              })}
+              <button
+                type="button"
+                className="px-2 py-1.5 rounded border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500"
+                onClick={() => setManaging(true)}
+                title="Estado de cada trabajador, lo que está midiendo, su modo de Chrome (headless o ventana en quiosco) y borrar los que ya no existen. Cada campaña fija el modo de cada trabajador al empezar."
+              >
+                Gestionar trabajadores
+              </button>
+              {!pool.length && <p className="text-amber-300">Ningún trabajador independiente se ha anunciado: lánzalos con scripts/campaign-worker.mjs --name.</p>}
+            </div>
+          )}
+          {managing && <WorkersModal onClose={() => setManaging(false)} />}
         </div>
       </section>
 

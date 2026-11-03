@@ -176,6 +176,7 @@ services:
     volumes:
       - ./media:/data  # vídeo fuente; si falta, el orquestador lo descarga aquí al arrancar
       - ./server/app:/app/app
+      - ./scripts:/app/scripts:ro  # el trabajador de campañas y su instalador, que sirve /api/worker/
     depends_on:
       - moq-relay
       - nginx-dash

@@ -6,11 +6,19 @@ import { sfuSignalUrl } from '../lib/rtcSession';
 import { gridCols } from '../lib/layout';
 import { syncClock, serverNowMs } from '../lib/clock';
 import { PLAYER_IDS, INITIAL_METRICS, IpRates, buildSampleRow } from '../lib/samples';
-import type { CampaignAssignment, PlayerId, PlayerMetrics, PlayerPreset, SampleRow, ServerStatus, VersionReport } from '../types';
+import type { CampaignAssignment, WorkerBrowser, PlayerId, PlayerMetrics, PlayerPreset, SampleRow, ServerStatus, VersionReport } from '../types';
 
 // Trabajador de las campañas (README, 4.8). El servidor decide qué prueba toca; esta pestaña monta los
 // reproductores con sus ajustes, avisa al tenerlos y sube las filas de cada segundo, las mismas del CSV del
 // dashboard más la hora del servidor. Los reproductores son siempre nuevos en cada prueba.
+//
+// Con nombre (/campaign?worker=1&name=lxc-moq) es un trabajador independiente (README 4.8, trabajadores independientes): se anuncia, monta
+// solo los reproductores que le asigna una campaña que lo haya elegido y los pinta a toda la ventana, del tamaño
+// que pide el servidor (la calidad más alta de la emisión). La ventana la ajusta quien lanza el navegador
+// (scripts/campaign-worker.mjs, leyendo window.__workerViewport); hasta que encaja, la pestaña no monta. Lo mismo
+// con el modo de Chrome (headless o ventana en quiosco, window.__workerBrowser): el script lo relanza en el que
+// pida la campaña, y la pestaña no monta en otro. El script dice en la URL en qué modo lo abrió (browser) y si
+// la máquina tiene pantalla (display), y la pestaña lo anuncia en cada latido.
 
 const WORKER_KEY = 'testbed.campaignWorker';
 const BEAT_MS = 1000;
@@ -18,6 +26,23 @@ const UPLOAD_MS = 5000;
 const MAX_PENDING_ROWS = 600; // lo que admite el servidor por lote
 // Fases en las que la prueba debe tener los reproductores montados
 const MOUNTED_PHASES = new Set(['mounting', 'warmup', 'measuring', 'closing']);
+// Lo que un trabajador independiente espera a que su ventana tenga el tamaño pedido antes de montar igualmente
+const VIEWPORT_WAIT_MS = 10000;
+
+declare global {
+  interface Window {
+    // Tamaño de ventana que pide el servidor a un trabajador independiente (lo aplica scripts/campaign-worker.mjs)
+    __workerViewport?: { width: number; height: number } | null;
+    __workerBrowser?: WorkerBrowser | null;
+  }
+}
+
+const viewportMatches = (v: { width: number; height: number } | undefined) =>
+  !v || (window.innerWidth === v.width && window.innerHeight === v.height);
+// Lo que dice el script que lanzó este Chrome (sin él, una pestaña normal: con pantalla y no headless)
+const launchParams = new URLSearchParams(window.location.search);
+const BROWSER: WorkerBrowser | 'tab' = (launchParams.get('browser') as WorkerBrowser | null) ?? 'tab';
+const HAS_DISPLAY = launchParams.get('display') !== '0';
 
 const PHASE_LABEL: Record<string, string> = {
   idle: 'sin prueba',
@@ -51,8 +76,10 @@ interface Mounted {
   atPerf: number;
 }
 
-export const CampaignWorker: React.FC = () => {
+export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null }) => {
   const idRef = useRef(workerId());
+  // Desde cuándo espera esta prueba a que la ventana tenga el tamaño pedido
+  const viewportWaitRef = useRef<{ run: string; since: number } | null>(null);
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const statusRef = useRef<ServerStatus | null>(null);
   const ipRef = useRef(new IpRates());
@@ -121,9 +148,14 @@ export const CampaignWorker: React.FC = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             worker_id: idRef.current,
+            ...(name ? { name } : {}),
             mounted: m?.run ?? null,
             mounted_at_ms: m?.atServerMs ?? null,
-            info: { user_agent: navigator.userAgent, hidden: document.hidden },
+            info: {
+              user_agent: navigator.userAgent,
+              hidden: document.hidden,
+              ...(name ? { viewport: `${window.innerWidth}x${window.innerHeight}`, dpr: window.devicePixelRatio, browser: BROWSER, display: HAS_DISPLAY } : {}),
+            },
           }),
         });
         if (!res.ok) throw new Error(`latido rechazado (${res.status})`);
@@ -131,6 +163,10 @@ export const CampaignWorker: React.FC = () => {
         if (stopped) return;
         setBusyBy(body.busy ? body.worker : null);
         setAssignment(body.busy ? null : body.assignment);
+        if (name) {
+          window.__workerViewport = body.busy ? null : (body.assignment?.viewport ?? null);
+          window.__workerBrowser = body.busy ? null : (body.assignment?.browser ?? null);
+        }
         setError(null);
       } catch (e) {
         if (!stopped) setError(String(e));
@@ -157,6 +193,15 @@ export const CampaignWorker: React.FC = () => {
     // Sin reloj sincronizado o sin estado de la emisión no se puede medir: se espera al siguiente latido
     const at = serverNowMs();
     if (at === null || !statusRef.current || !wanted.players || !wanted.run) return;
+    // Un trabajador independiente monta con la ventana del tamaño pedido (o, si no llega a tenerlo, tras
+    // VIEWPORT_WAIT_MS: la ventana real queda en cada fila, worker_viewport)
+    // En otro modo de Chrome no se monta nunca: sería otra medida (el script lo relanza en el pedido)
+    if (name && wanted.browser && wanted.browser !== BROWSER) return;
+    if (name && !viewportMatches(wanted.viewport)) {
+      const wait = viewportWaitRef.current;
+      if (!wait || wait.run !== wanted.run) viewportWaitRef.current = { run: wanted.run, since: performance.now() };
+      if (performance.now() - viewportWaitRef.current!.since < VIEWPORT_WAIT_MS) return;
+    }
     const presets = Object.fromEntries(
       PLAYER_IDS.map((p) => [p, { targetMs: wanted.targets?.[p] ?? null, quality: wanted.quality ?? 'auto', options: wanted.options }]),
     ) as Record<PlayerId, PlayerPreset>;
@@ -184,7 +229,12 @@ export const CampaignWorker: React.FC = () => {
         audioPlayer: null,
         versions: versionsRef.current,
       });
-      batch.rows.push({ ...row, t_server_ms: Math.round(t) } as SampleRow);
+      batch.rows.push({
+        ...row,
+        t_server_ms: Math.round(t),
+        // Trabajador independiente: el tamaño de su ventana, donde se pinta el reproductor
+        ...(name ? { worker_viewport: `${window.innerWidth}x${window.innerHeight}`, worker_browser: BROWSER } : {}),
+      } as SampleRow);
       if (batch.rows.length > MAX_PENDING_ROWS) batch.rows.shift();
       setLastG2g(Object.fromEntries(mounted.players.map((p) => [p, metricsRef.current[p].latencyMs])));
     }, 1000);
@@ -205,7 +255,7 @@ export const CampaignWorker: React.FC = () => {
               const res = await fetch(`/api/campaigns/${batch.campaign}/samples`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ run_id: batch.run, rows }),
+                body: JSON.stringify({ run_id: batch.run, rows, ...(name ? { worker: name } : {}) }),
               });
               // 404: la campaña ya no existe; las filas se descartan
               if (!res.ok && res.status !== 404) batch.rows.unshift(...rows);
@@ -238,9 +288,13 @@ export const CampaignWorker: React.FC = () => {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5">
-        <span className="font-semibold text-slate-200">Trabajador {idRef.current}</span>
+        <span className="font-semibold text-slate-200">
+          Trabajador {name ? <>independiente {name} <span className="font-normal text-slate-500">({idRef.current})</span></> : idRef.current}
+        </span>
         {busyBy ? (
-          <span className="text-amber-300">Ya hay otro trabajador conectado ({busyBy}); esta pestaña espera</span>
+          <span className="text-amber-300">
+            {name ? `Otro navegador usa ya el nombre ${name} (${busyBy}); esta pestaña espera` : `Ya hay otro trabajador conectado (${busyBy}); esta pestaña espera`}
+          </span>
         ) : (
           <>
             <span className="text-slate-400">
@@ -267,7 +321,8 @@ export const CampaignWorker: React.FC = () => {
       </div>
 
       {mounted && status && (
-        <div className={`grid gap-4 ${gridCols(active)}`}>
+        // Trabajador independiente con un reproductor: su imagen ocupa toda la ventana (index.css, .worker-bare)
+        <div className={`grid gap-4 ${gridCols(active)} ${name && mounted.players.length === 1 ? 'worker-bare' : ''}`}>
           {active.dash && (
             <DashPlayer
               key={`dash-${mounted.run}`}

@@ -379,6 +379,9 @@ export interface CampaignPlan {
   targets: CampaignTarget[];
   players: PlayerId[];
   player_mode: 'together' | 'each';
+  // null o ausente: un solo trabajador (la pestaña); si no, el trabajador independiente de cada reproductor
+  workers?: Partial<Record<PlayerId, string>> | null;
+  worker_browser?: WorkerBrowser; // solo campañas de prueba del 3-11-2026; ahora es de cada trabajador
   quality: number | null; // null = la adaptación de cada reproductor
   player_options: PlayerOptions;
   repetitions: number;
@@ -427,6 +430,25 @@ export interface CampaignWorkerState {
   info: Record<string, unknown>;
 }
 
+// Chrome de un trabajador independiente: headless o una ventana en quiosco (necesita pantalla)
+export type WorkerBrowser = 'headless' | 'kiosk';
+
+// Un trabajador independiente (GET /api/campaigns-workers): un navegador que se anuncia por su nombre y queda
+// registrado hasta que se borra
+export interface PoolWorker {
+  name: string;
+  id: string | null;
+  connected: boolean;
+  seen_ms: number | null; // último latido (null: no ha latido desde que arrancó el orquestador)
+  mounted: string | null;
+  // Lo que anuncia: user_agent, viewport (ancho x alto), browser (modo en que está abierto), display (tiene pantalla)
+  info: Record<string, unknown>;
+  browser: WorkerBrowser; // modo de Chrome que se le pide; cada campaña fija el que tenga al empezar
+  busy: string | null; // la campaña en marcha que lo usa
+  locked: string | null; // una campaña en marcha o en pausa lo usa: no se borra ni cambia de modo
+  task: { campaign: string; campaign_name: string; run: string; phase: string; players: PlayerId[] | null } | null;
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -440,6 +462,8 @@ export interface Campaign {
   total_runs: number;
   eta_s: number;
   worker?: CampaignWorkerState;
+  workers?: PoolWorker[]; // los trabajadores independientes del plan
+  worker_browsers?: Record<string, WorkerBrowser>; // su modo de Chrome, fijado al empezar la campaña
   versions?: Record<string, string | null>;
 }
 
@@ -449,6 +473,7 @@ export interface CampaignBrief {
   state: CampaignState;
   current: string | null;
   worker: CampaignWorkerState;
+  workers?: PoolWorker[];
 }
 
 // Lo que debe tener montado el trabajador (POST /api/campaigns-worker)
@@ -465,4 +490,6 @@ export interface CampaignAssignment {
   kind?: 'test' | 'control';
   rep?: number;
   ends_ms?: number | null;
+  viewport?: { width: number; height: number }; // ventana de un trabajador independiente
+  browser?: WorkerBrowser; // y cómo debe estar abierto su Chrome
 }

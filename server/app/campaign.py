@@ -26,6 +26,11 @@ La latencia objetivo de cada prueba se pasa a cada reproductor tal como lo entie
 (liveDelay de dash.js, delay de @moq/watch, jitterBufferTarget de WebRTC): no significan lo mismo y se
 declara así. None es el valor de fábrica de la implementación (en DASH, sin liveDelay: unos 8 s, README 4.8).
 
+El trabajador es uno solo (la pestaña, o el script sin nombre) o, si el plan lo dice (workers), uno por
+reproductor: navegadores independientes que se anuncian por su nombre y montan cada uno los reproductores que
+la campaña le asigna, en una ventana del tamaño de la calidad más alta de la emisión (README 4.8, trabajadores independientes). La prueba
+espera entonces a todos, y cada uno sube sus filas: los resúmenes de un reproductor salen de las de su navegador.
+
 Al terminar (o al cancelar) la red vuelve a quedar sin restricción y la emisión como estaba al empezar.
 Si el orquestador se reinicia con una campaña en marcha, al arrancar la retoma: la prueba en curso se repite.
 """
@@ -49,6 +54,10 @@ PLAYERS = ("dash", "moq", "rtc")
 CAMPAIGN_ID = re.compile(r"^\d{8}-\d{6}$")
 # Sin noticias del trabajador durante este tiempo, la prueba en curso se da por perdida
 WORKER_TIMEOUT_S = 15
+# Nombre de un trabajador independiente (un navegador por reproductor, README 4.8, trabajadores independientes), p. ej. lxc-moq
+WORKER_NAME = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$"
+# Modos de Chrome de un trabajador independiente: sin ventana, o una ventana en quiosco (necesita pantalla)
+WORKER_BROWSERS = ("headless", "kiosk")
 # Lo que se espera a que el trabajador desmonte los reproductores, o los monte, antes de seguir sin él
 UNMOUNT_WAIT_S = 10
 MOUNT_WAIT_S = 60
@@ -165,6 +174,13 @@ def summarize_ip(player: str, samples: list[dict]) -> dict:
         ms = sum(s["t_server_ms"] - s["from_ms"] for s in valid)
         out[f"ip_{d}_kbps"] = rounded(sum(s[f"{player}_{d}_bytes"] for s in valid) * 8 / ms) if ms else None
         out[f"ip_{d}_kbps_p95"] = rounded(percentile([s[f"{player}_{d}_kbps"] for s in valid], 95))
+        # Descartes de la cola en la medida, en número y sobre los paquetes que entraron (lecturas sin contador
+        # de descartes, anteriores al 3-11-2026, quedan fuera: vacío)
+        counted = [s for s in samples if s.get(f"{player}_{d}_dropped") is not None and s.get(f"{player}_{d}_packets") is not None]
+        dropped = sum(s[f"{player}_{d}_dropped"] for s in counted)
+        packets = sum(s[f"{player}_{d}_packets"] for s in counted)
+        out[f"ip_{d}_dropped"] = dropped if counted else None
+        out[f"ip_{d}_drop_pct"] = rounded(100 * dropped / packets, 3) if counted and packets else None
     return out
 
 
@@ -207,6 +223,9 @@ class Campaigns:
         self.ip_last: Optional[dict] = None
         # mounted_at_ms: cuándo creó el trabajador los reproductores de la prueba montada, en reloj del servidor
         self.worker = {"id": None, "seen": 0.0, "mounted": None, "mounted_at_ms": None, "info": {}}
+        # Trabajadores independientes, por nombre, con los mismos campos y su modo de Chrome (browser): se anuncian
+        # aunque ninguna campaña los use, y quedan registrados (workers.json) hasta que se borran a mano
+        self.pool: dict[str, dict] = {}
         # Vista previa de una prueba (preview): su red y su emisión aplicadas, y cómo estaba todo antes
         self.preview: Optional[dict] = None
         # Los pone main.py
@@ -232,10 +251,29 @@ class Campaigns:
             json.dump(campaign, f)
         os.replace(tmp, self.path(campaign["id"], "campaign.json"))
 
+    def save_pool(self):
+        """Los trabajadores independientes registrados y su modo de Chrome (no su estado, que es de cada latido)."""
+        os.makedirs(self.root, exist_ok=True)
+        tmp = os.path.join(self.root, "workers.json.part")
+        with open(tmp, "w") as f:
+            json.dump({name: {"browser": w["browser"]} for name, w in self.pool.items()}, f)
+        os.replace(tmp, os.path.join(self.root, "workers.json"))
+
+    @staticmethod
+    def new_worker(browser: str = "headless") -> dict:
+        return {"id": None, "seen": 0.0, "mounted": None, "mounted_at_ms": None, "info": {}, "browser": browser}
+
     def load(self):
         """Lee las campañas guardadas y retoma la que estuviera en marcha al reiniciarse el orquestador."""
         if not os.path.isdir(self.root):
             return
+        try:
+            with open(os.path.join(self.root, "workers.json")) as f:
+                for name, settings in json.load(f).items():
+                    browser = settings.get("browser")
+                    self.pool[name] = self.new_worker(browser if browser in WORKER_BROWSERS else "headless")
+        except (OSError, ValueError, AttributeError):
+            pass
         for cid in sorted(os.listdir(self.root)):
             try:
                 with open(self.path(cid, "campaign.json")) as f:
@@ -341,12 +379,79 @@ class Campaigns:
         out.update(counts=counts, total_runs=len(campaign["runs"]), eta_s=round(self.estimate_s(campaign)))
         if campaign["id"] == self.active:
             out["worker"] = self.worker_view()
+        if campaign["plan"].get("workers"):
+            # El estado de los trabajadores independientes de la campaña, esté en marcha o no
+            names = set(campaign["plan"]["workers"].values())
+            out["workers"] = [w for w in self.pool_view() if w["name"] in names]
         return out
 
     def worker_view(self) -> dict:
         connected = self.worker["id"] is not None and time.time() - self.worker["seen"] < WORKER_TIMEOUT_S
         return {"connected": connected, "id": self.worker["id"], "seen_ms": int(self.worker["seen"] * 1000),
                 "mounted": self.worker["mounted"], "info": self.worker["info"]}
+
+    def pool_view(self) -> list[dict]:
+        """Los trabajadores independientes registrados. busy: los usa la campaña activa; locked: una campaña en marcha
+        o en pausa (no se pueden borrar ni cambiar de modo); task: lo que tienen montado, con su campaña y fase."""
+        with self.lock:
+            now = time.time()
+            used = set((self.campaigns[self.active]["plan"].get("workers") or {}).values()) if self.active else set()
+            out = []
+            for name, w in sorted(self.pool.items()):
+                connected = w["id"] is not None and now - w["seen"] < WORKER_TIMEOUT_S
+                task = None
+                if connected and w["mounted"] and self.active:
+                    campaign = self.campaigns[self.active]
+                    run = self.find_run(campaign, w["mounted"])
+                    if run:
+                        task = {"campaign": campaign["id"], "campaign_name": campaign["name"], "run": run["id"],
+                                "phase": run["state"], "players": (self.run_workers(campaign["plan"], run) or {}).get(name)}
+                out.append({"name": name, "id": w["id"], "connected": connected, "seen_ms": int(w["seen"] * 1000) or None,
+                            "mounted": w["mounted"] if connected else None, "info": w["info"], "browser": w["browser"],
+                            "busy": self.active if name in used else None, "task": task, "locked": self.locked_by(name)})
+            return out
+
+    def locked_by(self, name: str) -> Optional[str]:
+        """La campaña en marcha o en pausa que usa este trabajador independiente (None si ninguna)."""
+        return next((c["id"] for c in self.campaigns.values()
+                     if c["state"] in ("running", "paused") and name in (c["plan"].get("workers") or {}).values()), None)
+
+    def set_worker_browser(self, name: str, browser: str) -> dict:
+        """Cambia el modo de Chrome de un trabajador independiente. No con una campaña en marcha o en pausa que lo
+        use (mezclaría modos en ella), ni a ventana si el trabajador dice que no tiene pantalla."""
+        with self.lock:
+            if name not in self.pool:
+                raise KeyError(name)
+            if browser not in WORKER_BROWSERS:
+                raise ValueError(browser)
+            locked = self.locked_by(name)
+            if locked and browser != self.pool[name]["browser"]:
+                raise RuntimeError(f"La campaña {locked} usa {name}: termínala o cancélala antes de cambiar su modo")
+            if browser == "kiosk" and self.pool[name]["info"].get("display") is False:
+                raise RuntimeError(f"{name} no tiene pantalla: solo puede ir en headless")
+            self.pool[name]["browser"] = browser
+            self.save_pool()
+            return next(w for w in self.pool_view() if w["name"] == name)
+
+    def forget_worker(self, name: str):
+        """Borra un trabajador independiente del registro. No si está conectado (volvería a anunciarse en el siguiente
+        latido) ni si lo usa una campaña en marcha o en pausa."""
+        with self.lock:
+            if name not in self.pool:
+                raise KeyError(name)
+            if self.pool_alive(name):
+                raise RuntimeError(f"{name} está conectado: ciérralo antes, o se volverá a anunciar")
+            locked = self.locked_by(name)
+            if locked:
+                raise RuntimeError(f"La campaña {locked} usa {name}")
+            del self.pool[name]
+            self.save_pool()
+            logger.info(f"Campañas: trabajador {name} borrado del registro")
+
+    @staticmethod
+    def browser_of(campaign: dict, name: str) -> str:
+        """Modo de Chrome de un trabajador en una campaña: el que tenía al empezarla."""
+        return (campaign.get("worker_browsers") or {}).get(name) or campaign["plan"].get("worker_browser") or "headless"
 
     def all(self) -> list[dict]:
         with self.lock:
@@ -363,8 +468,12 @@ class Campaigns:
             if not self.active:
                 return None
             campaign = self.campaigns[self.active]
-            return {"id": campaign["id"], "name": campaign["name"], "state": campaign["state"],
-                    "current": campaign["current"], "worker": self.worker_view()}
+            out = {"id": campaign["id"], "name": campaign["name"], "state": campaign["state"],
+                   "current": campaign["current"], "worker": self.worker_view()}
+            if campaign["plan"].get("workers"):
+                names = set(campaign["plan"]["workers"].values())
+                out["workers"] = [w for w in self.pool_view() if w["name"] in names]
+            return out
 
     def rename(self, cid: str, name: str) -> dict:
         """Cambia el nombre, en cualquier estado: no toca el plan ni las medidas (el CSV lleva el id, no el nombre)."""
@@ -406,6 +515,10 @@ class Campaigns:
                 campaign["restore"] = {"running": snap.get("running"), "config": snap.get("config"),
                                        "network": snap.get("network")}
                 campaign["versions"] = snap.get("versions")
+            if campaign["plan"].get("workers") and "worker_browsers" not in campaign:
+                # El modo de Chrome de cada trabajador queda fijado al empezar: toda la campaña con el mismo
+                campaign["worker_browsers"] = {n: self.pool[n]["browser"] if n in self.pool else "headless"
+                                               for n in set(campaign["plan"]["workers"].values())}
             campaign["state"] = "running"
             self.log(campaign, "Campaña en marcha")
             self.save(campaign)
@@ -454,38 +567,113 @@ class Campaigns:
 
     # --- trabajador ---
 
-    def heartbeat(self, worker_id: str, mounted: Optional[str], mounted_at_ms: Optional[float], info: dict) -> dict:
-        """El trabajador dice qué tiene montado y recibe lo que debe tener."""
+    def heartbeat(self, worker_id: str, mounted: Optional[str], mounted_at_ms: Optional[float], info: dict,
+                  name: Optional[str] = None) -> dict:
+        """El trabajador dice qué tiene montado y recibe lo que debe tener.
+
+        Sin nombre es el trabajador único de siempre: el primero que late se queda con las campañas sin
+        trabajadores independientes, y los demás esperan. Con nombre es un trabajador independiente: se anuncia,
+        y solo monta lo que le asigna una campaña que lo haya elegido."""
         with self.lock:
             now = time.time()
-            if self.worker["id"] not in (None, worker_id) and now - self.worker["seen"] < WORKER_TIMEOUT_S:
-                return {"busy": True, "worker": self.worker["id"], "assignment": None}
-            if self.worker["id"] != worker_id:
-                logger.info(f"Campañas: trabajador {worker_id} conectado")
+            entry = self.pool.get(name) if name else self.worker
+            if entry is not None and entry["id"] not in (None, worker_id) and now - entry["seen"] < WORKER_TIMEOUT_S:
+                return {"busy": True, "worker": entry["id"], "assignment": None}
+            if entry is None or entry["id"] != worker_id:
+                logger.info(f"Campañas: trabajador {name or worker_id} conectado" + (f" ({worker_id})" if name else ""))
+            if name and entry is None:
+                entry = self.pool[name] = self.new_worker()
+                self.save_pool()
             # Si no lo dice (o no es creíble), el primer latido que trae la prueba montada
             if mounted is None:
                 mounted_at_ms = None
             elif mounted_at_ms is None or not now * 1000 - 60000 <= mounted_at_ms <= now * 1000 + 1000:
-                same = self.worker["mounted"] == mounted and self.worker["mounted_at_ms"]
-                mounted_at_ms = self.worker["mounted_at_ms"] if same else now * 1000
-            self.worker.update(id=worker_id, seen=now, mounted=mounted, mounted_at_ms=mounted_at_ms, info=info)
+                same = entry["mounted"] == mounted and entry["mounted_at_ms"]
+                mounted_at_ms = entry["mounted_at_ms"] if same else now * 1000
+            entry.update(id=worker_id, seen=now, mounted=mounted, mounted_at_ms=mounted_at_ms, info=info)
             self.wake.set()
-            return {"busy": False, "assignment": self.assignment()}
+            return {"busy": False, "assignment": self.assignment(name)}
 
-    def assignment(self) -> Optional[dict]:
+    def assignment(self, name: Optional[str] = None) -> Optional[dict]:
+        """Lo que debe tener montado el trabajador único (name None) o el independiente de ese nombre."""
         if not self.active:
             return None
         campaign = self.campaigns[self.active]
-        current = campaign["current"]
-        if campaign["state"] != "running" or current is None:
-            return {"campaign": campaign["id"], "phase": "idle"}
-        run = self.find_run(campaign, current)
         plan = campaign["plan"]
+        idle = {"campaign": campaign["id"], "phase": "idle"}
+        # Una campaña con trabajadores independientes no da nada al trabajador único, ni al revés; un trabajador
+        # independiente que la campaña no ha elegido tampoco recibe nada (ni su resolución)
+        if bool(plan.get("workers")) != bool(name) or (name and name not in plan["workers"].values()):
+            return idle
+        current = campaign["current"]
+        run = self.find_run(campaign, current) if current else None
+        if name:
+            # La ventana del trabajador, antes de que monte: la de la emisión de la prueba (o la mayor del plan)
+            streams = [plan["streams"][run["stream"]]] if run else plan["streams"]
+            idle["viewport"] = max((self.viewport(s) for s in streams), key=lambda v: v["height"])
+            idle["browser"] = self.browser_of(campaign, name)
+        if campaign["state"] != "running" or run is None:
+            return idle
+        workers = self.run_workers(plan, run)
+        if workers is not None and name not in workers:
+            return idle  # la prueba no tiene reproductores en este trabajador (una por reproductor)
         phase = run["state"]
-        out = {"campaign": campaign["id"], "run": run["id"], "phase": phase}
+        out = {**idle, "run": run["id"], "phase": phase}
         if phase in ("mounting", "warmup", "measuring", "closing"):
             out.update(self.run_settings(plan, run), ends_ms=self.phase_end_ms(run, plan))
+            if workers is not None:
+                out["players"] = workers[name]
         return out
+
+    @staticmethod
+    def viewport(stream: dict) -> dict:
+        """Ventana de un trabajador independiente: la calidad más alta de la emisión, en 16:9, para que el navegador
+        componga la imagen a 1:1 (una calidad inferior la escala al tamaño de la ventana, como la vería un espectador)."""
+        height = max(r["height"] for r in stream["renditions"])
+        return {"width": 2 * round(height * 8 / 9), "height": height}
+
+    @staticmethod
+    def run_workers(plan: dict, run: dict) -> Optional[dict[str, list[str]]]:
+        """Con trabajadores independientes, qué reproductores de la prueba monta cada uno; None con el trabajador único."""
+        assigned = plan.get("workers")
+        if not assigned:
+            return None
+        out: dict[str, list[str]] = {}
+        for p in run["players"]:
+            out.setdefault(assigned[p], []).append(p)
+        return out
+
+    def pool_alive(self, name: str) -> bool:
+        entry = self.pool.get(name)
+        return entry is not None and entry["id"] is not None and time.time() - entry["seen"] < WORKER_TIMEOUT_S
+
+    def run_alive(self, plan: dict, run: dict) -> bool:
+        """Están conectados los trabajadores que necesita la prueba."""
+        workers = self.run_workers(plan, run)
+        return self.worker_alive() if workers is None else all(self.pool_alive(n) for n in workers)
+
+    def run_mounted(self, plan: dict, run: dict) -> bool:
+        """Todos los trabajadores de la prueba la tienen montada."""
+        workers = self.run_workers(plan, run)
+        if workers is None:
+            return self.worker["mounted"] == run["id"]
+        return all(self.pool.get(n, {}).get("mounted") == run["id"] for n in workers)
+
+    def unmounted(self, plan: dict) -> bool:
+        """Ningún trabajador de la campaña tiene nada montado (los desconectados no cuentan)."""
+        if not plan.get("workers"):
+            return self.worker["mounted"] is None
+        return all(not self.pool_alive(n) or self.pool[n]["mounted"] is None for n in set(plan["workers"].values()))
+
+    def mounted_times(self, plan: dict, run: dict) -> tuple[int, dict[str, int]]:
+        """Cuándo se montaron los reproductores: el último trabajador en hacerlo y, por reproductor, el suyo."""
+        workers = self.run_workers(plan, run)
+        fallback = int(time.time() * 1000)
+        if workers is None:
+            at = int(self.worker["mounted_at_ms"] or fallback)
+            return at, {p: at for p in run["players"]}
+        by = {p: int(self.pool[n]["mounted_at_ms"] or fallback) for n, players in workers.items() for p in players}
+        return max(by.values()), by
 
     @staticmethod
     def run_settings(plan: dict, run: dict) -> dict:
@@ -574,8 +762,9 @@ class Campaigns:
             return run["measure_start_ms"] + int(plan["measure_s"] * 1000)
         return None
 
-    def add_rows(self, cid: str, run_id: str, rows: list[dict]) -> int:
-        """Guarda las filas que sube el trabajador, marcadas con la fase de la prueba a la que pertenecen."""
+    def add_rows(self, cid: str, run_id: str, rows: list[dict], worker: Optional[str] = None) -> int:
+        """Guarda las filas que sube el trabajador, marcadas con la fase de la prueba a la que pertenecen (y, de un
+        trabajador independiente, con su nombre: cada uno sube las de sus reproductores)."""
         with self.lock:
             campaign = self.campaigns.get(cid)
             if campaign is None:
@@ -597,7 +786,7 @@ class Campaigns:
                     continue  # ya fuera de la prueba
                 # run_started_ms distingue la prueba repetida tras una pausa o un reinicio, que conserva su id
                 kept.append({"campaign": cid, "run_id": run_id, "attempt": run["attempt"],
-                             "run_started_ms": run["started_ms"], "phase": phase, **row})
+                             "run_started_ms": run["started_ms"], "phase": phase, **row, **({"worker": worker} if worker else {})})
             if not kept:
                 return 0
             with open(self.path(cid, "samples.jsonl"), "a") as f:
@@ -659,21 +848,24 @@ class Campaigns:
                 campaign["current"] = run["id"]
                 run.update(state="preparing", started_ms=int(time.time() * 1000), mounted_ms=None, warmup_start_ms=None,
                            measure_start_ms=None, ended_ms=None, invalid_reasons=[], summary=None)
+                run.pop("mounted_by", None)
                 self.rows.pop(run["id"], None)
                 self.ip.pop(run["id"], None)
                 self.save(campaign)
 
-            # Sin trabajador no tiene sentido tocar nada: se espera a que se conecte
-            if not self.worker_alive():
+            # Sin trabajador no tiene sentido tocar nada: se espera a que se conecte (con trabajadores
+            # independientes, todos los que necesita la prueba)
+            alive = lambda: self.run_alive(plan, run)
+            if not alive():
                 with self.lock:
                     run["state"] = "pending"
                     campaign["current"] = None
-                if not self.wait(3600 * 24, campaign, self.worker_alive):
+                if not self.wait(3600 * 24, campaign, alive):
                     break
                 continue
 
-            # 1. El trabajador desmonta lo que tenga antes de cambiar la red o la emisión
-            self.wait(UNMOUNT_WAIT_S, campaign, lambda: self.worker["mounted"] is None)
+            # 1. Los trabajadores desmontan lo que tengan antes de cambiar la red o la emisión
+            self.wait(UNMOUNT_WAIT_S, campaign, lambda: self.unmounted(plan))
             try:
                 stream = plan["streams"][run["stream"]]
                 snap = self.snapshot()
@@ -706,19 +898,25 @@ class Campaigns:
             with self.lock:
                 run["state"] = "mounting"
                 self.save(campaign)
-            mounted = self.wait(MOUNT_WAIT_S, campaign, lambda: self.worker["mounted"] == run["id"])
+            mounted = self.wait(MOUNT_WAIT_S, campaign, lambda: self.run_mounted(plan, run))
             if campaign["state"] != "running":
                 self.requeue(campaign, run)
                 break
             if not mounted:
-                self.close(campaign, run, before, ["el trabajador no montó los reproductores"])
+                workers = self.run_workers(plan, run)
+                late = [n for n in workers if self.pool.get(n, {}).get("mounted") != run["id"]] if workers else []
+                reason = f"no montaron los reproductores: {', '.join(late)}" if late else "el trabajador no montó los reproductores"
+                self.close(campaign, run, before, [reason])
                 continue
 
             # 3. Calentamiento y 4. medida
             with self.lock:
-                run.update(state="warmup", warmup_start_ms=int(time.time() * 1000), mounted_ms=int(self.worker["mounted_at_ms"] or time.time() * 1000))
+                mounted_ms, mounted_by = self.mounted_times(plan, run)
+                run.update(state="warmup", warmup_start_ms=int(time.time() * 1000), mounted_ms=mounted_ms)
+                if plan.get("workers"):
+                    run["mounted_by"] = mounted_by
                 self.save(campaign)
-            lost = lambda: not self.worker_alive() or self.worker["mounted"] != run["id"]
+            lost = lambda: not self.run_alive(plan, run) or not self.run_mounted(plan, run)
             if not self.wait(plan["warmup_s"], campaign, lost) or lost():
                 if campaign["state"] != "running":
                     self.requeue(campaign, run)
@@ -770,25 +968,28 @@ class Campaigns:
             warmup = sorted((r for r in kept if r["phase"] == "warmup"), key=lambda r: r["t_server_ms"])
             reasons = list(reasons)
             if not reasons:
-                reasons += self.validity(run, rows, before, after, plan)
+                reasons += self.validity(run, rows, before, after, plan, campaign)
             target = plan["targets"][run["target"]]
+            # Las filas de cada reproductor: con el trabajador único, todas; con trabajadores independientes, las del
+            # navegador que lo tenía montado (la carga del hilo principal es entonces la de ese navegador)
+            of = self.player_rows if plan.get("workers") else (lambda p, rs: rs)
             run["summary"] = {
                 "rows": len(rows),
                 "server": {
                     "restarts": self.delta(before.get("restarts"), after.get("restarts")),
                     "ingest_anomalies": self.delta(before.get("anomalies"), after.get("anomalies")),
                 },
-                "players": {p: summarize_player(p, rows, plan["measure_s"], target.get(f"{p}_ms")) for p in run["players"]},
+                "players": {p: summarize_player(p, of(p, rows), plan["measure_s"], target.get(f"{p}_ms")) for p in run["players"]},
             }
             ip = [s for s in self.ip.pop(run["id"], []) if s["phase"] == "measuring"]
             source = summarize_source(ip)
-            main = summarize_main(rows, plan["measure_s"])
             for p in run["players"]:
-                run["summary"]["players"][p].update(summarize_ip(p, ip), **source, **main)
+                run["summary"]["players"][p].update(summarize_ip(p, ip), **source, **summarize_main(of(p, rows), plan["measure_s"]))
             # Del montaje a la primera fila con latencia medida, con la resolución de una fila por segundo
             for p in run["players"]:
-                first = next((r["t_server_ms"] for r in warmup if r.get(f"{p}_g2g_ms") is not None), None)
-                run["summary"]["players"][p]["first_g2g_s"] = rounded((first - run["mounted_ms"]) / 1000) if first and run["mounted_ms"] else None
+                mounted = (run.get("mounted_by") or {}).get(p) or run["mounted_ms"]
+                first = next((r["t_server_ms"] for r in of(p, warmup) if r.get(f"{p}_g2g_ms") is not None), None)
+                run["summary"]["players"][p]["first_g2g_s"] = rounded((first - mounted) / 1000) if first and mounted else None
             run.update(ended_ms=int(time.time() * 1000), invalid_reasons=reasons, state="invalid" if reasons else "done")
             if reasons:
                 self.log(campaign, f"{run['id']} inválida: {'; '.join(reasons)}")
@@ -806,7 +1007,7 @@ class Campaigns:
             return None
         return sum(after.get(k, 0) - before.get(k, 0) for k in after)
 
-    def validity(self, run: dict, rows: list[dict], before: dict, after: dict, plan: dict) -> list[str]:
+    def validity(self, run: dict, rows: list[dict], before: dict, after: dict, plan: dict, campaign: Optional[dict] = None) -> list[str]:
         reasons = []
         if any(r.get("tab_hidden") for r in rows):
             reasons.append("pestaña oculta")
@@ -816,12 +1017,33 @@ class Campaigns:
         anomalies = self.delta(before.get("anomalies"), after.get("anomalies"))
         if anomalies:
             reasons.append(f"{anomalies} anomalías de ingesta")
-        wanted = "|".join(p for p in PLAYERS if p in run["players"])
-        if any(r.get("players") != wanted for r in rows):
-            reasons.append("reproductores activos distintos de los de la prueba")
-        if len(rows) < MIN_ROWS * plan["measure_s"]:
-            reasons.append(f"faltan filas: {len(rows)} de {round(plan['measure_s'])} s")
+        workers = self.run_workers(plan, run)
+        if workers is None:
+            wanted = "|".join(p for p in PLAYERS if p in run["players"])
+            if any(r.get("players") != wanted for r in rows):
+                reasons.append("reproductores activos distintos de los de la prueba")
+            if len(rows) < MIN_ROWS * plan["measure_s"]:
+                reasons.append(f"faltan filas: {len(rows)} de {round(plan['measure_s'])} s")
+            return reasons
+        # Con trabajadores independientes, lo mismo en cada uno, con sus reproductores y sus filas
+        if any(r.get("worker") not in workers for r in rows):
+            reasons.append("filas de un trabajador que no es de la prueba")
+        for name, players in workers.items():
+            mine = [r for r in rows if r.get("worker") == name]
+            wanted = "|".join(p for p in PLAYERS if p in players)
+            if any(r.get("players") != wanted for r in mine):
+                reasons.append(f"{name}: reproductores activos distintos de los de la prueba")
+            if len(mine) < MIN_ROWS * plan["measure_s"]:
+                reasons.append(f"{name}: faltan filas: {len(mine)} de {round(plan['measure_s'])} s")
+            browser = self.browser_of(campaign, name) if campaign else plan.get("worker_browser", "headless")
+            if any(r.get("worker_browser") != browser for r in mine):
+                reasons.append(f"{name}: Chrome no estaba en modo {browser}")
         return reasons
+
+    @staticmethod
+    def player_rows(player: str, rows: list[dict]) -> list[dict]:
+        """Las filas de un trabajador independiente que tenía montado ese reproductor."""
+        return [r for r in rows if player in (r.get("players") or "").split("|")]
 
     def retry(self, campaign: dict, run: dict):
         """Repite la prueba al final de su bloque (misma emisión y repetición), para no reiniciar la fuente."""
@@ -882,6 +1104,10 @@ class Campaigns:
             "kind": run["kind"], "rep": run["rep"], "stream_idx": run["stream"],
             "network_label": network["label"], "target_label": target["label"],
             "players_run": "|".join(run["players"]),
+            # Con trabajadores independientes, el de cada reproductor (sin la columna: el trabajador único)
+            **({"workers": "|".join(f"{p}={plan['workers'][p]}" for p in run["players"]),
+                "worker_browsers": "|".join(f"{n}={self.browser_of(campaign, n)}" for n in sorted(set(plan["workers"].values())))}
+               if plan.get("workers") else {}),
             "quality": plan["quality"],
             "content": plan.get("content", "continuous"),
             # Ajustes de los reproductores de la campaña (también en cada fila de samples.csv)
@@ -903,6 +1129,9 @@ class Campaigns:
             for player, values in (summary.get("players") or {}).items():
                 row = {**base, "player": player, "server_restarts": summary["server"]["restarts"],
                        "ingest_anomalies": summary["server"]["ingest_anomalies"], **values}
+                if campaign["plan"].get("workers"):
+                    row["worker"] = campaign["plan"]["workers"][player]
+                    row["worker_browser"] = self.browser_of(campaign, row["worker"])
                 f.write(json.dumps(row) + "\n")
 
     # --- tráfico IP ---
@@ -954,6 +1183,13 @@ class Campaigns:
                     size = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
                     sample[f"{q}_bytes"] = size
                     sample[f"{q}_kbps"] = round(size * 8 / dt, 1) if size is not None else None
+                    # Paquetes que entran en la cola (iptables cuenta antes de la emulación) y los que esta descarta,
+                    # por desbordamiento o por la pérdida aleatoria del perfil (desde el 3-11-2026). Mismo criterio
+                    # ante un contador reiniciado: el router los pone a cero al cambiar la red
+                    for counter in ("packets", "dropped"):
+                        a = (last["counters"].get(q) or {}).get(counter)
+                        b = (counters.get(q) or {}).get(counter)
+                        sample[f"{q}_{counter}"] = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
                 # Cuánto fue la fuente por detrás del tiempo real en el intervalo: común a las tres ramas
                 try:
                     sample["source_lag_ms"] = self.read_source_lag(last["t"], t)
@@ -993,7 +1229,12 @@ class Campaigns:
                         continue
                     out[run["id"]].update(aligned="source" if restarted else "measure", zero_ms=zero)
                     point = {"t_s": round((row["t_server_ms"] - zero) / 1000, 1), "phase": row["phase"]}
+                    # Con trabajadores independientes cada fila es de un navegador: solo lleva sus reproductores (los
+                    # demás, sin clave, no cortan sus líneas en la gráfica)
+                    present = (row.get("players") or "").split("|") if campaign["plan"].get("workers") else run["players"]
                     for p in run["players"]:
+                        if p not in present:
+                            continue
                         for field in self.SERIES_FIELDS:
                             point[f"{p}_{field}"] = row.get(f"{p}_{field}")
                         # El búfer va en una columna distinta en cada reproductor (BUFFER_COLUMN): aquí, en ms
@@ -1022,6 +1263,7 @@ class Campaigns:
                     for p in run["players"]:
                         for d in ("down", "up"):
                             point[f"{p}_ip_{d}_kbps"] = sample.get(f"{p}_{d}_kbps")
+                            point[f"{p}_ip_{d}_dropped"] = sample.get(f"{p}_{d}_dropped")
                         # Común a las tres ramas: se repite en cada una para dibujarlo junto a sus métricas
                         point[f"{p}_source_lag_ms"] = sample.get("source_lag_ms")
                     out[run["id"]]["ip"].append(point)
