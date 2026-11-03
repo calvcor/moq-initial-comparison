@@ -43,6 +43,9 @@ const viewportMatches = (v: { width: number; height: number } | undefined) =>
 const launchParams = new URLSearchParams(window.location.search);
 const BROWSER: WorkerBrowser | 'tab' = (launchParams.get('browser') as WorkerBrowser | null) ?? 'tab';
 const HAS_DISPLAY = launchParams.get('display') !== '0';
+// Cómo decodifica el vídeo ese Chrome: software si el script lo lanzó con --software-decode; si no, lo que elija
+// (por hardware donde lo hay)
+const DECODE: 'software' | 'auto' = launchParams.get('decode') === 'software' ? 'software' : 'auto';
 
 const PHASE_LABEL: Record<string, string> = {
   idle: 'sin prueba',
@@ -154,7 +157,7 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
             info: {
               user_agent: navigator.userAgent,
               hidden: document.hidden,
-              ...(name ? { viewport: `${window.innerWidth}x${window.innerHeight}`, dpr: window.devicePixelRatio, browser: BROWSER, display: HAS_DISPLAY } : {}),
+              ...(name ? { viewport: `${window.innerWidth}x${window.innerHeight}`, dpr: window.devicePixelRatio, browser: BROWSER, display: HAS_DISPLAY, decode: DECODE } : {}),
             },
           }),
         });
@@ -233,7 +236,7 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
         ...row,
         t_server_ms: Math.round(t),
         // Trabajador independiente: el tamaño de su ventana, donde se pinta el reproductor
-        ...(name ? { worker_viewport: `${window.innerWidth}x${window.innerHeight}`, worker_browser: BROWSER } : {}),
+        ...(name ? { worker_viewport: `${window.innerWidth}x${window.innerHeight}`, worker_browser: BROWSER, worker_decode: DECODE } : {}),
       } as SampleRow);
       if (batch.rows.length > MAX_PENDING_ROWS) batch.rows.shift();
       setLastG2g(Object.fromEntries(mounted.players.map((p) => [p, metricsRef.current[p].latencyMs])));

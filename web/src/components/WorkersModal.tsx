@@ -55,9 +55,10 @@ const AddWorker: React.FC = () => {
   const [name, setName] = useState('');
   const [display, setDisplay] = useState(false);
   const [insecure, setInsecure] = useState(suggestInsecure);
+  const [softwareDecode, setSoftwareDecode] = useState(false);
   const [copied, setCopied] = useState(false);
   const valid = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(name);
-  const args = `--url ${origin} --name ${valid ? name : '<nombre>'}${insecure ? ' --insecure' : ''}`;
+  const args = `--url ${origin} --name ${valid ? name : '<nombre>'}${insecure ? ' --insecure' : ''}${softwareDecode ? ' --software-decode' : ''}`;
   const command =
     target === 'terminal'
       ? `mkdir -p ~/moq-worker && curl -fsSL ${origin}/api/worker/campaign-worker.mjs -o ~/moq-worker/campaign-worker.mjs && node ~/moq-worker/campaign-worker.mjs ${args}`
@@ -110,6 +111,12 @@ const AddWorker: React.FC = () => {
         )}
         <label className="flex items-center gap-1.5 text-slate-300" title="El orquestador va por IP sin HTTPS: Chrome lo tratará como origen seguro (hace falta para MoQ)">
           <input type="checkbox" checked={insecure} onChange={(e) => setInsecure(e.target.checked)} /> Sin HTTPS (--insecure)
+        </label>
+        <label
+          className="flex items-center gap-1.5 text-slate-300"
+          title="Chrome decodifica el vídeo por software en los tres reproductores. Solo si el decodificador por hardware del equipo falla (p. ej. MoQ sin imagen y «Decoding error» en la consola, visto con una Intel HD 500 en Linux). Cuesta más CPU; queda anotado en cada fila (worker_decode)."
+        >
+          <input type="checkbox" checked={softwareDecode} onChange={(e) => setSoftwareDecode(e.target.checked)} /> Decodificar por software
         </label>
       </div>
       <div className="flex items-stretch gap-2">
@@ -236,6 +243,7 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                         {display === false ? <MonitorOff className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
                         {display === false ? 'Sin pantalla' : display === true ? 'Con pantalla' : 'Pantalla desconocida'}
                       </div>
+                      {w.connected && w.info.decode === 'software' && <div className="text-amber-300">Decodifica por software</div>}
                     </td>
                     <td className="py-2 pr-3">
                       <select

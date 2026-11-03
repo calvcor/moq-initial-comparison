@@ -11,6 +11,11 @@
 // Opciones: --url, --chrome (ruta del ejecutable; también CHROME), --port (depuración remota, 9400),
 // --insecure (trata como seguro el origen HTTP de --url: hace falta por IP sin HTTPS, no con localhost) y
 // --no-sandbox: Chrome sin su sandbox, solo si no arranca (p. ej. en un LXC sin privilegios y sin nesting=1).
+// --software-decode: Chrome decodifica el vídeo por software (--disable-accelerated-video-decode), en los tres
+// reproductores. Para equipos cuyo decodificador por hardware falla: el 3-11-2026, en un portátil con Linux Mint e
+// Intel HD 500 (VA-API, driver iHD), el VideoDecoder de WebCodecs de MoQ daba "Decoding error" tras el primer GOP,
+// mientras el <video> de DASH y WebRTC, que pasa solo a software, reproducía. Cuesta más CPU: se anuncia y va a
+// cada fila (worker_decode).
 // --name: trabajador independiente con ese nombre (README 4.8, trabajadores independientes), que se anuncia y monta solo los reproductores
 // que le asigne una campaña que lo elija; su ventana toma el tamaño que pide el servidor (la calidad más alta de
 // la emisión). Sin --name, el trabajador único de siempre. Varios en una máquina: un --port distinto cada uno.
@@ -34,6 +39,7 @@ const BASE = String(args.url || 'http://localhost').replace(/\/$/, '');
 const PORT = Number(args.port || 9400);
 const NAME = typeof args.name === 'string' ? args.name : null;
 if (NAME && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(NAME)) throw new Error(`--name no válido: ${NAME}`);
+const SOFTWARE_DECODE = !!args['software-decode'];
 // Hay pantalla donde abrir una ventana
 const HAS_DISPLAY = process.platform === 'darwin' || !!(process.env.DISPLAY || process.env.WAYLAND_DISPLAY);
 // Modo de Chrome del trabajador independiente: headless al empezar, y el que pida la campaña después
@@ -41,7 +47,7 @@ let browserMode = 'headless';
 // Ventana con la que se relanzará (la última que pidió el servidor)
 let wantedViewport = { width: 1920, height: 1080 };
 const workerUrl = () =>
-  `${BASE}/campaign?worker=1${NAME ? `&name=${encodeURIComponent(NAME)}&browser=${browserMode}&display=${HAS_DISPLAY ? 1 : 0}` : ''}`;
+  `${BASE}/campaign?worker=1${NAME ? `&name=${encodeURIComponent(NAME)}&browser=${browserMode}&display=${HAS_DISPLAY ? 1 : 0}${SOFTWARE_DECODE ? '&decode=software' : ''}` : ''}`;
 // Cada cuánto se comprueba que la ventana tiene el tamaño que pide el servidor (trabajador independiente)
 const VIEWPORT_MS = 1000;
 const CHROME =
@@ -139,6 +145,7 @@ async function launch() {
   ];
   if (args.insecure) flags.push(`--unsafely-treat-insecure-origin-as-secure=${new URL(BASE).origin}`);
   if (args['no-sandbox']) flags.push('--no-sandbox');
+  if (SOFTWARE_DECODE) flags.push('--disable-accelerated-video-decode');
   // En un escritorio Linux, Chrome guarda sus secretos en el llavero de la sesión (gnome-keyring, KWallet) y, con un
   // perfil nuevo, pide crear uno con contraseña (visto el 3-11-2026 en Linux Mint). El perfil es desechable y no
   // guarda nada que proteger: sin llavero

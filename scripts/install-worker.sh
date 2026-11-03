@@ -21,6 +21,8 @@
 #   --screen AxB     tamaño de esa pantalla virtual (por defecto 1920x1080; al menos el de la calidad más alta)
 #   --insecure       el orquestador va por IP sin HTTPS (Chrome lo trata entonces como origen seguro)
 #   --no-sandbox     Chrome sin su sandbox: solo si no arranca en un LXC sin privilegios y sin nesting=1
+#   --software-decode  Chrome decodifica el vídeo por software: para equipos cuyo decodificador por hardware falla
+#                    (p. ej. MoQ sin imagen con "Decoding error"); cuesta más CPU
 #   --port PUERTO    puerto de depuración de Chrome, local (por defecto 9400)
 set -euo pipefail
 
@@ -31,6 +33,7 @@ DESKTOP=0
 SCREEN="1920x1080"
 INSECURE=0
 NO_SANDBOX=0
+SOFTWARE_DECODE=0
 PORT=""
 DIR=/opt/moq-worker
 USER_NAME=moq-worker
@@ -48,8 +51,9 @@ while [ $# -gt 0 ]; do
     --screen) SCREEN="${2:-}"; shift 2 ;;
     --insecure) INSECURE=1; shift ;;
     --no-sandbox) NO_SANDBOX=1; shift ;;
+    --software-decode) SOFTWARE_DECODE=1; shift ;;
     --port) PORT="${2:-}"; shift 2 ;;
-    -h|--help) sed -n '2,28p' "$0" 2>/dev/null || true; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0" 2>/dev/null || true; exit 0 ;;
     *) die "opción desconocida: $1 (--help para verlas)" ;;
   esac
 done
@@ -114,6 +118,7 @@ fi
 ARGS="--url $URL --name $NAME"
 [ "$INSECURE" = 1 ] && ARGS="$ARGS --insecure"
 [ "$NO_SANDBOX" = 1 ] && ARGS="$ARGS --no-sandbox"
+[ "$SOFTWARE_DECODE" = 1 ] && ARGS="$ARGS --software-decode"
 [ -n "$PORT" ] && ARGS="$ARGS --port $PORT"
 curl_flags=(-fsSL)
 [ "$INSECURE" = 1 ] && curl_flags+=(-k)
