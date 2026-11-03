@@ -140,17 +140,23 @@ if [ "$DESKTOP" = 1 ]; then
   [ ! -f /etc/systemd/system/moq-worker.service ] || echo "Aviso: también hay un trabajador como servicio del sistema (moq-worker); serían dos navegadores en este equipo."
 
   step "Servicio de tu usuario (systemctl --user)"
-  # Arranca con la sesión gráfica y toma de ella DISPLAY / WAYLAND_DISPLAY: los entornos de escritorio los pasan al
-  # systemd del usuario al iniciar sesión (GNOME y KDE lo hacen; en otros, puede hacer falta import-environment)
+  # Arranca con el systemd del usuario (al iniciar su sesión) y usa la pantalla de la sesión desde la que se instala,
+  # que queda escrita en el servicio: no todos los escritorios activan graphical-session.target ni pasan DISPLAY a
+  # systemd (XFCE, p. ej. en Linux Mint, no lo hace). Si arranca antes que la sesión gráfica, Chrome falla y el
+  # servicio lo reintenta cada 5 s hasta que la pantalla está lista
+  SESSION_ENV=""
+  for v in DISPLAY WAYLAND_DISPLAY XAUTHORITY; do
+    [ -n "${!v:-}" ] && SESSION_ENV="${SESSION_ENV}Environment=$v=${!v}
+"
+  done
   cat > "$UNIT_DIR/moq-worker.service" << EOF
 [Unit]
 Description=Trabajador de campañas moq-dash ($NAME, $URL), en la pantalla de este equipo
 After=graphical-session.target
-PartOf=graphical-session.target
 
 [Service]
 Environment=CHROME=$CHROME
-ExecStart=$NODE $DIR/campaign-worker.mjs $ARGS
+${SESSION_ENV}ExecStart=$NODE $DIR/campaign-worker.mjs $ARGS
 Restart=always
 RestartSec=5
 # El script cierra su Chrome al recibir SIGTERM; lo que quede lo cierra systemd con el resto del grupo
@@ -158,16 +164,16 @@ KillSignal=SIGTERM
 TimeoutStopSec=10
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
 EOF
-  systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY 2> /dev/null || true
+  systemctl --user disable moq-worker.service 2> /dev/null || true  # por si quedó ligado a graphical-session.target
   systemctl --user daemon-reload
   systemctl --user enable moq-worker.service > /dev/null
   systemctl --user restart moq-worker.service
 
   step "Hecho"
   echo "Trabajador $NAME instalado contra $URL, en la pantalla de este equipo ($($CHROME --version), Node $($NODE --version))."
-  echo "Arranca con tu sesión gráfica. Aparecerá en el panel Trabajadores de $URL/campaign en unos segundos."
+  echo "Arranca al iniciar tu sesión, en la pantalla $(printf %s "${WAYLAND_DISPLAY:-${DISPLAY:-}}"). Aparecerá en el panel Trabajadores de $URL/campaign en unos segundos."
   echo "Registro:  journalctl --user -u moq-worker -f"
   echo "Parar:     systemctl --user stop moq-worker     Quitar: systemctl --user disable --now moq-worker"
   exit 0
