@@ -131,6 +131,10 @@ async function launch() {
   ];
   if (args.insecure) flags.push(`--unsafely-treat-insecure-origin-as-secure=${new URL(BASE).origin}`);
   if (args['no-sandbox']) flags.push('--no-sandbox');
+  // En un escritorio Linux, Chrome guarda sus secretos en el llavero de la sesión (gnome-keyring, KWallet) y, con un
+  // perfil nuevo, pide crear uno con contraseña (visto el 3-11-2026 en Linux Mint). El perfil es desechable y no
+  // guarda nada que proteger: sin llavero
+  if (process.platform === 'linux') flags.push('--password-store=basic');
   chrome = spawn(CHROME, [...flags, 'about:blank'], { stdio: 'ignore' });
   chromeExited = false;
   log(`Chrome lanzado (pid ${chrome.pid}${NAME ? `, ${browserMode}` : ''})`);
