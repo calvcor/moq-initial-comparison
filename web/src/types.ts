@@ -151,7 +151,7 @@ export interface PlayerMetrics {
   // Adaptación de calidad
   renditionHeight: number | null; // calidad que se está reproduciendo
   renditionKbps: number | null; // su bitrate según el manifiesto (DASH) o el catálogo (MoQ)
-  selectedHeight?: number | null; // solo MoQ: rendition seleccionada, que puede no ser aún la que se pinta
+  selectedHeight?: number | null; // calidad elegida por la adaptación, que puede no ser aún la que se pinta
   qualitySwitches: number; // cambios de calidad desde que arrancó el reproductor
   bandwidthEstimateKbps: number | null; // estimación en la que se basa la adaptación
   qualityMode: 'auto' | 'manual';
@@ -244,7 +244,8 @@ export interface SampleRow {
   dash_stall_open_since_ms: number | null; // inicio del parón en curso, si lo hay
   dash_player_restarts: number;
   dash_target_ms: number | null;
-  dash_height: number | null;
+  dash_height: number | null; // la que se pinta (videoHeight); hasta el 4-11-2026, la elegida
+  dash_selected_height: number | null; // la que eligió el ABR y se descarga
   dash_rendition_kbps: number | null;
   dash_quality_switches: number;
   dash_bw_estimate_kbps: number | null;
@@ -306,6 +307,7 @@ export interface SampleRow {
   rtc_player_restarts: number;
   rtc_target_ms: number | null;
   rtc_height: number | null;
+  rtc_selected_height: number | null; // la capa que envía mediasoup; con MediaMTX, vacío
   rtc_rendition_kbps: number | null; // nominal de la capa que llega; con MediaMTX, vacío
   rtc_quality_switches: number | null; // cambios de altura de lo que llega; con MediaMTX, 0
   rtc_bw_estimate_kbps: number | null; // estimación de mediasoup hacia el espectador; con MediaMTX, vacío

@@ -34,6 +34,12 @@ const whepUrl = (path: string) => `/rtc/${path}/whep`;
 // (keyframe y sondeo de la entrada); desde ahí, 6 s bastan.
 const JOIN_AFTER_START_MS = 8000;
 
+/** Altura de la capa que envía mediasoup: las capas van de la más baja (0) a la más alta, como la escalera ordenada. */
+function sfuLayerHeight(sfu: SfuStats | null, renditions: { height: number }[]): number | null {
+  if (!sfu || sfu.spatial_layer === null || sfu.layers !== renditions.length) return null;
+  return [...renditions].sort((a, b) => a.height - b.height)[sfu.spatial_layer]?.height ?? null;
+}
+
 export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, renditions, mtxPath, signalUrl, ingest, withAudio, audible, streamStartedMs, timecodes, preset, onMetricsUpdate }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLDivElement | null>(null); // zona de vídeo, la que pasa a pantalla completa
@@ -169,8 +175,9 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
     const interval = setInterval(async () => {
       if (isAborted || !session.connected()) return;
       try {
-        // Lo que decide mediasoup, cada 2 s: es una petición al servidor, no algo que el navegador ya sepa
-        if (session.sfuStats && ticks++ % 4 === 0) session.sfuStats().then((stats) => (sfu = stats));
+        // Lo que decide mediasoup, cada segundo (cada 2 s hasta el 4-11-2026): es una petición al servidor, no algo
+        // que el navegador ya sepa; con filas de un segundo, cada 2 s repetía valor en la mitad de ellas
+        if (session.sfuStats && ticks++ % 2 === 0) session.sfuStats().then((stats) => (sfu = stats));
         const report = await session.getStats();
         let inbound: any = null;
         let transport: any = null;
@@ -214,6 +221,8 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
           contentSkippedMs: glass.contentSkippedMs,
           restarts: restartsRef.current,
           renditionHeight: inbound.frameHeight ?? null,
+          // La capa que envía mediasoup (0, la más baja): la que eligió; la que llega cambia en el siguiente keyframe
+          selectedHeight: sfuLayerHeight(sfu, renditionsRef.current),
           renditionKbps: server === 'mediasoup' ? renditionsRef.current.find((r) => r.height === height)?.bitrate_kbps ?? null : null,
           qualitySwitches: switchesRef.current,
           bandwidthEstimateKbps: sfu?.available_kbps ?? null,
