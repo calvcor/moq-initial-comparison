@@ -696,10 +696,11 @@ def set_network(profile: NetworkProfile):
     logger.info(f"Perfil de red aplicado: {profile.model_dump()}")
     return result
 
-def launch(name: str, cmd: str, log: str):
+def launch(name: str, cmd: str, log: str, env: Optional[dict] = None):
     processes[name] = subprocess.Popen(
         cmd,
         shell=True,
+        env=env,
         preexec_fn=os.setsid,
         stdout=subprocess.DEVNULL,
         stderr=open(log, "w")
@@ -750,7 +751,10 @@ def start_moq():
         f"moq --connect '{MOQ_RELAY_URL}' --connect-tls-insecure --broadcast live.hang import ts"
     )
     logger.info("Iniciando Empaquetador MoQ hacia moq-relay...")
-    launch("moq_pipeline", moq_cmd, "/tmp/ffmpeg_moq.log")
+    # Sin las variables MOQ_* del orquestador (MOQ_HOST, MOQ_RELAY_URL...): moq-cli de main (desde ffcb7cd,
+    # 4-11-2026) se niega a arrancar con variables MOQ_* que no lee. Las suyas no se usan: todo va en la orden.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("MOQ_")}
+    launch("moq_pipeline", moq_cmd, "/tmp/ffmpeg_moq.log", env)
     started_at["moq"] = time.time()
     stream_ids["moq"] = int(started_at["moq"] * 1000)
 
