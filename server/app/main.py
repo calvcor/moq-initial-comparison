@@ -225,6 +225,11 @@ class CampaignRequest(BaseModel):
     # independiente (por su nombre) que monta cada reproductor; cada uno reproduce uno solo a la vez, así que con
     # player_mode together son distintos, y con each pueden repetirse (README 4.8, trabajadores independientes)
     workers: Optional[dict[Literal["dash", "moq", "rtc"], str]] = None
+    # Pruebas en paralelo (en lugar de workers): los trabajadores independientes que puede usar la campaña. Cada prueba
+    # toma uno libre cualquiera, y se ejecutan a la vez las pendientes de la misma emisión, red y objetivo, de
+    # protocolos distintos, mientras haya trabajadores libres (README 4.8, trabajadores independientes)
+    worker_pool: Optional[list[str]] = Field(None, max_length=50)
+    parallel: bool = False
     # None: la adaptación de cada reproductor; una altura fija la desactiva
     quality: Optional[int] = Field(None, ge=144, le=1080)
     player_options: PlayerOptions = PlayerOptions()
@@ -263,6 +268,18 @@ class CampaignRequest(BaseModel):
             # en uno, pueden compartirlo (sus pruebas se hacen una tras otra en él)
             if self.player_mode == "together" and len(set(self.workers.values())) < len(self.workers):
                 raise ValueError("Con los reproductores a la vez, cada uno necesita su propio trabajador independiente")
+        if self.parallel or self.worker_pool:
+            if self.workers is not None:
+                raise ValueError("Con pruebas en paralelo, los trabajadores se eligen como grupo (worker_pool), no por reproductor")
+            if not self.parallel or not self.worker_pool:
+                raise ValueError("Las pruebas en paralelo necesitan el grupo de trabajadores (worker_pool), y al revés")
+            bad = [w for w in self.worker_pool if not re.fullmatch(WORKER_NAME, w)]
+            if bad:
+                raise ValueError(f"Nombre de trabajador no válido: {', '.join(bad)}")
+            self.worker_pool = sorted(set(self.worker_pool))
+            # A la vez, cada prueba lleva todos los reproductores: uno por trabajador
+            if self.player_mode == "together" and len(self.worker_pool) < len(self.players):
+                raise ValueError("Con los reproductores a la vez hacen falta al menos tantos trabajadores como reproductores")
         return self
 
 def campaign_guard():

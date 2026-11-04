@@ -381,6 +381,10 @@ export interface CampaignPlan {
   player_mode: 'together' | 'each';
   // null o ausente: un solo trabajador (la pestaña); si no, el trabajador independiente de cada reproductor
   workers?: Partial<Record<PlayerId, string>> | null;
+  // Pruebas en paralelo: los trabajadores independientes que puede usar la campaña (cada prueba toma uno libre) y la
+  // opción; se juntan las pruebas de misma emisión, red y objetivo, de protocolos distintos
+  worker_pool?: string[] | null;
+  parallel?: boolean;
   worker_browser?: WorkerBrowser; // solo campañas de prueba del 3-11-2026; ahora es de cada trabajador
   quality: number | null; // null = la adaptación de cada reproductor
   player_options: PlayerOptions;
@@ -410,6 +414,11 @@ export interface CampaignRun {
   retry_of?: string; // la prueba que repite (reintento automático o repetición pedida)
   manual?: boolean; // repetición pedida a mano
   replaced_by?: string; // válida, pero sustituida por su repetición válida
+  workers?: Partial<Record<PlayerId, string>>; // trabajador independiente de cada reproductor en esta prueba
+  worker_info?: Record<string, Record<string, unknown>>; // lo que anunciaba cada trabajador al montar (también el único)
+  batch?: string; // pruebas en paralelo: la tanda (id de su primera prueba)
+  concurrent?: string[]; // las pruebas medidas a la vez que esta
+  concurrent_players?: PlayerId[];
   state: RunState;
   invalid_reasons: string[];
   started_ms: number | null;
@@ -463,6 +472,7 @@ export interface Campaign {
   eta_s: number;
   worker?: CampaignWorkerState;
   workers?: PoolWorker[]; // los trabajadores independientes del plan
+  batch?: string[] | null; // pruebas en paralelo: la tanda en curso
   worker_browsers?: Record<string, WorkerBrowser>; // su modo de Chrome, fijado al empezar la campaña
   versions?: Record<string, string | null>;
   queue_position?: number; // puesto en la cola de campañas (1 = la siguiente)

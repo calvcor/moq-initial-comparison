@@ -30,6 +30,11 @@ El trabajador es uno solo (la pestaña, o el script sin nombre) o, si el plan lo
 reproductor: navegadores independientes que se anuncian por su nombre y montan cada uno los reproductores que
 la campaña le asigna, en una ventana del tamaño de la calidad más alta de la emisión (README 4.8, trabajadores independientes). La prueba
 espera entonces a todos, y cada uno sube sus filas: los resúmenes de un reproductor salen de las de su navegador.
+Con pruebas en paralelo (parallel, con un grupo de trabajadores en worker_pool), cada prueba toma un trabajador libre
+cualquiera y se ejecutan a la vez, en una tanda, las pendientes de la misma emisión, red y objetivo y de protocolos
+distintos (dos del mismo compartirían su cola en el router). La tanda comparte preparación, calentamiento y medida; cada
+prueba se cierra y se valida por separado, y anota con qué otras se midió (concurrent). Cada prueba guarda el
+trabajador que la midió (workers, worker_info), en todos los modos.
 
 Al terminar (o al cancelar) la red vuelve a quedar sin restricción y la emisión como estaba al empezar.
 Si el orquestador se reinicia con una campaña en marcha, al arrancar la retoma: la prueba en curso se repite.
@@ -294,6 +299,8 @@ class Campaigns:
             for run in campaign["runs"]:
                 if run["state"] not in ("pending", "done", "invalid", "replaced", "skipped"):
                     run["state"] = "pending"
+            # La tanda interrumpida (pruebas en paralelo) vuelve entera a la cola, como una prueba sola
+            campaign["batch"] = None
             self.campaigns[cid] = campaign
             if campaign["state"] == "running":
                 self.log(campaign, "Orquestador reiniciado: se retoma la campaña y se repite la prueba en curso")
@@ -399,9 +406,9 @@ class Campaigns:
             out["worker"] = self.worker_view()
         if campaign["id"] in self.queue:
             out["queue_position"] = self.queue.index(campaign["id"]) + 1
-        if campaign["plan"].get("workers"):
+        if self.independent(campaign["plan"]):
             # El estado de los trabajadores independientes de la campaña, esté en marcha o no
-            names = set(campaign["plan"]["workers"].values())
+            names = self.pool_names(campaign["plan"])
             out["workers"] = [w for w in self.pool_view() if w["name"] in names]
         return out
 
@@ -415,7 +422,7 @@ class Campaigns:
         o en pausa (no se pueden borrar ni cambiar de modo); task: lo que tienen montado, con su campaña y fase."""
         with self.lock:
             now = time.time()
-            used = set((self.campaigns[self.active]["plan"].get("workers") or {}).values()) if self.active else set()
+            used = self.pool_names(self.campaigns[self.active]["plan"]) if self.active else set()
             out = []
             for name, w in sorted(self.pool.items()):
                 connected = w["id"] is not None and now - w["seen"] < WORKER_TIMEOUT_S
@@ -434,7 +441,7 @@ class Campaigns:
     def locked_by(self, name: str) -> Optional[str]:
         """La campaña en marcha o en pausa que usa este trabajador independiente (None si ninguna)."""
         return next((c["id"] for c in self.campaigns.values()
-                     if c["state"] in ("running", "paused") and name in (c["plan"].get("workers") or {}).values()), None)
+                     if c["state"] in ("running", "paused") and name in self.pool_names(c["plan"])), None)
 
     def set_worker_browser(self, name: str, browser: str) -> dict:
         """Cambia el modo de Chrome de un trabajador independiente. No con una campaña en marcha o en pausa que lo
@@ -490,8 +497,10 @@ class Campaigns:
             campaign = self.campaigns[self.active]
             out = {"id": campaign["id"], "name": campaign["name"], "state": campaign["state"],
                    "current": campaign["current"], "worker": self.worker_view()}
-            if campaign["plan"].get("workers"):
-                names = set(campaign["plan"]["workers"].values())
+            if campaign.get("batch"):
+                out["batch"] = campaign["batch"]
+            if self.independent(campaign["plan"]):
+                names = self.pool_names(campaign["plan"])
                 out["workers"] = [w for w in self.pool_view() if w["name"] in names]
             return out
 
@@ -538,10 +547,10 @@ class Campaigns:
                 campaign["restore"] = {"running": snap.get("running"), "config": snap.get("config"),
                                        "network": snap.get("network")}
                 campaign["versions"] = snap.get("versions")
-            if campaign["plan"].get("workers") and "worker_browsers" not in campaign:
+            if self.independent(campaign["plan"]) and "worker_browsers" not in campaign:
                 # El modo de Chrome de cada trabajador queda fijado al empezar: toda la campaña con el mismo
                 campaign["worker_browsers"] = {n: self.pool[n]["browser"] if n in self.pool else "headless"
-                                               for n in set(campaign["plan"]["workers"].values())}
+                                               for n in self.pool_names(campaign["plan"])}
             campaign["state"] = "running"
             campaign.pop("holds_queue", None)
             self.log(campaign, "Campaña en marcha")
@@ -715,20 +724,21 @@ class Campaigns:
         idle = {"campaign": campaign["id"], "phase": "idle"}
         # Una campaña con trabajadores independientes no da nada al trabajador único, ni al revés; un trabajador
         # independiente que la campaña no ha elegido tampoco recibe nada (ni su resolución)
-        if bool(plan.get("workers")) != bool(name) or (name and name not in plan["workers"].values()):
+        if self.independent(plan) != bool(name) or (name and name not in self.pool_names(plan)):
             return idle
-        current = campaign["current"]
-        run = self.find_run(campaign, current) if current else None
+        batch = self.batch_runs(campaign)
         if name:
-            # La ventana del trabajador, antes de que monte: la de la emisión de la prueba (o la mayor del plan)
-            streams = [plan["streams"][run["stream"]]] if run else plan["streams"]
+            # De la tanda en curso, la prueba que tiene reproductores en este trabajador
+            run = next((r for r in batch if name in (self.run_workers(plan, r) or {})), None)
+            # La ventana del trabajador, antes de que monte: la de la emisión de la tanda (o la mayor del plan)
+            streams = [plan["streams"][batch[0]["stream"]]] if batch else plan["streams"]
             idle["viewport"] = max((self.viewport(s) for s in streams), key=lambda v: v["height"])
             idle["browser"] = self.browser_of(campaign, name)
+        else:
+            run = batch[0] if batch else None
         if campaign["state"] != "running" or run is None:
             return idle
         workers = self.run_workers(plan, run)
-        if workers is not None and name not in workers:
-            return idle  # la prueba no tiene reproductores en este trabajador (una por reproductor)
         phase = run["state"]
         out = {**idle, "run": run["id"], "phase": phase}
         if phase in ("mounting", "warmup", "measuring", "closing"):
@@ -745,9 +755,26 @@ class Campaigns:
         return {"width": 2 * round(height * 8 / 9), "height": height}
 
     @staticmethod
+    def independent(plan: dict) -> bool:
+        """La campaña usa trabajadores independientes: fijos por reproductor (workers) o los libres de un grupo
+        (worker_pool, con parallel)."""
+        return bool(plan.get("workers") or plan.get("worker_pool"))
+
+    @staticmethod
+    def pool_names(plan: dict) -> set[str]:
+        """Los trabajadores independientes que puede usar la campaña."""
+        return set((plan.get("workers") or {}).values()) | set(plan.get("worker_pool") or [])
+
+    def batch_runs(self, campaign: dict) -> list[dict]:
+        """Las pruebas de la tanda en curso (una, salvo con pruebas en paralelo)."""
+        ids = campaign.get("batch") or ([campaign["current"]] if campaign.get("current") else [])
+        return [r for r in (self.find_run(campaign, i) for i in ids) if r is not None]
+
+    @staticmethod
     def run_workers(plan: dict, run: dict) -> Optional[dict[str, list[str]]]:
-        """Con trabajadores independientes, qué reproductores de la prueba monta cada uno; None con el trabajador único."""
-        assigned = plan.get("workers")
+        """Con trabajadores independientes, qué reproductores de la prueba monta cada uno; None con el trabajador único.
+        Es el reparto que se le dio a la prueba al empezarla (run["workers"]) o, en una prueba anterior a él, el del plan."""
+        assigned = run.get("workers") or plan.get("workers")
         if not assigned:
             return None
         out: dict[str, list[str]] = {}
@@ -773,9 +800,9 @@ class Campaigns:
 
     def unmounted(self, plan: dict) -> bool:
         """Ningún trabajador de la campaña tiene nada montado (los desconectados no cuentan)."""
-        if not plan.get("workers"):
+        if not self.independent(plan):
             return self.worker["mounted"] is None
-        return all(not self.pool_alive(n) or self.pool[n]["mounted"] is None for n in set(plan["workers"].values()))
+        return all(not self.pool_alive(n) or self.pool[n]["mounted"] is None for n in self.pool_names(plan))
 
     def mounted_times(self, plan: dict, run: dict) -> tuple[int, dict[str, int]]:
         """Cuándo se montaron los reproductores: el último trabajador en hacerlo y, por reproductor, el suyo."""
@@ -897,8 +924,10 @@ class Campaigns:
                 else:
                     continue  # ya fuera de la prueba
                 # run_started_ms distingue la prueba repetida tras una pausa o un reinicio, que conserva su id
+                # El trabajador que la midió: el independiente o, desde el 4-11-2026, también el trabajador único
+                who = worker or (None if self.independent(campaign["plan"]) else self.worker["id"])
                 kept.append({"campaign": cid, "run_id": run_id, "attempt": run["attempt"],
-                             "run_started_ms": run["started_ms"], "phase": phase, **row, **({"worker": worker} if worker else {})})
+                             "run_started_ms": run["started_ms"], "phase": phase, **row, **({"worker": who} if who else {})})
             if not kept:
                 return 0
             with open(self.path(cid, "samples.jsonl"), "a") as f:
@@ -943,6 +972,82 @@ class Campaigns:
             time.sleep(0.25)
         return campaign["state"] == "running"
 
+    def pick_batch(self, campaign: dict) -> list[dict]:
+        """La siguiente tanda: la primera prueba pendiente y, con pruebas en paralelo, las pendientes de su misma
+        emisión, red y objetivo, de otros protocolos (dos del mismo compartirían su cola en el router), mientras quepan
+        en los trabajadores conectados. Sin pruebas en paralelo, una sola."""
+        pending = [r for r in campaign["runs"] if r["state"] == "pending"]
+        if not pending:
+            return []
+        first, plan = pending[0], campaign["plan"]
+        batch = [first]
+        if not plan.get("parallel"):
+            return batch
+        room = sum(self.pool_alive(n) for n in self.pool_names(plan)) - len(first["players"])
+        used = set(first["players"])
+        key = lambda r: (r["stream"], r["network"], r["target"])
+        for run in pending[1:]:
+            if key(run) == key(first) and not used & set(run["players"]) and len(run["players"]) <= room:
+                batch.append(run)
+                used |= set(run["players"])
+                room -= len(run["players"])
+        return batch
+
+    def assign_batch(self, plan: dict, batch: list[dict]) -> Optional[dict[str, dict[str, str]]]:
+        """Qué trabajador monta cada reproductor de cada prueba de la tanda: el fijo del plan o, con pruebas en paralelo,
+        uno libre cualquiera (el primero por nombre). None si no hay bastantes conectados; {} con el trabajador único."""
+        if not self.independent(plan):
+            return {}
+        if not plan.get("parallel"):
+            if not all(self.pool_alive(plan["workers"][p]) for r in batch for p in r["players"]):
+                return None
+            return {r["id"]: {p: plan["workers"][p] for p in r["players"]} for r in batch}
+        free = sorted(n for n in self.pool_names(plan) if self.pool_alive(n))
+        if len(free) < sum(len(r["players"]) for r in batch):
+            return None
+        out = {}
+        for run in batch:
+            out[run["id"]] = {p: free.pop(0) for p in run["players"]}
+        return out
+
+    def enough_workers(self, campaign: dict) -> bool:
+        """Hay trabajadores para la primera prueba pendiente."""
+        with self.lock:
+            batch = self.pick_batch(campaign)
+            return not batch or self.assign_batch(campaign["plan"], batch[:1]) is not None
+
+    def release(self, campaign: dict, run: dict):
+        """La prueba deja la tanda en curso (terminada o devuelta a la cola)."""
+        batch = [i for i in (campaign.get("batch") or []) if i != run["id"]]
+        campaign["batch"] = batch or None
+        campaign["current"] = batch[0] if batch else None
+
+    def worker_snapshot(self, plan: dict, run: dict) -> dict:
+        """Con qué trabajador se midió la prueba, para todos los modos: el independiente de cada reproductor o el
+        trabajador único (la pestaña o el script sin nombre), con lo que anunciaba al montar."""
+        workers = self.run_workers(plan, run)
+        pick = lambda info: {k: info.get(k) for k in ("user_agent", "browser", "decode", "display", "viewport") if k in info}
+        if workers is None:
+            return {self.worker["id"] or "?": pick(self.worker["info"])}
+        return {n: pick(self.pool.get(n, {}).get("info") or {}) for n in workers}
+
+    def run_phase(self, campaign: dict, plan: dict, active: list[dict], seconds: float, before: dict) -> Optional[list[dict]]:
+        """Espera una fase de la tanda. Una prueba cuyo trabajador se desconecta o la desmonta se cierra inválida y las
+        demás siguen. None si la campaña deja de estar en marcha (las pruebas vuelven a la cola)."""
+        deadline = time.time() + seconds
+        lost = lambda r: not self.run_alive(plan, r) or not self.run_mounted(plan, r)
+        while True:
+            if campaign["state"] != "running":
+                for run in active:
+                    self.requeue(campaign, run)
+                return None
+            for run in [r for r in active if lost(r)]:
+                self.close(campaign, run, before, ["trabajador desconectado o reproductores desmontados"])
+                active.remove(run)
+            if not active or time.time() >= deadline:
+                return active
+            time.sleep(0.25)
+
     def drive(self, campaign: dict):
         plan = campaign["plan"]
         applied_stream = None
@@ -950,114 +1055,138 @@ class Campaigns:
             with self.lock:
                 if campaign["state"] != "running":
                     break
-                run = next((r for r in campaign["runs"] if r["state"] == "pending"), None)
-                if run is None:
+                batch = self.pick_batch(campaign)
+                if not batch:
                     campaign["state"] = "done"
-                    campaign["current"] = None
+                    campaign["current"] = campaign["batch"] = None
                     self.log(campaign, "Campaña terminada")
                     self.save(campaign)
                     break
-                campaign["current"] = run["id"]
-                run.update(state="preparing", started_ms=int(time.time() * 1000), mounted_ms=None, warmup_start_ms=None,
-                           measure_start_ms=None, ended_ms=None, invalid_reasons=[], summary=None)
-                run.pop("mounted_by", None)
-                self.rows.pop(run["id"], None)
-                self.ip.pop(run["id"], None)
-                self.save(campaign)
+                assigned = self.assign_batch(plan, batch)
+                if assigned is not None and (assigned or self.worker_alive()):
+                    campaign["current"] = batch[0]["id"]
+                    campaign["batch"] = [r["id"] for r in batch] if len(batch) > 1 else None
+                    for run in batch:
+                        run.update(state="preparing", started_ms=int(time.time() * 1000), mounted_ms=None, warmup_start_ms=None,
+                                   measure_start_ms=None, ended_ms=None, invalid_reasons=[], summary=None)
+                        for k in ("mounted_by", "workers", "worker_info", "batch", "concurrent", "concurrent_players"):
+                            run.pop(k, None)
+                        if assigned:
+                            run["workers"] = assigned[run["id"]]
+                        if len(batch) > 1:
+                            # Lo que se midió a la vez: otros protocolos con la misma emisión, red y objetivo
+                            others = [r for r in batch if r is not run]
+                            run.update(batch=batch[0]["id"], concurrent=[r["id"] for r in others],
+                                       concurrent_players=[p for r in others for p in r["players"]])
+                        self.rows.pop(run["id"], None)
+                        self.ip.pop(run["id"], None)
+                    self.save(campaign)
+                    if len(batch) > 1:
+                        self.log(campaign, f"En paralelo: {', '.join(r['id'] + ' (' + '|'.join(r['players']) + ')' for r in batch)}")
+                else:
+                    batch = None
 
-            # Sin trabajador no tiene sentido tocar nada: se espera a que se conecte (con trabajadores
-            # independientes, todos los que necesita la prueba)
-            alive = lambda: self.run_alive(plan, run)
-            if not alive():
-                with self.lock:
-                    run["state"] = "pending"
-                    campaign["current"] = None
-                if not self.wait(3600 * 24, campaign, alive):
+            # Sin trabajadores no tiene sentido tocar nada: se espera a que se conecten los que necesita la
+            # siguiente prueba (el trabajador único o, con trabajadores independientes, los de sus reproductores)
+            if batch is None:
+                if not self.wait(3600 * 24, campaign, lambda: self.enough_workers(campaign) and (self.independent(plan) or self.worker_alive())):
                     break
                 continue
 
             # 1. Los trabajadores desmontan lo que tengan antes de cambiar la red o la emisión
             self.wait(UNMOUNT_WAIT_S, campaign, lambda: self.unmounted(plan))
+            first = batch[0]
             try:
-                stream = plan["streams"][run["stream"]]
+                stream = plan["streams"][first["stream"]]
                 snap = self.snapshot()
-                restart = self.restarts_each_run(plan, run["stream"])
-                if restart or applied_stream != run["stream"] or not snap.get("running"):
-                    if applied_stream != run["stream"]:
-                        self.log(campaign, f"Emisión {run['stream'] + 1} de {len(plan['streams'])}")
+                restart = self.restarts_each_run(plan, first["stream"])
+                if restart or applied_stream != first["stream"] or not snap.get("running"):
+                    if applied_stream != first["stream"]:
+                        self.log(campaign, f"Emisión {first['stream'] + 1} de {len(plan['streams'])}")
                     self.apply_stream(stream, restart=restart)
-                    applied_stream = run["stream"]
+                    applied_stream = first["stream"]
                     if not self.wait(plan["stream_settle_s"], campaign):
-                        self.requeue(campaign, run)
+                        for run in batch:
+                            self.requeue(campaign, run)
                         break
-                network = UNRESTRICTED if run["network"] is None else plan["networks"][run["network"]]["profile"]
+                network = UNRESTRICTED if first["network"] is None else plan["networks"][first["network"]]["profile"]
                 self.apply_network(network)
             except Exception as e:
-                self.log(campaign, f"No se pudo preparar {run['id']}: {e}; se reintenta en 30 s")
+                self.log(campaign, f"No se pudo preparar {', '.join(r['id'] for r in batch)}: {e}; se reintenta en 30 s")
                 applied_stream = None
-                self.requeue(campaign, run)
+                for run in batch:
+                    self.requeue(campaign, run)
                 if not self.wait(30, campaign):
                     break
                 continue
             if not self.wait(NETWORK_SETTLE_S, campaign):
-                self.requeue(campaign, run)
+                for run in batch:
+                    self.requeue(campaign, run)
                 break
             before = self.snapshot()
             with self.lock:
-                run["source_started_ms"] = before.get("source_started_ms")
+                for run in batch:
+                    run["source_started_ms"] = before.get("source_started_ms")
 
-            # 2. El trabajador monta reproductores nuevos y avisa
+            # 2. Los trabajadores montan reproductores nuevos y avisan
             with self.lock:
-                run["state"] = "mounting"
+                for run in batch:
+                    run["state"] = "mounting"
                 self.save(campaign)
-            mounted = self.wait(MOUNT_WAIT_S, campaign, lambda: self.run_mounted(plan, run))
+            self.wait(MOUNT_WAIT_S, campaign, lambda: all(self.run_mounted(plan, r) for r in batch))
             if campaign["state"] != "running":
-                self.requeue(campaign, run)
+                for run in batch:
+                    self.requeue(campaign, run)
                 break
-            if not mounted:
+            active = []
+            for run in batch:
+                if self.run_mounted(plan, run):
+                    active.append(run)
+                    continue
                 workers = self.run_workers(plan, run)
                 late = [n for n in workers if self.pool.get(n, {}).get("mounted") != run["id"]] if workers else []
                 reason = f"no montaron los reproductores: {', '.join(late)}" if late else "el trabajador no montó los reproductores"
                 self.close(campaign, run, before, [reason])
+            if not active:
                 continue
 
-            # 3. Calentamiento y 4. medida
+            # 3. Calentamiento y 4. medida, a la vez en toda la tanda
             with self.lock:
-                mounted_ms, mounted_by = self.mounted_times(plan, run)
-                run.update(state="warmup", warmup_start_ms=int(time.time() * 1000), mounted_ms=mounted_ms)
-                if plan.get("workers"):
-                    run["mounted_by"] = mounted_by
+                now = int(time.time() * 1000)
+                for run in active:
+                    mounted_ms, mounted_by = self.mounted_times(plan, run)
+                    run.update(state="warmup", warmup_start_ms=now, mounted_ms=mounted_ms, worker_info=self.worker_snapshot(plan, run))
+                    if self.independent(plan):
+                        run["mounted_by"] = mounted_by
                 self.save(campaign)
-            lost = lambda: not self.run_alive(plan, run) or not self.run_mounted(plan, run)
-            if not self.wait(plan["warmup_s"], campaign, lost) or lost():
-                if campaign["state"] != "running":
-                    self.requeue(campaign, run)
-                    break
-                self.close(campaign, run, before, ["trabajador desconectado o reproductores desmontados"])
+            active = self.run_phase(campaign, plan, active, plan["warmup_s"], before)
+            if active is None:
+                break
+            if not active:
                 continue
             with self.lock:
-                run.update(state="measuring", measure_start_ms=int(time.time() * 1000))
+                now = int(time.time() * 1000)
+                for run in active:
+                    run.update(state="measuring", measure_start_ms=now)
                 self.save(campaign)
-            if not self.wait(plan["measure_s"], campaign, lost) or lost():
-                if campaign["state"] != "running":
-                    self.requeue(campaign, run)
-                    break
-                self.close(campaign, run, before, ["trabajador desconectado o reproductores desmontados"])
+            active = self.run_phase(campaign, plan, active, plan["measure_s"], before)
+            if active is None:
+                break
+            if not active:
                 continue
 
             # 5. Últimas filas y resumen
             with self.lock:
-                run["state"] = "closing"
+                for run in active:
+                    run["state"] = "closing"
                 self.save(campaign)
             time.sleep(UPLOAD_GRACE_S)
-            self.close(campaign, run, before, [])
+            for run in active:
+                self.close(campaign, run, before, [])
 
         with self.lock:
-            if campaign["state"] in ("done", "aborted"):
-                campaign["current"] = None
-                self.active = None
-            elif campaign["state"] == "paused":
-                campaign["current"] = None
+            if campaign["state"] in ("done", "aborted", "paused"):
+                campaign["current"] = campaign["batch"] = None
                 self.active = None
             self.save(campaign)
         if campaign["state"] in ("done", "aborted"):
@@ -1069,7 +1198,7 @@ class Campaigns:
     def requeue(self, campaign: dict, run: dict):
         with self.lock:
             run.update(state="pending", mounted_ms=None, measure_start_ms=None)
-            campaign["current"] = None
+            self.release(campaign, run)
             self.rows.pop(run["id"], None)
             self.ip.pop(run["id"], None)
             self.save(campaign)
@@ -1087,7 +1216,7 @@ class Campaigns:
             target = plan["targets"][run["target"]]
             # Las filas de cada reproductor: con el trabajador único, todas; con trabajadores independientes, las del
             # navegador que lo tenía montado (la carga del hilo principal es entonces la de ese navegador)
-            of = self.player_rows if plan.get("workers") else (lambda p, rs: rs)
+            of = self.player_rows if self.independent(plan) else (lambda p, rs: rs)
             run["summary"] = {
                 "rows": len(rows),
                 "server": {
@@ -1112,7 +1241,7 @@ class Campaigns:
                     self.retry(campaign, run)
             else:
                 self.supersede(campaign, run)
-            campaign["current"] = None
+            self.release(campaign, run)
             self.save(campaign)
         self.append_summary(campaign, run)
 
@@ -1219,10 +1348,15 @@ class Campaigns:
             "kind": run["kind"], "rep": run["rep"], "stream_idx": run["stream"],
             "network_label": network["label"], "target_label": target["label"],
             "players_run": "|".join(run["players"]),
-            # Con trabajadores independientes, el de cada reproductor (sin la columna: el trabajador único)
-            **({"workers": "|".join(f"{p}={plan['workers'][p]}" for p in run["players"]),
-                "worker_browsers": "|".join(f"{n}={self.browser_of(campaign, n)}" for n in sorted(set(plan["workers"].values())))}
-               if plan.get("workers") else {}),
+            # El trabajador de cada reproductor: el independiente que lo montó o el trabajador único (desde el 4-11-2026,
+            # en todos los modos; antes, solo con trabajadores independientes)
+            "workers": "|".join(f"{p}={w}" for p, w in self.player_workers(campaign, run).items()) or None,
+            **({"worker_browsers": "|".join(f"{n}={self.browser_of(campaign, n)}" for n in sorted(self.pool_names(plan)))}
+               if self.independent(plan) else {}),
+            # Pruebas en paralelo: la tanda y lo que se midió a la vez (otros protocolos, misma emisión, red y objetivo)
+            "parallel": bool(plan.get("parallel")),
+            "batch": run.get("batch"), "concurrent": "|".join(run.get("concurrent") or []) or None,
+            "concurrent_players": "|".join(run.get("concurrent_players") or []) or None,
             "quality": plan["quality"],
             "content": plan.get("content", "continuous"),
             # Ajustes de los reproductores de la campaña (también en cada fila de samples.csv)
@@ -1236,6 +1370,14 @@ class Campaigns:
                 out[f"net_{direction}_{key}"] = value
         return out
 
+    def player_workers(self, campaign: dict, run: dict) -> dict[str, str]:
+        """El trabajador que midió cada reproductor de la prueba: el independiente o el trabajador único que la montó."""
+        workers = self.run_workers(campaign["plan"], run)
+        if workers is not None:
+            return {p: n for n, players in workers.items() for p in players}
+        single = next(iter(run.get("worker_info") or {}), None)
+        return {p: single for p in run["players"]} if single else {}
+
     def append_summary(self, campaign: dict, run: dict):
         """Una fila por prueba y reproductor en runs.jsonl (los intentos inválidos también)."""
         base = self.run_columns(campaign, run)
@@ -1244,9 +1386,10 @@ class Campaigns:
             for player, values in (summary.get("players") or {}).items():
                 row = {**base, "player": player, "server_restarts": summary["server"]["restarts"],
                        "ingest_anomalies": summary["server"]["ingest_anomalies"], **values}
-                if campaign["plan"].get("workers"):
-                    row["worker"] = campaign["plan"]["workers"][player]
-                    row["worker_browser"] = self.browser_of(campaign, row["worker"])
+                worker = self.player_workers(campaign, run).get(player)
+                info = (run.get("worker_info") or {}).get(worker) or {}
+                row.update(worker=worker, worker_user_agent=info.get("user_agent"), worker_decode=info.get("decode"),
+                           worker_browser=self.browser_of(campaign, worker) if worker and self.independent(campaign["plan"]) else None)
                 f.write(json.dumps(row) + "\n")
 
     # --- tráfico IP ---
@@ -1261,11 +1404,13 @@ class Campaigns:
             time.sleep(IP_PERIOD_S - time.time() % IP_PERIOD_S)
             with self.lock:
                 campaign = self.campaigns.get(self.active) if self.active else None
-                run = self.find_run(campaign, campaign["current"]) if campaign and campaign.get("current") else None
-                if run is None or run["state"] not in ("warmup", "measuring"):
+                # Las pruebas de la tanda en curso comparten calentamiento y medida: una lectura vale para todas
+                runs = [r for r in self.batch_runs(campaign) if r["state"] in ("warmup", "measuring")] if campaign else []
+                if not runs:
                     self.ip_last = None
                     continue
-                key = (run["id"], run["started_ms"])
+                run = runs[0]
+                key = (run.get("batch") or run["id"], run["started_ms"])
             t0 = time.time()
             try:
                 counters = self.read_counters()
@@ -1279,40 +1424,41 @@ class Campaigns:
             if last is None or last["key"] != key or t <= last["t"]:
                 continue
             with self.lock:
-                if run["state"] not in ("warmup", "measuring") or (run["id"], run["started_ms"]) != key:
-                    continue
-                end_ms = run["measure_start_ms"] + int(campaign["plan"]["measure_s"] * 1000) if run["measure_start_ms"] else None
-                if run["measure_start_ms"] is None or t < run["measure_start_ms"]:
-                    phase = "warmup"
-                elif t <= end_ms:
-                    phase = "measuring"
-                else:
-                    continue
-                sample = {"campaign": campaign["id"], "run_id": run["id"], "attempt": run["attempt"], "run_started_ms": run["started_ms"],
-                          "phase": phase, "from_ms": last["t"], "t_server_ms": t}
-                dt = t - last["t"]
-                for q in IP_KEYS:
-                    a = (last["counters"].get(q) or {}).get("bytes")
-                    b = (counters.get(q) or {}).get("bytes")
-                    # Sin contador o con el contador reiniciado (router recreado), el intervalo queda vacío
-                    size = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
-                    sample[f"{q}_bytes"] = size
-                    sample[f"{q}_kbps"] = round(size * 8 / dt, 1) if size is not None else None
-                    # Paquetes que entran en la cola (iptables cuenta antes de la emulación) y los que esta descarta,
-                    # por desbordamiento o por la pérdida aleatoria del perfil (desde el 3-11-2026). Mismo criterio
-                    # ante un contador reiniciado: el router los pone a cero al cambiar la red
-                    for counter in ("packets", "dropped"):
-                        a = (last["counters"].get(q) or {}).get(counter)
-                        b = (counters.get(q) or {}).get(counter)
-                        sample[f"{q}_{counter}"] = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
-                # Cuánto fue la fuente por detrás del tiempo real en el intervalo: común a las tres ramas
-                try:
-                    sample["source_lag_ms"] = self.read_source_lag(last["t"], t)
-                except Exception:
-                    sample["source_lag_ms"] = None
-                self.ip.setdefault(run["id"], []).append(sample)
-                with open(self.path(campaign["id"], "ip.jsonl"), "a") as f:
-                    f.write(json.dumps(sample) + "\n")
+                for run in runs:
+                    if run["state"] not in ("warmup", "measuring") or (run.get("batch") or run["id"], run["started_ms"]) != key:
+                        continue
+                    end_ms = run["measure_start_ms"] + int(campaign["plan"]["measure_s"] * 1000) if run["measure_start_ms"] else None
+                    if run["measure_start_ms"] is None or t < run["measure_start_ms"]:
+                        phase = "warmup"
+                    elif t <= end_ms:
+                        phase = "measuring"
+                    else:
+                        continue
+                    sample = {"campaign": campaign["id"], "run_id": run["id"], "attempt": run["attempt"], "run_started_ms": run["started_ms"],
+                              "phase": phase, "from_ms": last["t"], "t_server_ms": t}
+                    dt = t - last["t"]
+                    for q in IP_KEYS:
+                        a = (last["counters"].get(q) or {}).get("bytes")
+                        b = (counters.get(q) or {}).get("bytes")
+                        # Sin contador o con el contador reiniciado (router recreado), el intervalo queda vacío
+                        size = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
+                        sample[f"{q}_bytes"] = size
+                        sample[f"{q}_kbps"] = round(size * 8 / dt, 1) if size is not None else None
+                        # Paquetes que entran en la cola (iptables cuenta antes de la emulación) y los que esta descarta,
+                        # por desbordamiento o por la pérdida aleatoria del perfil (desde el 3-11-2026). Mismo criterio
+                        # ante un contador reiniciado: el router los pone a cero al cambiar la red
+                        for counter in ("packets", "dropped"):
+                            a = (last["counters"].get(q) or {}).get(counter)
+                            b = (counters.get(q) or {}).get(counter)
+                            sample[f"{q}_{counter}"] = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
+                    # Cuánto fue la fuente por detrás del tiempo real en el intervalo: común a las tres ramas
+                    try:
+                        sample["source_lag_ms"] = self.read_source_lag(last["t"], t)
+                    except Exception:
+                        sample["source_lag_ms"] = None
+                    self.ip.setdefault(run["id"], []).append(sample)
+                    with open(self.path(campaign["id"], "ip.jsonl"), "a") as f:
+                        f.write(json.dumps(sample) + "\n")
 
     # Columnas de cada reproductor que se devuelven en las series (las mismas del CSV de muestras)
     # stall_spans y stall_open_since_ms: parones exactos, en reloj del servidor (desde el 28-10-2026)
@@ -1346,7 +1492,7 @@ class Campaigns:
                     point = {"t_s": round((row["t_server_ms"] - zero) / 1000, 1), "phase": row["phase"]}
                     # Con trabajadores independientes cada fila es de un navegador: solo lleva sus reproductores (los
                     # demás, sin clave, no cortan sus líneas en la gráfica)
-                    present = (row.get("players") or "").split("|") if campaign["plan"].get("workers") else run["players"]
+                    present = (row.get("players") or "").split("|") if self.independent(campaign["plan"]) else run["players"]
                     for p in run["players"]:
                         if p not in present:
                             continue

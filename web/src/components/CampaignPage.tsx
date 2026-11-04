@@ -154,6 +154,16 @@ const RunsTable: React.FC<{
                       })
                       .join('   ')
                   : run.players.map((p) => PLAYER_SHORT[p]).join(' + ')}
+                {(run.workers || run.worker_info || run.concurrent) && (
+                  <div className="text-[10px] text-slate-500 font-sans">
+                    {run.workers
+                      ? run.players.map((p) => `${PLAYER_SHORT[p]} en ${run.workers![p] ?? '?'}`).join(' · ')
+                      : run.worker_info
+                        ? `en ${Object.keys(run.worker_info).join(', ')}`
+                        : ''}
+                    {run.concurrent?.length ? ` · a la vez que ${run.concurrent.join(', ')}` : ''}
+                  </div>
+                )}
               </td>
               <td className="py-1 pr-2 font-sans">
                 <div className="flex items-center gap-3">
@@ -404,14 +414,22 @@ const Monitor: React.FC<{
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-400">
           {current ? (
             <span>
-              En curso: <span className="font-mono text-slate-200">{current.id}</span> · {STATE_LABEL[current.state]} · red{' '}
+              En curso: <span className="font-mono text-slate-200">{campaign.batch?.length ? campaign.batch.join(' + ') : current.id}</span>
+              {campaign.batch?.length ? ' (en paralelo)' : ''} · {STATE_LABEL[current.state]} · red{' '}
               <span className="text-slate-200">{current.network === null ? 'sin restricción' : plan.networks[current.network].label}</span> · objetivo{' '}
               <span className="text-slate-200">{plan.targets[current.target].label}</span>
             </span>
           ) : (
             <span>Sin prueba en curso</span>
           )}
-          {plan.workers ? (
+          {plan.worker_pool ? (
+            // Pruebas en paralelo: el grupo de trabajadores, cada uno con lo que mide
+            (campaign.workers ?? []).map((w) => (
+              <span key={w.name} className={w.connected ? 'text-emerald-300' : 'text-amber-300'}>
+                {w.name}: {w.connected ? (w.task ? `${w.task.players?.join('|') ?? '?'} · ${w.task.run}` : 'libre') : 'sin conexión'}
+              </span>
+            ))
+          ) : plan.workers ? (
             // Trabajadores independientes: uno por reproductor (README 4.8, trabajadores independientes)
             PLAYER_IDS.filter((p) => plan.players.includes(p)).map((p) => {
               const name = plan.workers![p]!;
@@ -428,6 +446,12 @@ const Monitor: React.FC<{
             </span>
           )}
         </div>
+      )}
+      {campaign.state !== 'running' && plan.worker_pool && (
+        <p className="text-slate-400">
+          Pruebas en paralelo con los trabajadores libres de:{' '}
+          {plan.worker_pool.map((n) => `${n}${campaign.workers?.find((x) => x.name === n)?.connected ? '' : ' (sin conexión)'}`).join(' · ')}
+        </p>
       )}
       {campaign.state !== 'running' && plan.workers && (
         <p className="text-slate-400">

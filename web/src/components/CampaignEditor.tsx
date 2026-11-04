@@ -150,7 +150,10 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
   const [playerMode, setPlayerMode] = useState<'together' | 'each'>(initial?.player_mode ?? 'together');
   // Quién monta los reproductores: la pestaña trabajador (un solo navegador, como hasta ahora) o un trabajador
   // independiente por reproductor, elegido entre los que se han anunciado (README 4.8, trabajadores independientes)
-  const [workerMode, setWorkerMode] = useState<'tab' | 'pool'>(initial?.workers ? 'pool' : 'tab');
+  const [workerMode, setWorkerMode] = useState<'tab' | 'pool'>(initial?.workers || initial?.worker_pool ? 'pool' : 'tab');
+  // Pruebas en paralelo: cada prueba toma un trabajador libre del grupo elegido
+  const [parallel, setParallel] = useState(!!initial?.parallel);
+  const [groupPicked, setGroupPicked] = useState<string[] | null>(initial?.worker_pool ?? null);
   const [workerOf, setWorkerOf] = useState<Partial<Record<PlayerId, string>>>(initial?.workers ?? {});
   const [pool, setPool] = useState<PoolWorker[]>([]);
   const [managing, setManaging] = useState(false);
@@ -184,6 +187,8 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
     });
   }, [pool, players, workerMode, together]);
   // A la vez, dos reproductores en el mismo trabajador no pueden ir
+  // El grupo de las pruebas en paralelo: el elegido o, si no se ha tocado, los conectados y libres
+  const group = groupPicked ?? pool.filter((w) => w.connected && !w.busy).map((w) => w.name);
   const sharedTogether =
     workerMode === 'pool' && together && players.some((p) => players.some((q) => q !== p && workerOf[p] && workerOf[p] === workerOf[q]));
   const [quality, setQuality] = useState<number | null>(initial?.quality ?? null);
@@ -229,9 +234,12 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
     if (!ladderOk.every(Boolean)) return setError('Escalera: altura@kbps separadas por comas, p. ej. 1080@4000, 720@2000');
     if (!networks.length) return setError('Añade al menos una condición de red');
     if (!players.length) return setError('Elige al menos un reproductor');
-    const workers = workerMode === 'pool' ? Object.fromEntries(players.map((p) => [p, workerOf[p] ?? ''])) : null;
+    const inParallel = workerMode === 'pool' && parallel;
+    const workers = workerMode === 'pool' && !inParallel ? Object.fromEntries(players.map((p) => [p, workerOf[p] ?? ''])) : null;
     if (workers && Object.values(workers).some((w) => !w)) return setError('Navegadores independientes: elige el trabajador de cada reproductor');
-    if (sharedTogether) return setError('Con «Todos a la vez», cada reproductor necesita su propio trabajador: elige otros, o haz las pruebas de uno en uno');
+    if (workers && sharedTogether) return setError('Con «Todos a la vez», cada reproductor necesita su propio trabajador: elige otros, o haz las pruebas de uno en uno');
+    if (inParallel && !group.length) return setError('Pruebas en paralelo: elige al menos un trabajador');
+    if (inParallel && together && group.length < players.length) return setError('Con «Todos a la vez» hacen falta al menos tantos trabajadores como reproductores');
     const plan: CampaignPlan = {
       name: name.trim() || `Campaña ${new Date().toLocaleString()}`,
       streams,
@@ -240,6 +248,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
       players: PLAYER_IDS.filter((p) => players.includes(p)),
       player_mode: playerMode,
       workers,
+      ...(inParallel ? { worker_pool: group, parallel: true } : {}),
       quality,
       player_options: options,
       repetitions,
@@ -376,6 +385,44 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
             </select>
           </label>
           {workerMode === 'pool' && (
+            <label
+              className="flex items-center gap-2 text-slate-300 w-fit"
+              title="Cada prueba toma un trabajador libre cualquiera del grupo, y se ejecutan a la vez las pruebas pendientes de la misma emisión, red y objetivo, de protocolos distintos (dos del mismo compartirían su cola en el router), mientras haya trabajadores libres. Acaba antes, pero un mismo protocolo puede medirse en máquinas distintas, y las pruebas medidas a la vez comparten servidor: cada una anota en qué trabajador se midió y con qué otras (concurrent)."
+            >
+              <input type="checkbox" checked={parallel} onChange={(e) => setParallel(e.target.checked)} />
+              Pruebas en paralelo con los trabajadores libres (misma red y objetivo)
+            </label>
+          )}
+          {workerMode === 'pool' && parallel && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={label}>Trabajadores del grupo</span>
+              {[...new Set([...pool.map((w) => w.name), ...group])].sort().map((name) => {
+                const w = pool.find((x) => x.name === name);
+                return (
+                  <label key={name} className="flex items-center gap-1.5 text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={group.includes(name)}
+                      onChange={(e) => setGroupPicked(e.target.checked ? [...group, name] : group.filter((n) => n !== name))}
+                    />
+                    <span className="font-mono">{name}</span>
+                    <span className="text-slate-500">
+                      {w ? `${w.browser === 'kiosk' ? 'quiosco' : 'headless'}${!w.connected ? ', sin conexión' : w.busy ? `, en uso: ${w.busy}` : ''}` : 'sin conexión'}
+                    </span>
+                  </label>
+                );
+              })}
+              <button
+                type="button"
+                className="px-2 py-1.5 rounded border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500"
+                onClick={() => setManaging(true)}
+              >
+                Gestionar trabajadores
+              </button>
+              {!pool.length && <p className="text-amber-300">Ningún trabajador independiente se ha anunciado: lánzalos con scripts/campaign-worker.mjs --name.</p>}
+            </div>
+          )}
+          {workerMode === 'pool' && !parallel && (
             <div className="flex flex-wrap items-end gap-3">
               {PLAYER_IDS.filter((p) => players.includes(p)).map((p) => {
                 const chosen = workerOf[p];
