@@ -127,7 +127,10 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   espectador conectado.** La 0.14.4 acumula retraso sin parar y la 0.14.5 se queda atrás con un
   espectador; la 0.14.7 (desplegada del 19 al 21-10-2026) no tiene ese problema. Desde el 21-10-2026 el
   servidor usa moq-cli compilado desde `main` (`git@bc64b9c`, `MOQ_CLI_FROM=git` en su `.env`). La versión desplegada y
-  sus medidas están anotadas en `server/Dockerfile`.
+  sus medidas están anotadas en `server/Dockerfile`. Desde el 4-11-2026 el servidor está en prueba en la rama
+  `ultimas-versiones`: relay 0.17.12, `@moq/watch` 0.6.6 y dash.js 5.3.0 publicados, y moq-cli `git@ffcb7cd`; cómo
+  volver, en `/root/antes-ultimas/VOLVER.md`. Al probar un commit nuevo de moq-cli, mira también que arranque
+  (`restarts.moq` en `GET /api/status`): `ffcb7cd` rechazaba las variables `MOQ_*` del orquestador.
 - La medida: `POST /api/trace` con marcas cada 4 ms de los últimos 20 s devuelve, por frame, la llegada
   a la compuerta (`encoded_ms`) y la entrega al empaquetador (`forwarded_ms`). Si los huecos en la
   entrega crecen y en la llegada no, el empaquetador no está leyendo su entrada.
@@ -161,7 +164,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   de moq ya no lo tiene** (commit `bc64b9c`, 21-10-2026: 200-730 MB/s, sin cambios de calidad con la
   escalera); cuando salga una versión nueva de `moq-cli`, medirla con el procedimiento de arriba y,
   si se confirma, desplegarla. La 0.14.12 (3-11-2026) **no lo resuelve** con la escalera: medida el 4-11-2026
-  en el servidor (`FINDINGS/moq-cli-0.14.12.md`).
+  en el servidor; `main` en `ffcb7cd` sí (`FINDINGS/moq-cli-0.14.12.md`).
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
 - La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente del servidor se queda a ratos por detrás del tiempo real y los
