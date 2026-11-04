@@ -160,7 +160,8 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   Dentro de `moq-cli` no se ha llegado a la función: el binario no trae símbolos. **La rama principal
   de moq ya no lo tiene** (commit `bc64b9c`, 21-10-2026: 200-730 MB/s, sin cambios de calidad con la
   escalera); cuando salga una versión nueva de `moq-cli`, medirla con el procedimiento de arriba y,
-  si se confirma, desplegarla.
+  si se confirma, desplegarla. La 0.14.12 (3-11-2026) **no lo resuelve** con la escalera: medida el 4-11-2026
+  en el servidor (PROTOCOLOS, nota de versiones).
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
 - La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente del servidor se queda a ratos por detrás del tiempo real y los
