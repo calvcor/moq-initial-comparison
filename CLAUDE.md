@@ -141,7 +141,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 - Mantén actualizados `README.md` y `PROTOCOLOS.md` con cada cambio de comportamiento, parámetro o
   hallazgo. Si una afirmación de `PROTOCOLOS.md` resulta falsa, corrígela y dilo.
 - `CONTEXT_SUMMARY.md` es un resumen histórico; no hace falta reescribirlo con cada cambio.
-- Los hallazgos y decisiones razonadas van en documentos propios **fuera del repositorio**, en `../FINDINGS/` (por ejemplo, `moq_main_vs_releases.md`: por qué se usa `main` de moq). Cada uno se entiende solo: nombre en snake_case, resumen al principio y dónde y cuándo se midió. Desde el repositorio se citan como `../FINDINGS/<fichero>`.
+- Los hallazgos y decisiones razonadas van en documentos propios **fuera del repositorio**, en `../FINDINGS/` (por ejemplo, `moq_main_vs_releases.md`: por qué se usa `main` de moq), con un índice en `../FINDINGS/README.md` que hay que mantener. Un tema, un documento: si un hallazgo nuevo amplía uno existente, va en ese. Cada uno se entiende solo: nombre en snake_case, resumen al principio y dónde y cuándo se midió. Desde el repositorio se citan como `../FINDINGS/<fichero>`.
 - En `README.md` y `PROTOCOLOS.md`, cada párrafo, elemento de lista o cita va en una sola línea, sin cortes
   manuales: algunos visores muestran esos cortes como saltos de línea.
 - Nuevas métricas o parámetros: van al panel, al CSV (`SampleRow` en `web/src/types.ts`) y a la tabla
@@ -164,7 +164,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   de moq ya no lo tiene** (commit `bc64b9c`, 21-10-2026: 200-730 MB/s, sin cambios de calidad con la
   escalera); cuando salga una versión nueva de `moq-cli`, medirla con el procedimiento de arriba y,
   si se confirma, desplegarla. La 0.14.12 (3-11-2026) **no lo resuelve** con la escalera: medida el 4-11-2026
-  en el servidor; `main` en `ffcb7cd` sí (`../FINDINGS/moq_cli_release_ladder_ingest.md`, fuera del repositorio).
+  en el servidor; `main` en `ffcb7cd` sí (`../FINDINGS/moq_cli_publisher_ingest_limit.md`, fuera del repositorio).
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
 - La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente del servidor se queda a ratos por detrás del tiempo real y los
