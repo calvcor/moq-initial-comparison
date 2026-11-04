@@ -141,7 +141,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 - Mantén actualizados `README.md` y `PROTOCOLOS.md` con cada cambio de comportamiento, parámetro o
   hallazgo. Si una afirmación de `PROTOCOLOS.md` resulta falsa, corrígela y dilo.
 - `CONTEXT_SUMMARY.md` es un resumen histórico; no hace falta reescribirlo con cada cambio.
-- `FINDINGS/` recoge hallazgos y decisiones razonadas en documentos propios (por ejemplo, `moq-versiones-main.md`: por qué se usa `main` de moq).
+- Los hallazgos y decisiones razonadas van en documentos propios **fuera del repositorio**, en `../FINDINGS/` (por ejemplo, `moq_main_vs_releases.md`: por qué se usa `main` de moq). Cada uno se entiende solo: nombre en snake_case, resumen al principio y dónde y cuándo se midió. Desde el repositorio se citan como `../FINDINGS/<fichero>`.
 - En `README.md` y `PROTOCOLOS.md`, cada párrafo, elemento de lista o cita va en una sola línea, sin cortes
   manuales: algunos visores muestran esos cortes como saltos de línea.
 - Nuevas métricas o parámetros: van al panel, al CSV (`SampleRow` en `web/src/types.ts`) y a la tabla
@@ -149,7 +149,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 
 ## Problemas abiertos conocidos
 
-- mediasoup infraestima el enlace en la rama WebRTC y se queda en capas bajas: bloqueo de su controlador por pérdidas y sobreuso por las ráfagas de keyframes (`FINDINGS/mediasoup-infraestimacion.md`). El resultado depende de la cola del router y del GOP: decláralos. Desde el 3-11-2026 la señalización va por WebSocket y la sesión se cierra con la conexión (antes, al recargar, la anterior seguía enviando ~29 s).
+- mediasoup infraestima el enlace en la rama WebRTC y se queda en capas bajas: bloqueo de su controlador por pérdidas y sobreuso por las ráfagas de keyframes (`../FINDINGS/mediasoup_link_underestimation.md`). El resultado depende de la cola del router y del GOP: decláralos. Desde el 3-11-2026 la señalización va por WebSocket y la sesión se cierra con la conexión (antes, al recargar, la anterior seguía enviando ~29 s).
 
 - El publicador de MoQ deja de leer su entrada a ratos con varias calidades (picos de hasta 1-2 s, con
   0.14.3 y con 0.14.7). Provoca las marcas `stalled` del catálogo y los cambios continuos de calidad
