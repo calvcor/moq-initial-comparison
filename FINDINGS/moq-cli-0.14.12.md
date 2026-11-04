@@ -60,6 +60,26 @@ Así que es esperable que la 0.14.12 no traiga la corrección del rendimiento de
 - La decisión de [moq-versiones-main.md](moq-versiones-main.md) sigue en pie: mientras la versión publicada no traiga la corrección de `main`, el servidor debería usar `main` para el publicador.
 - Cuando salga una versión nueva de `moq-cli`, la prueba rápida es la de este documento: la escalera de tres calidades con un espectador y `POST /api/trace` a los 30 y 60 s. Si los frames entregados no llegan a ~1.200 en 21 s o la espera p95 pasa de unos pocos ms, tiene el mismo problema.
 
+## Contraste: el publicador compilado desde el último `main` (`ffcb7cd`)
+
+El mismo día se dejó todo igual (relay 0.17.12, `@moq/watch` 0.6.6 y dash.js 5.3.0 publicados, sin el parche) salvo el publicador, compilado desde el último commit de `main` de moq: `ffcb7cd`, del 4-11-2026, 1.538 commits después de `bc64b9c` (`MOQ_CLI_FROM=git`, `MOQ_CLI_COMMIT` en el `.env`; 9 min 20 s de compilación en el servidor). Su `--version` sigue diciendo 0.14.2; el panel y el CSV lo muestran como `git@ffcb7cd`.
+
+**Primero no arrancaba.** Este `moq-cli` se niega a empezar si su entorno tiene variables `MOQ_*` que no lee (`error: unknown environment variables, which this binary does not read`), y el orquestador le pasaba `MOQ_HOST`, `MOQ_PORT`, `MOQ_RELAY_URL` y `MOQ_RELAY_VERSION`. Se caía al instante y el supervisor lo relanzó 32 veces en un minuto sin que llegara un frame. Desde el 4-11-2026 el orquestador lo lanza sin esas variables (`start_moq` en `server/app/main.py`), lo que no cambia nada con las versiones anteriores.
+
+**Con eso, la entrada del publicador va como la de `bc64b9c`.** Misma medida que arriba, con la escalera 4000/2000/1200 (la que estaba en uso) y una calidad:
+
+| Escenario | Frames entregados en 21 s | Espera p50 | Espera p95 | Espera máxima | DASH, p95 / máx. |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Escalera 4000/2000/1200, sin espectador | 1.218 | 0 ms | 2-3 ms | 21 ms | 2 / 12 ms |
+| Escalera, con espectador, a los 30 s | 1.193 | 1 ms | 2-4 ms | 15 ms | 3 / 18 ms |
+| Escalera, con espectador, a los 60 s | 1.195 | 0 ms | 2-3 ms | 12 ms | 2 / 17 ms |
+| Una calidad (1080p, 4 Mbit/s), sin espectador | 1.200 | 0 ms | 1 ms | 7 ms | 1 / 6 ms |
+| Una calidad, con espectador, a los 35 s | 1.200 | 0 ms | 1 ms | 8 ms | 1 / 6 ms |
+
+Con la escalera y el espectador, el reproductor de MoQ estuvo en 1080p en las 14 muestras de 70 s, sin reinicios del publicador. Su registro escribe una vez por segundo un resumen de errores TR 101 290 del flujo recibido: siempre `continuity_count_error=0`; solo crece `pcr_repetition_error` (unos 3-4 por segundo), que indica PCR más espaciados de 40 ms en el MPEG-TS de FFmpeg. Esto último sale de la definición de la norma, no de una medida del intervalo. Ojo al buscar `continuity` en ese registro: con `main` aparece en cada resumen aunque no haya errores; con la 0.14.12, en cambio, eran avisos `continuity check failed` de verdad.
+
+La escalera no es la misma que en la prueba de la 0.14.12 (1200 frente a 700 kbit/s en la calidad baja) y es una pasada de cada versión, no alternada. Aun así, la diferencia es de tres órdenes de magnitud (esperas de segundos frente a milisegundos) y va en el sentido de lo medido con `bc64b9c`: el problema es del código de la rama `release`, no del protocolo.
+
 ## Cómo volver a lo de antes en el servidor
 
-Antes de la prueba se guardó en `/root/antes-ultimas/` el `.env`, la configuración de la emisión y las imágenes del orquestador y de la web (etiqueta `:antes-ultimas`). Los pasos están en `/root/antes-ultimas/VOLVER.md`: restaurar el `.env`, `git checkout main`, volver a las imágenes etiquetadas y recrear relay, orquestador y web, sin recompilar. El servidor no tiene credenciales de GitHub: el código le llega con `git push` por SSH desde el Mac.
+Antes de la prueba se guardó en `/root/antes-ultimas/` el `.env`, la configuración de la emisión y las imágenes del orquestador y de la web (etiqueta `:antes-ultimas`). La imagen del orquestador con la 0.14.12 publicada quedó como `:ultimas-publicadas`, con su `.env` en `env-ultimas-publicadas`. Los pasos están en `/root/antes-ultimas/VOLVER.md`: restaurar el `.env`, `git checkout main`, volver a las imágenes etiquetadas y recrear relay, orquestador y web, sin recompilar. El servidor no tiene credenciales de GitHub: el código le llega con `git push` por SSH desde el Mac.
