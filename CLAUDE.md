@@ -32,7 +32,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
    mucho a DASH con pérdidas (README, tabla de métricas): no se mezcla con el posterior.
 3. **No rellenes con valores supuestos.** Sin medida se muestra `--` y en el CSV queda vacío.
 4. **Declara las variables de confusión** en vez de ocultarlas: BBRv3 (relay) frente a CUBIC (DASH),
-   WebRTC sin adaptación con `RTC_SERVER=mediamtx` y con adaptación del SFU, de aplicación propia e ingesta RTP, con mediasoup (README, 3.4c), sin audio salvo con `rtc_audio` (el vídeo se sincroniza con el búfer del audio: poco con el bucle,
+   WebRTC sin adaptación con `RTC_SERVER=mediamtx` y con adaptación del SFU, de aplicación propia e ingesta RTP, con mediasoup (README, 3.4c), con o sin el pacer de la ingesta (`rtc_pacing`, experimento declarado: retrasa las keyframes), sin audio salvo con `rtc_audio` (el vídeo se sincroniza con el búfer del audio: poco con el bucle,
    100-200 ms más con la cámara) y sin
    codificador que atienda sus peticiones de keyframe, qué reproductor tiene el sonido (MoQ solo baja el
    audio con él), bitrate del catálogo de MoQ (máximo medido) frente al del MPD

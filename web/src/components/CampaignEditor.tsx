@@ -530,6 +530,10 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
               <input type="checkbox" checked={s.rtc_audio} onChange={(e) => setStream(i, { rtc_audio: e.target.checked })} />
               <span className="text-slate-300">Audio en WebRTC</span>
             </label>
+            <label className="flex items-center gap-1.5 pb-1" title="Pacer en la ingesta de mediasoup: el relay reparte el RTP de cada calidad a 2,5 veces su bitrate (README, 3.4c). Con MediaMTX no hace nada">
+              <input type="checkbox" checked={Boolean(s.rtc_pacing)} onChange={(e) => setStream(i, { rtc_pacing: e.target.checked })} />
+              <span className="text-slate-300">Pacer en WebRTC</span>
+            </label>
             {streams.length > 1 && (
               <button
                 className="text-slate-500 hover:text-rose-400 pb-1"

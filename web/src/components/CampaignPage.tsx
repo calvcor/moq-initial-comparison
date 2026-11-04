@@ -682,6 +682,7 @@ const CampaignMonitorPage: React.FC = () => {
   const defaultStream = {
     source: cfg?.source ?? 'file',
     rtc_audio: cfg?.rtc_audio ?? false,
+    rtc_pacing: cfg?.rtc_pacing ?? false,
     gop_size: cfg?.gop_size ?? 60,
     seg_duration: cfg?.seg_duration ?? 2.0,
     frag_duration: cfg?.frag_duration ?? 0.1,

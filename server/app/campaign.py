@@ -838,6 +838,8 @@ class Campaigns:
         if not stream or not config:
             return False
         ladder = lambda c: [(r["height"], r["bitrate_kbps"]) for r in c.get("renditions") or []]
+        # Las emisiones de planes anteriores no traen las opciones nuevas: valen su valor por defecto
+        stream = {"rtc_audio": False, "rtc_pacing": False, **stream}
         return ladder(stream) == ladder(config) and all(
             config.get(k) == v for k, v in stream.items() if k not in ("fps", "renditions"))
 

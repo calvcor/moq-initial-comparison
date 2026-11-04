@@ -23,6 +23,8 @@ export interface StreamConfig {
   gop_size: number;
   fps: number; // con el bucle, la del vídeo (60 o 24); con la cámara la fija el servidor (la de la cámara)
   rtc_audio: boolean; // audio Opus en la rama WebRTC (sin recodificar); desactivado por defecto
+  // pacer en la ingesta de mediasoup (README, 3.4c); falta en las campañas anteriores al 4-11-2026, que van sin él
+  rtc_pacing?: boolean;
   renditions: Rendition[]; // de mayor a menor; una sola = sin adaptación
   seg_duration: number;
   frag_duration: number;
@@ -210,6 +212,7 @@ export interface SampleRow {
   fullscreen: string | null; // reproductor a pantalla completa en ese momento (dash, moq o rtc), o vacío
   audio: string | null; // reproductor con el sonido activado (dash, moq o rtc), o vacío si todos van silenciados
   rtc_audio: boolean | null; // la rama WebRTC lleva audio (opción del servidor)
+  rtc_pacing: boolean | null; // la ingesta de mediasoup reparte el RTP en el tiempo (opción del servidor, README 3.4c)
   elapsed_s: number; // segundos desde el inicio del epoch
   source: SourceKind | null; // fuente de la emisión: file (bucle) o camera
   fps: number | null; // cadencia de la emisión

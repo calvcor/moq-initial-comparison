@@ -61,6 +61,7 @@ export function App() {
   const [config, setConfig] = useState<StreamConfig>({
     source: 'file',
     rtc_audio: false,
+    rtc_pacing: false,
     gop_size: 60,
     fps: 60,
     renditions: [
