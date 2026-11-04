@@ -1462,7 +1462,8 @@ class Campaigns:
 
     # Columnas de cada reproductor que se devuelven en las series (las mismas del CSV de muestras)
     # stall_spans y stall_open_since_ms: parones exactos, en reloj del servidor (desde el 28-10-2026)
-    SERIES_FIELDS = ("g2g_ms", "kbps", "height", "stall_ms", "frametime_p95_ms", "stall_spans", "stall_open_since_ms", "playback_rate", "content_speed", "content_skipped_ms")
+    # selected_height y bw_estimate_kbps: la calidad que elige la adaptación y su estimación de ancho de banda
+    SERIES_FIELDS = ("g2g_ms", "kbps", "height", "selected_height", "bw_estimate_kbps", "stall_ms", "frametime_p95_ms", "stall_spans", "stall_open_since_ms", "playback_rate", "content_speed", "content_skipped_ms")
     # Columnas de la página, comunes a los reproductores: se repiten en cada uno para dibujarlas junto a sus métricas
     PAGE_SERIES_FIELDS = ("main_refreshes_missed", "main_long_frame_ms")
 

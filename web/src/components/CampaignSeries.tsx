@@ -44,6 +44,20 @@ const METRICS: Record<string, Metric> = {
     note: 'Es de la emisión, el mismo en los tres protocolos: cuánto fue FFmpeg por detrás del tiempo real en cada segundo (la marca quemada menos lo que le toca por su número de frame). Los reproductores pintan por PTS, así que lo ven como esa misma cantidad de latencia de menos.',
   },
   height: { label: 'Altura reproducida', unit: 'p', field: 'height' },
+  // La que eligió la adaptación: la reproducida la sigue cuando llega (DASH, al consumir el búfer; WebRTC, en el
+  // siguiente keyframe; MoQ, según su modo de cambio). Vacía en DASH antes del 4-11-2026 (su altura era la elegida)
+  selected: {
+    label: 'Calidad elegida',
+    unit: 'p',
+    field: 'selected_height',
+    note: 'la que elige la adaptación (DASH, la representación que descarga; MoQ, la pista que pide; WebRTC, la capa que envía mediasoup, vacía con MediaMTX); la reproducida la sigue con retraso.',
+  },
+  bw: {
+    label: 'Ancho de banda estimado',
+    unit: 'kbit/s',
+    field: 'bw_estimate_kbps',
+    note: 'cada protocolo el suyo, y no significan lo mismo: DASH, el caudal medio de sus descargas (sin límite de red sigue al bitrate descargado, README 6); MoQ, la estimación del relay que usa su adaptación; WebRTC, la de mediasoup hacia el espectador (vacía con MediaMTX).',
+  },
   // DASH: vídeo descargado por delante en el instante de la fila; MoQ y WebRTC: espera media de los frames
   // entregados desde la fila anterior
   buffer: { label: 'Búfer', unit: 'ms', field: 'buffer_ms', note: 'No es la misma magnitud: en DASH, el vídeo descargado por delante del punto de reproducción; en MoQ y WebRTC, lo que espera de media cada frame en el reproductor (vacío si no sale ninguno, como en un parón).' },

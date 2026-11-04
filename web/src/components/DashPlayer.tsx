@@ -321,8 +321,11 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       try {
         const liveLatency = p.getCurrentLiveLatency();
         const glass = meter.snapshot();
+        // La representación actual es la que eligió el ABR y se está descargando; lo que se pinta es la del <video>,
+        // que cambia cuando el búfer llega a los segmentos nuevos (hasta el 4-11-2026, dash_height era la elegida)
         const representation = p.getCurrentRepresentationForType('video');
         const height = representation?.height ?? null;
+        const shown = videoRef.current?.videoHeight || null;
         if (height !== null && lastHeightRef.current !== null && height !== lastHeightRef.current) switchesRef.current++;
         if (height !== null) lastHeightRef.current = height;
         const throughput = p.getAverageThroughput('video');
@@ -344,7 +347,8 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
           contentSpeed: glass.contentSpeed,
           contentSkippedMs: glass.contentSkippedMs,
           restarts: restartsRef.current,
-          renditionHeight: height,
+          renditionHeight: shown,
+          selectedHeight: height,
           renditionKbps: representation ? Math.round(representation.bandwidth / 1000) : null,
           qualitySwitches: switchesRef.current,
           // Caudal medio que dash.js mide en las descargas y con el que decide su ABR
