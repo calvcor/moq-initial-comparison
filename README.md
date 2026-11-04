@@ -513,7 +513,7 @@ Las medidas dependen de la versión exacta de cada pieza de terceros: entre dos 
 | FFmpeg | El paquete de Debian de la imagen del orquestador; no se consulta si hay novedades |
 | `vmaf` (solo QoE) | `server/Dockerfile`, `VMAF_VERSION`; no se muestra en el dashboard, queda en cada resultado de VMAF |
 
-Los motivos por los que el servidor usa el publicador y el reproductor de MoQ compilados desde `main`, y lo que implica, están en [FINDINGS/moq-versiones-main.md](FINDINGS/moq-versiones-main.md).
+Los motivos por los que el servidor usa el publicador y el reproductor de MoQ compilados desde `main`, y lo que implica, están en [FINDINGS/moq-versiones-main.md](FINDINGS/moq-versiones-main.md). La prueba de la versión publicada 0.14.12 (4-11-2026), que sigue sin dar abasto con varias calidades, está en [FINDINGS/moq-cli-0.14.12.md](FINDINGS/moq-cli-0.14.12.md).
 
 **`moq-cli` desde un commit.** Para medir una versión del publicador aún no publicada, el `.env` admite `MOQ_CLI_FROM=git` y `MOQ_CLI_COMMIT=<hash>` (por defecto, `release` y el commit `bc64b9c` de `main`). La etapa de compilación solo se construye con `git`; con `release` no se compila nada. Compila con LTO *thin* y solo el transporte QUIC (el LTO completo no cupo en 7,7 GB de RAM) y guarda las cachés de Cargo entre construcciones, así que la memoria solo se usa al construir y cambiar de commit reutiliza las dependencias. Si no cambia el commit, la etapa sale de la caché de Docker. Para liberar el disco de esas cachés: `docker builder prune`.
 
