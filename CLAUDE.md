@@ -114,7 +114,8 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 ## Versiones de terceros
 
 - Todo va fijado: relay y MediaMTX en `docker-compose.yml`, moq-cli en `server/Dockerfile`, librerías
-  del navegador en `web/package-lock.json`. Nada se actualiza solo.
+  del navegador en `web/package-lock.json`. Nada se actualiza solo. Ojo: con `MOQ_WATCH_FROM=git` el lockfile
+  se descarta al construir y mandan los rangos de `web/package.json`; por eso `dash.js` va con la versión exacta.
 - moq-cli se puede compilar desde un commit con `MOQ_CLI_FROM=git` y `MOQ_CLI_COMMIT` en el `.env`
   (README, 4.4b); el panel y el CSV lo muestran como `git@<commit>`. Compilar necesita varios GB de RAM.
   Igual `@moq/watch` y sus `@moq/*` con `MOQ_WATCH_FROM=git` y `MOQ_WATCH_COMMIT`; desde el 22-10-2026,
