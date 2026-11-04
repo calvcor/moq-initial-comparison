@@ -508,7 +508,7 @@ Las medidas dependen de la versión exacta de cada pieza de terceros: entre dos 
 | :--- | :--- |
 | `moq-relay` | `docker-compose.yml`, `MOQ_RELAY_VERSION` (dos valores por defecto: la imagen y la variable que la muestra) |
 | MediaMTX | `docker-compose.yml`, `MEDIAMTX_VERSION` (igual) |
-| `moq-cli` | `server/Dockerfile`: la versión publicada, en la URL de descarga. Con `MOQ_CLI_FROM=git` en el `.env` se compila desde el commit `MOQ_CLI_COMMIT` (ver abajo) y se identifica como `git@<commit>` |
+| `moq-cli` | `server/Dockerfile`: la versión publicada, en `MOQ_CLI_VERSION` (0.14.7; se puede cambiar en el `.env` para probar otra publicada). Con `MOQ_CLI_FROM=git` en el `.env` se compila desde el commit `MOQ_CLI_COMMIT` (ver abajo) y se identifica como `git@<commit>` |
 | `@moq/watch`, `dash.js` | `web/package.json` y `web/package-lock.json`. Con `MOQ_WATCH_FROM=git` en el `.env`, `@moq/watch` y sus paquetes `@moq/*` se compilan desde el commit `MOQ_WATCH_COMMIT` (ver abajo) y se identifican como `git@<commit>`. En ese modo `web/Dockerfile` descarta el lockfile, así que `dash.js` va fijado con la versión exacta en `package.json` (desde el 4-11-2026; antes, `^5.2.1` habría tomado la 5.3.0 en la siguiente construcción sin caché) |
 | FFmpeg | El paquete de Debian de la imagen del orquestador; no se consulta si hay novedades |
 | `vmaf` (solo QoE) | `server/Dockerfile`, `VMAF_VERSION`; no se muestra en el dashboard, queda en cada resultado de VMAF |
