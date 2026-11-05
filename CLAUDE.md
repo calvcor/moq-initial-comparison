@@ -39,7 +39,8 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
    (nominal), sliders de latencia que significan cosas distintas en cada rama, red del cliente, que sin límite de red la
    estimación de caudal de dash.js sigue al bitrate descargado y no a la red (README, sección 6), que con fragmentos
    CMAF de 1 frame la sobrestima también con límite (1,6-2 veces el enlace) y que L2A no sale de su arranque con
-   objetivos de menos de 1,5 s y en su fase estable tiene un fallo de unidades en dash.js 5 (README, sección 6), que leer el MPEG-TS retiene 1 frame en MediaMTX, 2 en el publicador de MoQ y 3 en FFmpeg, y solo en DASH cae en la etapa de entrada (PROTOCOLOS, 6.4), y que
+   objetivos de menos de 1,5 s y en su fase estable tiene un fallo de unidades en dash.js 5 (README, sección 6; la opción L2A (bugfix), `l2afix`, es el
+   experimento con ese fallo corregido), que leer el MPEG-TS retiene 1 frame en MediaMTX, 2 en el publicador de MoQ y 3 en FFmpeg, y solo en DASH cae en la etapa de entrada (PROTOCOLOS, 6.4), y que
    el jitter de netem desordena los paquetes (castiga casi solo a QUIC: README, sección 5), con Tears of Steel, que cambian a la vez contenido y cadencia (24 fps: frames de 41,7 ms; README, 3.1a), y con la
    cámara como fuente, que el contenido no se repite y la latencia no incluye el tramo cámara → servidor, y si el relay usa certificado autofirmado con huella o uno de Let's Encrypt (`docker-compose.tls.yml`; README, sección 1).
 5. **Distingue medida de deducción** al informar. Si algo sale del código y no de una prueba, dilo.

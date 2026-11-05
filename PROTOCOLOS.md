@@ -203,6 +203,7 @@ Las reglas específicas de baja latencia (`l2ARule`, `loLPRule`) existen pero es
 | :--- | :--- |
 | Por defecto | Las de la tabla de arriba (`droppedFramesRule`, de fábrica, está apagada). |
 | L2A | Solo `l2ARule` (*Learn2Adapt*, aprendizaje en línea sobre el caudal, con un modelo del búfer). |
+| L2A (bugfix) | Solo `l2ARule`, pero de una copia de dash.js con el fallo de unidades de su fase estable corregido (README, sección 6). Es un experimento, no dash.js tal como viene. |
 | LoL+ | Solo `loLPRule` (*Low-on-Latency+*, que pondera calidad, latencia, búfer y cambios). |
 
 Cambiar de opción recrea el reproductor: dash.js sí aplica un cambio de reglas en caliente, pero su ejemplo de baja latencia pide recargar, porque las dos reglas guardan estado desde el arranque.
