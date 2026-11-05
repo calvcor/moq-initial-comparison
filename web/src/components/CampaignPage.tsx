@@ -6,6 +6,7 @@ import { WorkersModal } from './WorkersModal';
 import { PLAYER_IDS } from '../lib/samples';
 import { CampaignResults } from './CampaignResults';
 import { CampaignPreview, stopPreview, type Preview } from './CampaignPreview';
+import { multiStream, streamName, streamText } from '../lib/campaignStreams';
 import type { Campaign, CampaignPlan, CampaignQueue, CampaignRun, PlayerId, ServerStatus } from '../types';
 
 // Página de campañas de medida (/campaign; README, 4.8): editor, monitor y, en la misma pestaña o en otra
@@ -36,7 +37,7 @@ const STATE_STYLE: Record<string, string> = {
 };
 const PLAYER_SHORT: Record<PlayerId, string> = { dash: 'DASH', moq: 'MoQ', rtc: 'RTC' };
 
-const ABR_LABEL: Record<string, string> = { default: 'por defecto', l2a: 'L2A', lolp: 'LoL+', watch: 'librería', probe: 'sondeo (experimento)' };
+const ABR_LABEL: Record<string, string> = { default: 'por defecto', l2a: 'L2A', lolp: 'LoL+', watch: 'librería', probe: 'sondeo (experimento)', probe2: 'sondeo v2 (experimento)' };
 const SWITCHING_LABEL: Record<string, string> = { seamless: 'sin corte', cancel: 'cancelar (experimento)', priority: 'prioridad (experimento)' };
 
 /** Ajustes de los reproductores de la campaña, de los protocolos que prueba. Sin player_options (campañas
@@ -74,6 +75,7 @@ const RunsTable: React.FC<{
 }> = ({ campaign, focus, onChanged, onPreview, onSeries }) => {
   const plan = campaign.plan;
   const runs = campaign.runs ?? [];
+  const streams = multiStream(plan);
   const [error, setError] = useState<string | null>(null);
   // Resaltada unos segundos, para encontrarla en la tabla
   const [highlight, setHighlight] = useState<string | null>(null);
@@ -102,6 +104,7 @@ const RunsTable: React.FC<{
         <thead className="text-[10px] text-slate-500 uppercase">
           <tr>
             <th className="py-1 pr-2 font-medium">Prueba</th>
+            {streams && <th className="py-1 pr-2 font-medium">Emisión</th>}
             <th className="py-1 pr-2 font-medium">Red</th>
             <th className="py-1 pr-2 font-medium">Objetivo</th>
             <th className="py-1 pr-2 font-medium">Rep.</th>
@@ -135,6 +138,11 @@ const RunsTable: React.FC<{
                   </span>
                 )}
               </td>
+              {streams && (
+                <td className="py-1 pr-2 text-slate-300 font-sans" title={streamText(plan.streams[run.stream])}>
+                  {run.stream + 1}
+                </td>
+              )}
               <td className="py-1 pr-2 text-slate-300 font-sans">{run.network === null ? 'sin restricción' : plan.networks[run.network].label}</td>
               <td className="py-1 pr-2 text-slate-300 font-sans">{plan.targets[run.target].label}</td>
               <td className="py-1 pr-2 text-slate-400">{run.rep + 1}</td>
@@ -403,10 +411,20 @@ const Monitor: React.FC<{
           </span>
           {campaign.state !== 'done' && campaign.state !== 'aborted' && <span>quedan unas {formatDuration(campaign.eta_s)}</span>}
           <span>
+            {multiStream(plan) && `${plan.streams.length} emisiones × `}
             {plan.networks.length} redes × {plan.targets.length} objetivos × {plan.repetitions} repeticiones · {plan.warmup_s} + {plan.measure_s} s · semilla {plan.seed}
           </span>
           <span>{optionsText(plan)}</span>
         </div>
+        {multiStream(plan) && (
+          <ul className="text-slate-400">
+            {plan.streams.map((st, i) => (
+              <li key={i}>
+                <span className="text-slate-300">{streamName(i)}:</span> {streamText(st)}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Prueba en curso y trabajador */}
@@ -415,7 +433,14 @@ const Monitor: React.FC<{
           {current ? (
             <span>
               En curso: <span className="font-mono text-slate-200">{campaign.batch?.length ? campaign.batch.join(' + ') : current.id}</span>
-              {campaign.batch?.length ? ' (en paralelo)' : ''} · {STATE_LABEL[current.state]} · red{' '}
+              {campaign.batch?.length ? ' (en paralelo)' : ''} · {STATE_LABEL[current.state]}
+              {multiStream(plan) && (
+                <>
+                  {' '}
+                  · <span className="text-slate-200" title={streamText(plan.streams[current.stream])}>{streamName(current.stream).toLowerCase()}</span>
+                </>
+              )}{' '}
+              · red{' '}
               <span className="text-slate-200">{current.network === null ? 'sin restricción' : plan.networks[current.network].label}</span> · objetivo{' '}
               <span className="text-slate-200">{plan.targets[current.target].label}</span>
             </span>
@@ -657,6 +682,7 @@ const CampaignMonitorPage: React.FC = () => {
   const defaultStream = {
     source: cfg?.source ?? 'file',
     rtc_audio: cfg?.rtc_audio ?? false,
+    rtc_pacing: cfg?.rtc_pacing ?? false,
     gop_size: cfg?.gop_size ?? 60,
     seg_duration: cfg?.seg_duration ?? 2.0,
     frag_duration: cfg?.frag_duration ?? 0.1,

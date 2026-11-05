@@ -9,13 +9,43 @@
 // pasa a la medida de dash.js y a la estimación del relay). Se sube si la siguiente cabe en esa capacidad, comparando
 // con su bitrate real (bytes por frame × cadencia de lo recibido), no con el del catálogo, que es el pico retenido.
 // Se baja cuando la actual deja de recibir frames al ritmo de su cadencia.
+//
+// Dos variantes (README 6.3). `probe` es la primera, y en la campaña del 4-11-2026 dejaba a MoQ en 360p con
+// enlaces de 4-10 Mbit/s: al suscribirse pedía hasta 10 s de atraso de la calidad siguiente, que llegaba de golpe y,
+// con límite de caudal, hundía a la calidad actual en la cola del router (el sondeo se cortaba); y los sondeos que
+// terminaban medían cuando el atraso ya se había vaciado, así que lo recibido era la suma de los bitrates de las dos
+// calidades y no la capacidad. `probe2` acota el atraso a ~2 s, sube también si la siguiente llega a su cadencia (si
+// va al día, cabe, sin necesidad de medir la capacidad) y no dobla la espera si el sondeo se corta en su arranque.
 import type * as Watch from '@moq/watch';
 
 /** Prioridad de la suscripción de sondeo: la mínima (en moq-lite se envía antes la mayor). */
 const PROBE_PRIORITY = 0;
-/** Retraso que tolera la suscripción de sondeo. Va por detrás por diseño, y solo con grupos completos se puede
- * calcular el bitrate real de la calidad: los principios de grupo empiezan por el keyframe y lo inflarían. */
-const PROBE_MAX_DELAY_MS = 10000;
+
+export type ProbeVariant = 'probe' | 'probe2';
+
+interface VariantSettings {
+  /** Retraso que tolera la suscripción de sondeo. También es lo que pide hacia atrás al suscribirse: todos los grupos
+   * de ese tiempo que tenga el relay, que llegan de golpe. Solo con grupos completos se puede calcular el bitrate real
+   * de la calidad (los principios de grupo empiezan por el keyframe y lo inflarían). */
+  maxDelayMs: number;
+  /** Subir también si la calidad sondeada llega a su cadencia, sin mirar la capacidad. */
+  keepUp: boolean;
+  /** Un sondeo cortado antes de este tiempo no dobla la espera: el problema es su arranque, no la red. */
+  graceMs: number;
+  /** Desde cuándo puede cortar el sondeo que la actual pierda ritmo. Al empezar llega el grupo en curso de la
+   * siguiente de golpe y retrasa un momento a la actual en la cola del cuello de botella, aunque luego llegue todo. */
+  healthGraceMs: number;
+  /** Al terminar un sondeo, empezar de cero la medida de la actual: si perdió ritmo, fue por el propio sondeo, y
+   * no debe hacer bajar de calidad. */
+  resetAfterProbe: boolean;
+}
+
+const VARIANTS: Record<ProbeVariant, VariantSettings> = {
+  probe: { maxDelayMs: 10000, keepUp: false, graceMs: 0, healthGraceMs: 1000, resetAfterProbe: false },
+  // ~2 s: con GOP de 1 s, el grupo en curso y como mucho el anterior. Durante el sondeo tolera ese retraso, que basta
+  // para que lleguen grupos enteros mientras la regla de capacidad pueda dejar subir (README 6.3)
+  probe2: { maxDelayMs: 2000, keepUp: true, graceMs: 3000, healthGraceMs: 2500, resetAfterProbe: true },
+};
 /** Grupos completos necesarios para fiarse del bitrate real: un grupo suelto puede ser más ligero que la media. */
 const MIN_FULL_GROUPS = 2;
 /** Cada cuánto se evalúa. */
@@ -53,6 +83,9 @@ export interface ProbeState {
   probeKbps: number | null;
   /** Frames por segundo que recibe la calidad actual (ventana de 2 s). */
   currentFps: number | null;
+  /** En el último sondeo, frames por segundo que recibía la de sondeo, y si llegaba a su cadencia (solo probe2). */
+  probeFps: number | null;
+  keptUp: boolean | null;
   /** Subidas, bajadas y sondeos desde que empezó el controlador. */
   ups: number;
   downs: number;
@@ -75,8 +108,10 @@ function ratePerSecond(samples: Sample[], now: number, windowMs: number): number
 export class MoqProbeAbr {
   readonly state: ProbeState = {
     current: null, probing: false, capacityKbps: null, probeContentKbps: null,
-    currentKbps: null, probeKbps: null, currentFps: null, ups: 0, downs: 0, probes: 0,
+    currentKbps: null, probeKbps: null, currentFps: null, probeFps: null, keptUp: null, ups: 0, downs: 0, probes: 0,
   };
+  readonly variant: ProbeVariant;
+  #settings: VariantSettings;
   #player: Watch.Player;
   #timer: ReturnType<typeof setInterval>;
   #settleUntil = 0;
@@ -100,7 +135,9 @@ export class MoqProbeAbr {
     healthy: boolean;
   } | null = null;
 
-  constructor(player: Watch.Player) {
+  constructor(player: Watch.Player, variant: ProbeVariant = 'probe') {
+    this.variant = variant;
+    this.#settings = VARIANTS[variant];
     this.#player = player;
     this.#timer = setInterval(() => this.#tick(performance.now()), TICK_MS);
   }
@@ -159,7 +196,7 @@ export class MoqProbeAbr {
       p.samples.bytes.push([now, p.bytes]);
       p.samples.frames.push([now, p.frames]);
       // El sondeo no debe perjudicar a la actual: si se queda atrás, se corta y se espera más
-      if (!healthy && now - p.started > PROBE_WARMUP_MS) {
+      if (!healthy && now - p.started > this.#settings.healthGraceMs) {
         p.healthy = false;
         this.#endProbe(now, false);
         return;
@@ -193,7 +230,7 @@ export class MoqProbeAbr {
     const broadcast = (this.#player.broadcast.out.active.peek() as any) ?? null;
     if (!broadcast) return;
     let closed = false;
-    const sub = broadcast.track(rendition.track).subscribe({ priority: PROBE_PRIORITY, maxDelay: PROBE_MAX_DELAY_MS });
+    const sub = broadcast.track(rendition.track).subscribe({ priority: PROBE_PRIORITY, maxDelay: this.#settings.maxDelayMs });
     const probe = {
       rendition,
       started: now,
@@ -259,20 +296,33 @@ export class MoqProbeAbr {
     // se puede saber y no se sube.
     const content = p.fullGroups >= MIN_FULL_GROUPS ? (p.fullBytes / p.fullFrames) * p.rendition.fps * 8 : null; // bit/s
     const capacity = probeRate !== null && curRate !== null ? (probeRate + curRate) * 8 : null; // bit/s
+    // Si la de sondeo llega a su cadencia, va al día: cabe junto a la actual, así que sola también. Lo que recibe es
+    // entonces su bitrate, no lo que sobra del enlace, y la regla de capacidad no sirve (README 6.3)
+    const probeFps = windowMs > 0 ? ratePerSecond(p.samples.frames, now, windowMs) : null;
+    const keptUp = this.#settings.keepUp && probeFps !== null && probeFps >= HEALTHY_FPS * p.rendition.fps;
+    this.state.probeFps = probeFps === null ? null : Math.round(probeFps);
+    this.state.keptUp = this.#settings.keepUp ? keptUp : null;
     this.state.capacityKbps = capacity !== null ? Math.round(capacity / 1000) : null;
     this.state.currentKbps = curRate !== null ? Math.round((curRate * 8) / 1000) : null;
     this.state.probeKbps = probeRate !== null ? Math.round((probeRate * 8) / 1000) : null;
     this.state.probeContentKbps = content !== null ? Math.round(content / 1000) : null;
     this.#stopProbe();
+    if (this.#settings.resetAfterProbe) {
+      this.#curBytes = [];
+      this.#curFrames = [];
+    }
 
-    if (completed && p.healthy && capacity !== null && content !== null && capacity * UP_MARGIN >= content) {
+    const fits = keptUp || (capacity !== null && content !== null && capacity * UP_MARGIN >= content);
+    if (completed && p.healthy && fits) {
       this.state.ups++;
       this.#interval = PROBE_INTERVAL_MS;
       this.#switchTo(p.rendition.name, now);
       // Tras subir, se sondea la siguiente pronto
       this.#nextProbeAt = now + SETTLE_MS + 2000;
     } else {
-      this.#interval = Math.min(this.#interval * 2, PROBE_INTERVAL_MAX_MS);
+      // Cortado en su arranque (probe2): se reintenta con la misma espera
+      const early = !completed && now - p.started < this.#settings.graceMs;
+      if (!early) this.#interval = Math.min(this.#interval * 2, PROBE_INTERVAL_MAX_MS);
       this.#nextProbeAt = now + this.#interval;
     }
   }

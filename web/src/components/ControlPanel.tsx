@@ -51,6 +51,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     status?.config &&
     (config.source !== status.config.source ||
       config.rtc_audio !== status.config.rtc_audio ||
+      Boolean(config.rtc_pacing) !== Boolean(status.config.rtc_pacing) ||
       config.gop_size !== status.config.gop_size ||
       JSON.stringify(config.renditions) !== JSON.stringify(status.config.renditions) ||
       config.seg_duration !== status.config.seg_duration ||
@@ -328,6 +329,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </label>
         <span className="text-[10px] text-slate-500 mt-1 block">
           Desactivado por defecto. Con audio, el navegador sincroniza las dos pistas y puede retrasar el vídeo: es otra condición de medida (queda en el CSV, rtc_audio).
+        </span>
+        <label className="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer w-fit mt-2">
+          <input
+            type="checkbox"
+            checked={Boolean(config.rtc_pacing)}
+            onChange={(e) => onConfigChange({ ...config, rtc_pacing: e.target.checked })}
+            className="accent-indigo-500"
+          />
+          <span>Pacer en la ingesta de WebRTC (solo mediasoup)</span>
+        </label>
+        <span className="text-[10px] text-slate-500 mt-1 block">
+          Experimento, desactivado por defecto. El relay reparte el RTP de cada calidad a 2,5 veces su bitrate, como un publicador WebRTC, en vez de soltar cada frame de golpe; mediasoup lo reenvía con ese ritmo. Es común a todos los espectadores y retrasa las keyframes. Con MediaMTX no hace nada (queda en el CSV, rtc_pacing).
         </span>
       </div>
     </div>

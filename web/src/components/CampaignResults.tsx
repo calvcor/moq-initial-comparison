@@ -14,12 +14,14 @@ import {
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
 import { CampaignSeries } from './CampaignSeries';
+import { multiStream, streamName, streamText } from '../lib/campaignStreams';
 
 ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Tooltip, Legend);
 
 // Resultados de una campaña (README, 4.8): una gráfica por condición de red o por latencia objetivo, con un
 // punto por prueba válida (cada repetición) y una línea por la mediana de las repeticiones. Solo pruebas
-// terminadas y válidas; las de control van aparte, en orden de ejecución, para ver la deriva del sistema.
+// terminadas y válidas; las de control van aparte, en orden de ejecución, para ver la deriva del sistema. Con varias
+// emisiones, cada gráfica es de una sola: sus pruebas no se mezclan.
 
 // Los colores de cada protocolo en todo el dashboard (el color sigue a la entidad); la forma del punto es la
 // segunda codificación, para no depender solo del color
@@ -176,9 +178,11 @@ function datasets(
   return out;
 }
 
-const Panel: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+const Panel: React.FC<{ title: string; hint?: string; children: React.ReactNode }> = ({ title, hint, children }) => (
   <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
-    <h4 className="text-xs font-medium text-slate-300 mb-2">{title}</h4>
+    <h4 className="text-xs font-medium text-slate-300 mb-2" title={hint}>
+      {title}
+    </h4>
     <div className="h-64">{children}</div>
   </div>
 );
@@ -205,7 +209,10 @@ export const CampaignResults: React.FC<{
   const networkLabels = plan.networks.map((n) => n.label);
   const targetLabels = plan.targets.map((t) => t.label);
   const categories = xAxis === 'network' ? networkLabels : targetLabels;
-  const facets = xAxis === 'network' ? plan.targets.map((_, i) => i) : plan.networks.map((_, i) => i);
+  const others = xAxis === 'network' ? plan.targets.map((_, i) => i) : plan.networks.map((_, i) => i);
+  const streams = plan.streams.map((_, i) => i);
+  const facets = streams.flatMap((st) => others.map((f) => ({ st, f })));
+  const streamPrefix = (st: number) => (multiStream(plan) ? `${streamName(st)} · ` : '');
   const xOf = (r: CampaignRun) => (xAxis === 'network' ? networkLabels[r.network!] : targetLabels[r.target]);
   const options = chartOptions(metric, log, xAxis === 'network' ? 'Condición de red' : 'Latencia objetivo', onSelectRun);
 
@@ -266,28 +273,32 @@ export const CampaignResults: React.FC<{
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {facets.map((f) => {
-          const runs = tests.filter((r) => (xAxis === 'network' ? r.target === f : r.network === f));
+        {facets.map(({ st, f }) => {
+          const runs = tests.filter((r) => r.stream === st && (xAxis === 'network' ? r.target === f : r.network === f));
           if (!runs.length) return null;
           const ds = datasets(runs, players, xOf, categories, metric);
           const line = targetLine([f]);
           return (
-            <Panel key={f} title={xAxis === 'network' ? `Objetivo ${targetLabels[f]}` : networkLabels[f]}>
+            <Panel key={`${st}:${f}`} title={streamPrefix(st) + (xAxis === 'network' ? `Objetivo ${targetLabels[f]}` : networkLabels[f])} hint={multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
               <Line data={{ labels: categories, datasets: line ? [...ds, line] : ds }} options={options} />
             </Panel>
           );
         })}
-        {controls.length > 0 && (
-          <Panel title="Pruebas de control (sin restricción), en orden de ejecución: deriva del sistema">
-            <Line
-              data={{
-                labels: controls.map((r) => r.id),
-                datasets: datasets(controls, players, (r) => r.id, controls.map((r) => r.id), metric),
-              }}
-              options={chartOptions(metric, log, 'Prueba de control', onSelectRun)}
-            />
-          </Panel>
-        )}
+        {streams.map((st) => {
+          const own = controls.filter((r) => r.stream === st);
+          if (!own.length) return null;
+          return (
+            <Panel key={`control:${st}`} title={`${streamPrefix(st)}Pruebas de control (sin restricción), en orden de ejecución: deriva del sistema`} hint={multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
+              <Line
+                data={{
+                  labels: own.map((r) => r.id),
+                  datasets: datasets(own, players, (r) => r.id, own.map((r) => r.id), metric),
+                }}
+                options={chartOptions(metric, log, 'Prueba de control', onSelectRun)}
+              />
+            </Panel>
+          );
+        })}
       </div>
 
       <CampaignSeries campaign={campaign} runs={[...tests, ...controls]} focus={seriesFocus ?? null} />

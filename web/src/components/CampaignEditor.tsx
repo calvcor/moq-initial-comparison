@@ -325,11 +325,12 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                 {p === 'moq' && (
                   <>
                     <div className="flex flex-wrap gap-3">
-                      <label className="flex flex-col gap-1" title="Librería: decide @moq/watch (lo que se mide). Sondeo: el controlador propio con sondeo por prioridad de README 6.3, un experimento.">
+                      <label className="flex flex-col gap-1" title="Librería: decide @moq/watch (lo que se mide). Sondeo: el controlador propio con sondeo por prioridad de README 6.3, un experimento. Sondeo v2: su versión corregida (atraso acotado y subida si la siguiente llega a su ritmo).">
                         <span className={label}>Adaptación</span>
                         <select className={input} disabled={!on} value={options.moq_abr} onChange={(e) => setOption('moq_abr', e.target.value as MoqAbr)}>
                           <option value="watch">Librería</option>
                           <option value="probe">Sondeo (experimento)</option>
+                          <option value="probe2">Sondeo v2 (experimento)</option>
                         </select>
                       </label>
                       <label className="flex flex-col gap-1" title="Qué hacer al bajar de calidad (opción switching del parche de web/patches, README 6.1). Sin corte: el original de @moq/watch. Cancelar y Prioridad son el experimento. Sin el parche no tiene efecto.">
@@ -529,6 +530,10 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
             <label className="flex items-center gap-1.5 pb-1">
               <input type="checkbox" checked={s.rtc_audio} onChange={(e) => setStream(i, { rtc_audio: e.target.checked })} />
               <span className="text-slate-300">Audio en WebRTC</span>
+            </label>
+            <label className="flex items-center gap-1.5 pb-1" title="Pacer en la ingesta de mediasoup: el relay reparte el RTP de cada calidad a 2,5 veces su bitrate (README, 3.4c). Con MediaMTX no hace nada">
+              <input type="checkbox" checked={Boolean(s.rtc_pacing)} onChange={(e) => setStream(i, { rtc_pacing: e.target.checked })} />
+              <span className="text-slate-300">Pacer en WebRTC</span>
             </label>
             {streams.length > 1 && (
               <button

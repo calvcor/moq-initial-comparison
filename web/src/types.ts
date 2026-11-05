@@ -23,6 +23,8 @@ export interface StreamConfig {
   gop_size: number;
   fps: number; // con el bucle, la del vídeo (60 o 24); con la cámara la fija el servidor (la de la cámara)
   rtc_audio: boolean; // audio Opus en la rama WebRTC (sin recodificar); desactivado por defecto
+  // pacer en la ingesta de mediasoup (README, 3.4c); falta en las campañas anteriores al 4-11-2026, que van sin él
+  rtc_pacing?: boolean;
   renditions: Rendition[]; // de mayor a menor; una sola = sin adaptación
   seg_duration: number;
   frag_duration: number;
@@ -172,7 +174,7 @@ export interface PlayerMetrics {
 export type MoqSwitching = 'seamless' | 'cancel' | 'priority';
 
 // Quién decide la calidad en MoQ: @moq/watch, o el controlador del experimento de sondeo (README 6.3)
-export type MoqAbr = 'watch' | 'probe';
+export type MoqAbr = 'watch' | 'probe' | 'probe2';
 
 // Reglas de adaptación de dash.js: las de fábrica, o L2A o LoL+ en solitario
 export type DashAbr = 'default' | 'l2a' | 'lolp';
@@ -210,6 +212,7 @@ export interface SampleRow {
   fullscreen: string | null; // reproductor a pantalla completa en ese momento (dash, moq o rtc), o vacío
   audio: string | null; // reproductor con el sonido activado (dash, moq o rtc), o vacío si todos van silenciados
   rtc_audio: boolean | null; // la rama WebRTC lleva audio (opción del servidor)
+  rtc_pacing: boolean | null; // la ingesta de mediasoup reparte el RTP en el tiempo (opción del servidor, README 3.4c)
   elapsed_s: number; // segundos desde el inicio del epoch
   source: SourceKind | null; // fuente de la emisión: file (bucle) o camera
   fps: number | null; // cadencia de la emisión
@@ -277,7 +280,7 @@ export interface SampleRow {
   moq_bw_estimate_kbps: number | null;
   moq_quality_mode: string;
   moq_switching: string | null;
-  moq_abr: string; // watch (la librería) o probe (experimento de sondeo, README 6.3)
+  moq_abr: string; // watch (la librería), probe o probe2 (experimento de sondeo y su versión corregida, README 6.3)
   moq_probing: number | null; // 1 si había un sondeo en curso en la muestra
   moq_probe_capacity_kbps: number | null; // capacidad estimada en el último sondeo // seamless (original), cancel o priority; vacío sin el parche
   // Desglose de la latencia por etapas (ms); la suma de las de cada rama es su glass-to-glass

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartDataset, type ChartOptions, type Plugin } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
+import { multiStream, streamName } from '../lib/campaignStreams';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -191,18 +192,21 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
   focus,
 }) => {
   const plan = campaign.plan;
-  const conditionOf = (r: CampaignRun) => (r.network === null ? 'control' : `${r.network}:${r.target}`);
+  // Emisión, red y objetivo (emisión:red:objetivo; la red vacía, las de control): con varias emisiones, las pruebas
+  // de una condición son siempre de la misma
+  const conditionOf = (r: CampaignRun) => `${r.stream}:${r.network ?? ''}:${r.target}`;
   const conditionLabel = (key: string) => {
-    if (key === 'control') return 'Pruebas de control';
-    const [n, t] = key.split(':').map(Number);
-    return `objetivo ${plan.targets[t].label} · ${plan.networks[n].label}`;
+    const [st, n, t] = key.split(':');
+    const prefix = multiStream(plan) ? `${streamName(Number(st)).toLowerCase()} · ` : '';
+    if (n === '') return prefix ? `${prefix}pruebas de control` : 'Pruebas de control';
+    return `${prefix}objetivo ${plan.targets[Number(t)].label} · ${plan.networks[Number(n)].label}`;
   };
-  // Por objetivo y, dentro de cada uno, por red, en el orden del plan; las de control al final
+  // Por emisión, objetivo y, dentro de cada uno, red, en el orden del plan; las de control al final de su emisión
   const conditions = useMemo(() => {
     const rank = (key: string) => {
-      if (key === 'control') return Infinity;
-      const [n, t] = key.split(':').map(Number);
-      return t * plan.networks.length + n;
+      const [st, n, t] = key.split(':');
+      const inStream = n === '' ? plan.targets.length * plan.networks.length : Number(t) * plan.networks.length + Number(n);
+      return Number(st) * (plan.targets.length * plan.networks.length + 1) + inStream;
     };
     return [...new Set(runs.map(conditionOf))].sort((a, b) => rank(a) - rank(b));
   }, [runs]);

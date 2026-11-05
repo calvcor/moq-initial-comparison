@@ -65,6 +65,8 @@ SFU_HOST = urlsplit(SFU_URL).hostname
 RTPRELAY = os.path.join(os.path.dirname(__file__), "rtprelay.py")
 # Ingesta de mediasoup: un puerto RTP y su RTCP por pista, en este proceso, hacia el relay
 RTP_FIRST_PORT = 5020
+# Ritmo del pacer de la ingesta (rtc_pacing) respecto al bitrate de cada calidad: el de libwebrtc (kDefaultPaceMultiplier)
+RTC_PACING_FACTOR = float(os.getenv("RTC_PACING_FACTOR", "2.5"))
 RTP_VIDEO_PAYLOAD, RTP_AUDIO_PAYLOAD = 96, 111
 RTP_FIRST_SSRC, RTP_AUDIO_SSRC = 0x11110000, 0x11119999
 
@@ -144,6 +146,10 @@ class StreamConfig(BaseModel):
     # Audio en la rama WebRTC (el Opus de la fuente, sin recodificar). Desactivado por defecto: el navegador
     # sincroniza audio y vídeo y retrasa el vídeo (README, sección 3.4b)
     rtc_audio: bool = False
+    # Pacer en la ingesta de mediasoup: el relay reparte el RTP de cada calidad a RTC_PACING_FACTOR veces su bitrate,
+    # como un publicador WebRTC, en vez de soltar cada frame de golpe. Experimento declarado, desactivado por defecto
+    # (README, 3.4c); las campañas anteriores al 4-11-2026 no lo tienen y van sin él. Con MediaMTX no hace nada.
+    rtc_pacing: bool = False
     seg_duration: float = 2.0    # Segundos por segmento DASH
     # Duración de los fragmentos CMAF de LL-DASH, en segundos. 0 = un frame por fragmento (-frag_type every_frame):
     # 16,7 ms a 60 fps, y lo que dure un frame con la cámara.
@@ -206,7 +212,7 @@ class PlayerOptions(BaseModel):
     dash_max_drift_s: float = Field(1.5, ge=0, le=10)
     # liveCatchup.playbackBufferMin de dash.js (LoL+): 0 = no frenar nunca por búfer; 0,5 s es el de fábrica
     dash_playback_buffer_min_s: float = Field(0, ge=0, le=2)
-    moq_abr: Literal["watch", "probe"] = "watch"
+    moq_abr: Literal["watch", "probe", "probe2"] = "watch"
     # Cambio de calidad hacia abajo (opción switching del parche de web/patches); sin el parche no tiene efecto
     moq_switching: Literal["seamless", "cancel", "priority"] = "seamless"
 
@@ -778,20 +784,22 @@ def start_rtc_mediasoup():
         # Lo habitual al levantar todo a la vez: el supervisor lo reintenta
         logger.warning(f"mediasoup no acepta la ingesta todavía: {e}")
         return
+    # Puertos del relay: el RTP de cada calidad lleva su bitrate, con el que el pacer le da ritmo (rtc_pacing)
     ports, outputs = [], ""
-    def output(mapping: str, ssrc: int, payload: int) -> str:
+    def output(mapping: str, ssrc: int, payload: int, kbps: int = 0) -> str:
         rtp = RTP_FIRST_PORT + len(ports)
-        ports.extend([rtp, rtp + 1])
+        ports.extend([f"{rtp}:{kbps}" if kbps else str(rtp), str(rtp + 1)])
         return f"-map {mapping} -c copy -f rtp -ssrc {ssrc} -payload_type {payload} 'rtp://127.0.0.1:{rtp}?pkt_size=1200&rtcpport={rtp + 1}' "
     for i in range(count):
-        outputs += output(f"0:v:{i}", ssrcs[i], RTP_VIDEO_PAYLOAD)
+        outputs += output(f"0:v:{i}", ssrcs[i], RTP_VIDEO_PAYLOAD, current_config.renditions[i].bitrate_kbps)
     if current_config.rtc_audio:
         outputs += output("0:a:0", RTP_AUDIO_SSRC, RTP_AUDIO_PAYLOAD)
+    pace = f"--pace {RTC_PACING_FACTOR} " if current_config.rtc_pacing else ""
     # Si cae cualquiera de las dos partes, cae el grupo entero y el supervisor rehace la ingesta
     rtc_cmd = (
         f"(python3 -u {TSGATE} 5003 rtc | "
         f"ffmpeg -y -fflags nobuffer -analyzeduration {int(PROBE_S * 1_000_000)} -i pipe:0 {outputs}; kill 0) & "
-        f"python3 -u {RTPRELAY} {SFU_HOST}:{port} {' '.join(map(str, ports))}; kill 0"
+        f"python3 -u {RTPRELAY} {pace}{SFU_HOST}:{port} {' '.join(ports)}; kill 0"
     )
     logger.info(f"Iniciando Empaquetador WebRTC hacia mediasoup ({count} calidades, puerto {port})...")
     launch("rtc_pipeline", rtc_cmd, "/tmp/ffmpeg_rtc.log")
