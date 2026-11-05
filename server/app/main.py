@@ -207,7 +207,7 @@ class PlayerOptions(BaseModel):
     """Ajustes de los reproductores, iguales en todas las pruebas de la campaña. Por defecto, los del dashboard al
     abrirse: reglas ABR de fábrica de dash.js y adaptación y cambio de calidad de @moq/watch. Los otros valores de
     MoQ son los experimentos de README 6.1 y 6.3: una campaña con ellos es un experimento declarado."""
-    dash_abr: Literal["default", "l2a", "lolp"] = "default"
+    dash_abr: Literal["default", "l2a", "l2afix", "lolp"] = "default"  # l2afix: experimento (README 6)
     # liveCatchup.maxDrift de dash.js: desvío a partir del cual salta al directo (0 = nunca)
     dash_max_drift_s: float = Field(1.5, ge=0, le=10)
     # liveCatchup.playbackBufferMin de dash.js (LoL+): 0 = no frenar nunca por búfer; 0,5 s es el de fábrica

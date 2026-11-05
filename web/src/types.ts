@@ -176,8 +176,9 @@ export type MoqSwitching = 'seamless' | 'cancel' | 'priority';
 // Quién decide la calidad en MoQ: @moq/watch, o el controlador del experimento de sondeo (README 6.3)
 export type MoqAbr = 'watch' | 'probe' | 'probe2';
 
-// Reglas de adaptación de dash.js: las de fábrica, o L2A o LoL+ en solitario
-export type DashAbr = 'default' | 'l2a' | 'lolp';
+// Reglas de adaptación de dash.js: las de fábrica, o L2A o LoL+ en solitario. l2afix: experimento, L2A con su fallo
+// de unidades de dash.js 5 corregido (README 6)
+export type DashAbr = 'default' | 'l2a' | 'l2afix' | 'lolp';
 
 // Latencia glass-to-glass repartida por etapas, medida sobre frames concretos del último segundo
 export interface StageBreakdown {
@@ -255,7 +256,7 @@ export interface SampleRow {
   dash_quality_mode: string;
   dash_max_drift_s: number | null;
   dash_playback_buffer_min_s: number | null;
-  dash_abr: string | null; // default, l2a o lolp
+  dash_abr: string | null; // default, l2a, l2afix (experimento) o lolp
   moq_g2g_ms: number | null;
   moq_reported_ms: number | null;
   moq_kbps: number | null;

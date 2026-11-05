@@ -117,19 +117,40 @@ export const DashExplain: React.FC<Props> = (props) => {
     );
   }
 
-  if (abr === 'l2a') {
+  if (abr === 'l2a' || abr === 'l2afix') {
+    const fixed = abr === 'l2afix';
     return (
       <div className="space-y-2">
         <p>
           <b>Regla L2A de dash.js</b> (<i>Learn2Adapt</i>), en solitario: las de fábrica, incluida la de abandono, quedan
           apagadas. Cambiar el selector recrea el reproductor, porque la regla guarda estado desde el arranque.
+          {fixed && (
+            <>
+              {' '}
+              <b className="text-amber-300">Experimento:</b> una copia de dash.js con el fallo de unidades de L2A corregido
+              (README 6); no es dash.js tal como viene.
+            </>
+          )}
         </p>
         <Section title="Elección (subir y bajar con la misma regla)">
           {WHEN}
           <li>
-            Aprendizaje en línea sobre el caudal y el búfer. Compara el bitrate nominal (el del MPD) con la{' '}
-            <b>última muestra de caudal, sin margen</b>, así que tiende a la calidad máxima aunque sus picos no quepan
-            (README 6). Medido en local con 2 Mbit/s: sube a 720p@2000, que no cabe, y se congela.
+            <b>Arranque:</b> hasta que el búfer llega a 1,5 s elige como la regla de caudal, la calidad más alta que quepa en
+            el 90 % del caudal estimado
+            {targetLatency < 1.5 && <>: con el objetivo en {s(targetLatency)} no suele salir de aquí, salvo que los parones suban el búfer</>}.
+          </li>
+          <li>
+            <b>Fase estable:</b> aprendizaje en línea, una distribución de probabilidad sobre las calidades que se corrige en
+            cada segmento comparando <b>velocidad × bitrate nominal</b> con la <b>última muestra de caudal, sin margen</b>.
+            {fixed ? (
+              <> Con las unidades corregidas, como en dash.js 4.x, la distribución acumula lo que ve y sube de un escalón en un escalón.</>
+            ) : (
+              <>
+                {' '}
+                En dash.js 5 dos de sus cuentas mezclan bit/s y kbit/s, la distribución salta entera en cada segmento y queda
+                una regla sin memoria: la calidad más alta que quepa en esa muestra (README 6).
+              </>
+            )}
           </li>
           {THROUGHPUT}
         </Section>

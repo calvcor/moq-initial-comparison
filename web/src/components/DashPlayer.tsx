@@ -131,7 +131,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
                 switchHistoryRule: { active: false },
                 droppedFramesRule: { active: false },
                 abandonRequestsRule: { active: false },
-                l2ARule: { active: mode === 'l2a' },
+                l2ARule: { active: mode === 'l2a' || mode === 'l2afix' },
                 loLPRule: { active: mode === 'lolp' },
               },
             },
@@ -237,7 +237,11 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         playerRef.current = null;
       }
 
-      const player = dashjs.MediaPlayer().create();
+      // L2A (bugfix): copia de dash.js con el fallo de unidades de L2A corregido (vite.config.ts, README 6). Solo se
+      // carga con esta opción; las demás usan dash.js tal cual
+      const lib: typeof dashjs = abr === 'l2afix' ? await import('virtual:dashjs-l2afix') : dashjs;
+      if (isCancelled || !videoRef.current) return;
+      const player = lib.MediaPlayer().create();
       playerRef.current = player;
       // Acceso desde la consola del navegador para depurar (p. ej. subir el nivel de log de dash.js)
       (window as any).dashPlayer = player;
@@ -268,20 +272,20 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       });
       player.updateSettings(abrSettings(abr));
 
-      player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
+      player.on(lib.MediaPlayer.events.STREAM_INITIALIZED, () => {
         console.log('[dash.js] Stream inicializado');
         applyQuality(player, qualityRef.current);
       });
 
-      player.on(dashjs.MediaPlayer.events.CAN_PLAY, () => {
+      player.on(lib.MediaPlayer.events.CAN_PLAY, () => {
         if (!isCancelled) setPlayerStatus('playing');
       });
 
-      player.on(dashjs.MediaPlayer.events.PLAYBACK_PLAYING, () => {
+      player.on(lib.MediaPlayer.events.PLAYBACK_PLAYING, () => {
         if (!isCancelled) setPlayerStatus('playing');
       });
 
-      player.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
+      player.on(lib.MediaPlayer.events.ERROR, (e: any) => {
         if (isCancelled) return;
         console.warn('[dash.js error temporal - reconectando]', e);
         setPlayerStatus('connecting');
@@ -294,7 +298,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       });
 
       // Bytes de vídeo realmente descargados, para medir bitrate recibido igual que en MoQ
-      player.on(dashjs.MediaPlayer.events.FRAGMENT_LOADING_COMPLETED, (e: any) => {
+      player.on(lib.MediaPlayer.events.FRAGMENT_LOADING_COMPLETED, (e: any) => {
         if (e.request?.mediaType !== 'video' || e.request?.type !== 'MediaSegment') return;
         videoBytes += e.response?.byteLength || e.request.bytesLoaded || 0;
         rate.push(videoBytes);
@@ -515,7 +519,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <label
           className="flex items-center space-x-1.5 whitespace-nowrap"
-          title="Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. Cambiarlo recrea el reproductor."
+          title="Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (README 6). Cambiarlo recrea el reproductor."
         >
           <span>ABR:</span>
           <select
@@ -525,6 +529,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
           >
             <option value="default">Por defecto</option>
             <option value="l2a">L2A</option>
+            <option value="l2afix">L2A (bugfix)</option>
             <option value="lolp">LoL+</option>
           </select>
         </label>

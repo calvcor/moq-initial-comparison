@@ -195,6 +195,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
   const [options, setOptions] = useState<PlayerOptions>({ ...DEFAULT_PLAYER_OPTIONS, ...(initial?.player_options ?? {}) });
   const setOption = <K extends keyof PlayerOptions>(key: K, value: PlayerOptions[K]) => setOptions((o) => ({ ...o, [key]: value }));
   const moqExperiment = options.moq_abr !== 'watch' || options.moq_switching !== 'seamless';
+  const dashExperiment = options.dash_abr === 'l2afix';
   const [repetitions, setRepetitions] = useState(initial?.repetitions ?? 3);
   const [warmup, setWarmup] = useState(initial?.warmup_s ?? 30);
   const [measure, setMeasure] = useState(initial?.measure_s ?? 120);
@@ -304,11 +305,12 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                 </label>
                 {p === 'dash' && (
                   <div className="flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1" title="Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario.">
+                    <label className="flex flex-col gap-1" title="Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (README 6).">
                       <span className={label}>ABR</span>
                       <select className={input} disabled={!on} value={options.dash_abr} onChange={(e) => setOption('dash_abr', e.target.value as DashAbr)}>
                         <option value="default">Por defecto</option>
                         <option value="l2a">L2A</option>
+                        <option value="l2afix">L2A (bugfix, experimento)</option>
                         <option value="lolp">LoL+</option>
                       </select>
                     </label>
@@ -320,6 +322,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                       <span className={label}>Búfer mínimo (s)</span>
                       <input className={input} disabled={!on} type="number" min={0} max={2} step={0.05} value={options.dash_playback_buffer_min_s} onChange={(e) => setOption('dash_playback_buffer_min_s', Number(e.target.value))} />
                     </label>
+                    {dashExperiment && <p className="text-amber-300 w-full">No es dash.js tal como viene: L2A con su fallo de unidades corregido, un experimento declarado (README 6).</p>}
                   </div>
                 )}
                 {p === 'moq' && (
