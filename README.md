@@ -1001,7 +1001,7 @@ Son una o dos pasadas por caso: la variación entre pasadas es grande.
 
 ### 6.3. Experimento: adaptación de MoQ con sondeo por prioridad
 
-**No es el comportamiento de `@moq/watch`**: es un algoritmo de adaptación nuestro, declarado y desactivado por defecto (selector **ABR** del panel de MoQ: *Librería*, el de `@moq/watch`, o *Sondeo*). Sirve para comparar la estimación del relay (`cwnd / RTT`, sección 6 y PROTOCOLOS 4.10) con una medida que no depende de ella, en la línea de lo que sugiere MOQT (`draft-ietf-moq-transport-22`, 14.1.2): pedir la calidad alternativa con prioridad baja para sondear.
+**No es el comportamiento de `@moq/watch`**: es un algoritmo de adaptación nuestro, declarado y desactivado por defecto (selector **ABR** del panel de MoQ: *Librería*, el de `@moq/watch`, *Sondeo* o *Sondeo v2*, su versión corregida, al final de esta sección). Sirve para comparar la estimación del relay (`cwnd / RTT`, sección 6 y PROTOCOLOS 4.10) con una medida que no depende de ella, en la línea de lo que sugiere MOQT (`draft-ietf-moq-transport-22`, 14.1.2): pedir la calidad alternativa con prioridad baja para sondear.
 
 **Cómo funciona** (`web/src/lib/moqProbe.ts`; no toca `@moq/watch`: le pide la calidad por `target.name`):
 
@@ -1013,7 +1013,7 @@ Son una o dos pasadas por caso: la variación entre pasadas es grande.
 - **Relevo.** Tras cada cambio no se decide nada hasta que se pinta la calidad pedida (mínimo 3 s, máximo 10 s). Arranca en la calidad más baja.
 - Funciona con cualquier opción de **Cambio** (6.1); con *Sin corte*, las bajadas pueden no completarse con el enlace lleno, así que se mide con *Prioridad*.
 
-En el panel aparece la capacidad estimada en el último sondeo; en el CSV, `moq_abr` (`watch` o `probe`), `moq_probing` y `moq_probe_capacity_kbps`. El controlador queda en `window.moqProbeAbr` para inspeccionarlo.
+En el panel aparece la capacidad estimada en el último sondeo; en el CSV, `moq_abr` (`watch`, `probe` o `probe2`), `moq_probing` y `moq_probe_capacity_kbps`. El controlador queda en `window.moqProbeAbr` para inspeccionarlo.
 
 **Medido el 26-10-2026 en local.** Escalera 1080p@4000 / 720p@2000 / 360p@700, MoQ solo, un Chrome headless nuevo por pasada sin otro tráfico en la cola, variantes fijadas antes de cargar, dos rondas en orden alterno de 60 s (medidas desde unos 10 s tras cargar). *Librería + Sin corte* es el comportamiento de serie; *Librería + Prioridad*, el experimento de 6.1; *Sondeo + Prioridad*, este.
 
@@ -1038,6 +1038,40 @@ En el panel aparece la capacidad estimada en el último sondeo; en el CSV, `moq_
 - Lo que sí da buen resultado en todas las condiciones es el cambio *Prioridad* de 6.1, que no cambia qué calidad se elige, solo cómo se hace el relevo al bajar.
 
 Son dos pasadas por caso, con la red fija; el sondeo podría compararse mejor con perfiles que cambian en el tiempo, que el banco aún no tiene. Los parámetros (margen, duración e intervalo de los sondeos, arranque en la calidad más baja) son una primera elección, no están ajustados.
+
+**Por qué el sondeo deja a MoQ en 360p con enlaces de 4-10 Mbit/s** (campaña "Barrido de BW y latencias - Pacer en WebRTC" del 4-11-2026 en el segundo servidor: 200 pruebas, 1230 sondeos reconstruidos de las filas de cada segundo; sin pérdida y con cola de 300 ms). Con 4-10 Mbit/s, MoQ tenía elegido algo por encima de 360p solo el 10-26 % de los segundos de medida. Dos causas, las dos de la ráfaga con la que empieza cada sondeo:
+
+- **La ráfaga corta el sondeo y castiga a la calidad actual.** Al suscribirse con 10 s de tolerancia, el sondeo pide todos los grupos de esos 10 s que tenga el relay (`maxDelay` es lo que pide datos atrasados: `js/net/src/track.ts` de moq), y llegan de golpe: en una prueba de 10 Mbit/s, el primer sondeo llenó el enlace 3 s seguidos (9,7 Mbit/s en el router) y el segundo entró a 20,5 Mbit/s con 1303 descartes. La cola del router es FIFO, así que los frames de la calidad actual esperan detrás o se descartan con la ráfaga: cae por debajo del 90 % de su cadencia, el sondeo se corta sin medir y la espera se dobla. Con 4-10 Mbit/s se cortaron el 51-60 % de los sondeos (sin límite de caudal, ninguno), y 154 de las 360 bajadas de calidad llegaron en los 4 s siguientes a un sondeo.
+- **Los que terminan miden cuando el atraso ya se ha vaciado.** La ventana de medida (los 2 últimos segundos) cae después de la ráfaga, y la calidad siguiente ya va al día: lo recibido es la suma de los bitrates de las dos calidades, no la capacidad. Partiendo de 360p, la capacidad medida fue de 2,8 Mbit/s de mediana con 10 Mbit/s y de 2,7 sin límite, y con eso `0,8 × capacidad ≥ bitrate de 720p` queda en el límite: unas veces sube y otras no. Partiendo de 720p sí se acerca al enlace (9,5 Mbit/s con 10), porque el atraso de 1080p tarda más en vaciarse. Es lo que ya se veía en la tabla anterior con el primer sondeo de cada pasada (2,5-3,6 Mbit/s con 10).
+
+**Sondeo v2** (`moq_abr: probe2`, 5-11-2026). El mismo controlador con estos cambios; `probe` sigue disponible sin tocar para que las campañas anteriores se puedan reproducir:
+
+- **Tolera 2 s de retraso en vez de 10**: al suscribirse llegan como mucho el grupo en curso y el anterior (con GOP de 1 s), no 10 s de atraso de golpe. Durante el sondeo basta para que lleguen grupos enteros mientras la regla de capacidad pueda dejar subir: para que `0,8 × capacidad` cubra 720p desde 360p o 1080p desde 720p, la calidad siguiente no puede quedarse más de ~1 s atrás en los 4 s del sondeo (deducción de la regla, no medida).
+- **Sube también si la calidad siguiente llega a su cadencia** (al menos el 90 % de sus frames por segundo en la ventana de medida): si va al día, cabe junto a la actual, así que sola también, sin necesidad de medir la capacidad. Si va por detrás, decide la regla de capacidad de siempre, que es cuando lo recibido es lo que sobra del enlace.
+- **El sondeo no se corta por la calidad actual hasta pasados 2,5 s**, y uno cortado en sus 3 primeros segundos no dobla la espera. Al abrirse, el grupo en curso de la siguiente llega de golpe y retrasa un momento a la actual en la cola del cuello de botella, aunque luego llegue todo.
+- **Al terminar un sondeo, la medida del ritmo de la actual empieza de cero**: si lo perdió, fue por el propio sondeo, y no debe hacer bajar de calidad. En una primera versión sin estos dos ajustes, cada sondeo de 1080p desde 720p con 10 Mbit/s acababa en una bajada a 360p (131-212 descartes en la cola al abrirse, sin ningún parón en la imagen).
+
+El panel y el CSV muestran `probe2` en `moq_abr`; el controlador expone además, en `window.moqProbeAbr.state`, los frames por segundo de la de sondeo y si llegaba a su cadencia (`probeFps`, `keptUp`).
+
+**Medido el 5-11-2026 en local** (Mac, mismas versiones que el segundo servidor: relay 0.17.9, `moq-cli` y `@moq/watch` en `git@bc64b9c`). Solo MoQ, escalera 1080p@4000 / 720p@2000 / 360p@700 con fragmentos de 1 frame, objetivo de 600 ms, cambio *Prioridad*, sin pérdida y con cola de 300 ms, 20 s de calentamiento y 60 s de medida, contenido reiniciado en cada prueba, dos pruebas por red y variante. *Sondeo* y *Librería* van en dos rondas de orden inverso; *Sondeo v2* se midió después, en dos rondas seguidas, porque los dos últimos ajustes salieron de la primera tanda. Calidad pintada en porcentaje de los segundos de medida:
+
+| Bajada | Variante | Calidad pintada | Tiempo parado | Descartes en la cola | Cambios de calidad |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 10 Mbit/s | Sondeo | 1080p 100 %; 1080p 52 %, 720p 28 %, 360p 20 % | 0 y 0 % | 0 y 133 | 0 y 2 |
+| 10 Mbit/s | Sondeo v2 | 1080p 67 %, 720p 33 %; 1080p 57 %, 720p 43 % | 0 y 0 % | 36 y 34 | 2 y 3 |
+| 10 Mbit/s | Librería | 1080p 100 % en las dos | 0 y 0,5 % | 0 y 0 | 0 y 0 |
+| 6 Mbit/s | Sondeo | 360p 82 %, 720p 18 %; 720p 60 %, 360p 40 % | 1,3 y 0 % | 97 y 259 | 1 y 1 |
+| 6 Mbit/s | Sondeo v2 | 720p 100 % en las dos | 0 y 1,0 % | 48 y 470 | 0 y 0 |
+| 6 Mbit/s | Librería | 1080p 90 y 80 %, el resto 720p | 24,5 y 7,1 % | 0 y 148 | 46 y 25 |
+| 4 Mbit/s | Sondeo | 360p 82 y 83 %, el resto 720p | 0 y 0,4 % | 18 y 213 | 1 y 1 |
+| 4 Mbit/s | Sondeo v2 | 720p 100 % en las dos | 2,9 y 0,4 % | 876 y 201 | 0 y 0 |
+| 4 Mbit/s | Librería | 720p 98 % en las dos | 23,7 y 23,0 % | 0 y 0 | 64 y 51 |
+
+- **Sondeo v2 ya no se queda en 360p**: sube a 720p con 4 y 6 Mbit/s y pasa más de la mitad de la medida en 1080p con 10. En la prueba de 10 Mbit/s de la primera tanda, las tres subidas desde 360p salieron con una capacidad medida de solo 2,5-3,5 Mbit/s, así que las decidió la regla nueva (la de sondeo llegaba a su cadencia): la anterior no habría dejado subir.
+- **Frente a la librería, se para mucho menos con el enlace justo** (0-2,9 % frente a 7-25 % con 4 y 6 Mbit/s): no oscila (0 cambios frente a 25-64), a cambio de quedarse en 720p donde la librería intenta 1080p. Con 10 Mbit/s la librería llega antes a 1080p, porque el sondeo empieza en la calidad más baja.
+- **El sondeo sigue costando descartes** cuando la siguiente no cabe: con 4 Mbit/s, cada sondeo de 1080p desde 720p llena el enlace (201-876 descartes por prueba), aunque apenas para la imagen.
+
+Son dos pruebas por caso, en un Mac y con la red fija, y la v2 no se alternó con las otras dos variantes: indicios, no resultados para la tesis. Los parámetros siguen sin ajustar más allá de lo descrito.
 
 ## 7. Recuperación automática
 
@@ -1085,7 +1119,7 @@ Desde el panel de control:
 | Fragmento CMAF | 1 frame, 100 (por defecto), 200, 500, 1000 ms | `-frag_duration`; unidad de entrega chunked. 1 frame es `-frag_type every_frame` (16,7 ms a 60 fps) y vale 0 en la API y en el CSV. Medido el 26-10-2026 en local, sin límite y con objetivo de 0,3 s, dos pasadas alternas de 40 s: la latencia de DASH no baja (394-410 ms frente a 390 con 100 ms; la fija el búfer de dash.js) y su estimación de caudal sí (16-18 Mbit/s frente a 40-50; sección 6) |
 | Latencia objetivo DASH | 0,05 a 2,0 s (0,3 s al abrir; hasta el 27-10-2026 llegaba a 6 s), el mismo máximo que MoQ y WebRTC | `liveDelay` de dash.js, con catch-up LoL+ |
 | Búfer mínimo DASH | 0 a 2 s; 0 (no frenar por búfer) al abrir, desde el 27-10-2026; 0,5 s es el de fábrica | `liveCatchup.playbackBufferMin` de dash.js: por debajo, la corrección LoL+ frena para rellenar el búfer y no persigue el objetivo hasta superarlo. Como la latencia nunca es menor que el búfer, hace de suelo: con un objetivo por debajo, la latencia queda por encima del objetivo (PROTOCOLOS, 3.5). En el CSV, `dash_playback_buffer_min_s`. Sustituye desde el 27-10-2026 al umbral de búfer vacío (`dash_stall_threshold_s`), que con LoL+ no cambiaba la reproducción |
-| ABR MoQ (experimento) | Librería (por defecto) o Sondeo | Quién decide la calidad: `@moq/watch` o el controlador con sondeo por prioridad (sección 6.3). Solo con Calidad en Auto. Se recuerda en el navegador. En el CSV, `moq_abr`, `moq_probing` y `moq_probe_capacity_kbps` |
+| ABR MoQ (experimento) | Librería (por defecto), Sondeo o Sondeo v2 | Quién decide la calidad: `@moq/watch` o el controlador con sondeo por prioridad (sección 6.3). Solo con Calidad en Auto. Se recuerda en el navegador. En el CSV, `moq_abr`, `moq_probing` y `moq_probe_capacity_kbps` |
 | Cambio MoQ (experimento) | Sin corte (por defecto), Cancelar o Prioridad | Qué hace `@moq/watch` con la calidad anterior al bajar (sección 6.1). Solo con el parche de `web/patches/`. Se recuerda en el navegador. En el CSV, `moq_switching` |
 | ABR DASH | Por defecto (al abrir), L2A o LoL+ | Reglas de adaptación de dash.js en Auto: las de fábrica, o una de sus reglas de baja latencia en solitario (sección 6). Cambiarlo recrea el reproductor. En el CSV, `dash_abr` |
 | Salto al directo DASH | 0 (desactivado) a 10 s, por defecto 1,5 s | `liveCatchup.maxDrift` de dash.js: desvío sobre el objetivo a partir del cual salta al directo en vez de corregir con la velocidad. El salto aborta las descargas y abre conexiones TCP frías; con retardo de red alto puede encadenar saltos y paradas |

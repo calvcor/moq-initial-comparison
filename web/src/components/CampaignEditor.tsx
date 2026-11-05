@@ -325,11 +325,12 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                 {p === 'moq' && (
                   <>
                     <div className="flex flex-wrap gap-3">
-                      <label className="flex flex-col gap-1" title="Librería: decide @moq/watch (lo que se mide). Sondeo: el controlador propio con sondeo por prioridad de README 6.3, un experimento.">
+                      <label className="flex flex-col gap-1" title="Librería: decide @moq/watch (lo que se mide). Sondeo: el controlador propio con sondeo por prioridad de README 6.3, un experimento. Sondeo v2: su versión corregida (atraso acotado y subida si la siguiente llega a su ritmo).">
                         <span className={label}>Adaptación</span>
                         <select className={input} disabled={!on} value={options.moq_abr} onChange={(e) => setOption('moq_abr', e.target.value as MoqAbr)}>
                           <option value="watch">Librería</option>
                           <option value="probe">Sondeo (experimento)</option>
+                          <option value="probe2">Sondeo v2 (experimento)</option>
                         </select>
                       </label>
                       <label className="flex flex-col gap-1" title="Qué hacer al bajar de calidad (opción switching del parche de web/patches, README 6.1). Sin corte: el original de @moq/watch. Cancelar y Prioridad son el experimento. Sin el parche no tiene efecto.">

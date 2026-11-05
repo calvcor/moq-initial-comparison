@@ -212,7 +212,7 @@ class PlayerOptions(BaseModel):
     dash_max_drift_s: float = Field(1.5, ge=0, le=10)
     # liveCatchup.playbackBufferMin de dash.js (LoL+): 0 = no frenar nunca por búfer; 0,5 s es el de fábrica
     dash_playback_buffer_min_s: float = Field(0, ge=0, le=2)
-    moq_abr: Literal["watch", "probe"] = "watch"
+    moq_abr: Literal["watch", "probe", "probe2"] = "watch"
     # Cambio de calidad hacia abajo (opción switching del parche de web/patches); sin el parche no tiene efecto
     moq_switching: Literal["seamless", "cancel", "priority"] = "seamless"
 

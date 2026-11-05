@@ -174,7 +174,7 @@ export interface PlayerMetrics {
 export type MoqSwitching = 'seamless' | 'cancel' | 'priority';
 
 // Quién decide la calidad en MoQ: @moq/watch, o el controlador del experimento de sondeo (README 6.3)
-export type MoqAbr = 'watch' | 'probe';
+export type MoqAbr = 'watch' | 'probe' | 'probe2';
 
 // Reglas de adaptación de dash.js: las de fábrica, o L2A o LoL+ en solitario
 export type DashAbr = 'default' | 'l2a' | 'lolp';
@@ -280,7 +280,7 @@ export interface SampleRow {
   moq_bw_estimate_kbps: number | null;
   moq_quality_mode: string;
   moq_switching: string | null;
-  moq_abr: string; // watch (la librería) o probe (experimento de sondeo, README 6.3)
+  moq_abr: string; // watch (la librería), probe o probe2 (experimento de sondeo y su versión corregida, README 6.3)
   moq_probing: number | null; // 1 si había un sondeo en curso en la muestra
   moq_probe_capacity_kbps: number | null; // capacidad estimada en el último sondeo // seamless (original), cancel o priority; vacío sin el parche
   // Desglose de la latencia por etapas (ms); la suma de las de cada rama es su glass-to-glass

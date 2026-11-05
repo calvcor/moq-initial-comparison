@@ -263,7 +263,7 @@ const Telemetry: React.FC<{
       />
       <Stat label="Cambios de calidad" value={String(metrics.qualitySwitches)} hint={switchesHint} />
       <Stat label="Ancho de banda estimado" value={fmt(metrics.bandwidthEstimateKbps, 'kbps')} hint={estimateHint} />
-      {metrics.moqAbr === 'probe' && (
+      {(metrics.moqAbr === 'probe' || metrics.moqAbr === 'probe2') && (
         <Stat
           label={`Capacidad por sondeo${metrics.probing ? ' (sondeando)' : ''}`}
           value={fmt(metrics.probeCapacityKbps ?? null, 'kbps')}

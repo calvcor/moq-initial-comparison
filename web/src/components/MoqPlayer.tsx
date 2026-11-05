@@ -16,7 +16,8 @@ const ABR_KEY = 'testbed.moqAbr';
 /** Algoritmo de adaptación recordado en este navegador; por defecto, el de @moq/watch. */
 function loadAbr(): MoqAbr {
   try {
-    if (localStorage.getItem(ABR_KEY) === 'probe') return 'probe';
+    const saved = localStorage.getItem(ABR_KEY);
+    if (saved === 'probe' || saved === 'probe2') return saved;
   } catch (_) {}
   return 'watch';
 }
@@ -91,8 +92,8 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
     onMetricsUpdate({ switching: switchingSupported === false ? null : switching });
   }, [switching, switchingSupported]);
 
-  // Adaptación: 'watch' deja decidir a @moq/watch (el comportamiento que se mide); 'probe' es el experimento de
-  // README 6.3, un controlador propio con sondeo por prioridad que pide la calidad a la librería por target.name.
+  // Adaptación: 'watch' deja decidir a @moq/watch (el comportamiento que se mide); 'probe' y 'probe2' son el experimento
+  // de README 6.3, un controlador propio con sondeo por prioridad que pide la calidad a la librería por target.name.
   const [abr, setAbr] = useState<MoqAbr>(() => (preset ? (preset.options?.moq_abr ?? 'watch') : loadAbr()));
   const [showExplain, setShowExplain] = useState(false);
   const abrRef = useRef<MoqAbr>(abr);
@@ -310,15 +311,17 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
             // estima el relay y marcas "stalled" del catálogo). Solo al fijar una a mano se pide por nombre.
             const available = player.video.source.out.available.peek();
             // El controlador del experimento vive mientras esté elegido y la calidad esté en automático
-            const probing = abrRef.current === 'probe' && qualityRef.current === 'auto';
-            if (probing && !probeAbrRef.current) {
-              probeAbrRef.current = new MoqProbeAbr(player);
-              // Acceso desde la consola, como window.moqPlayer
-              (window as any).moqProbeAbr = probeAbrRef.current;
-            }
-            if (!probing && probeAbrRef.current) {
+            const variant = abrRef.current === 'watch' ? null : abrRef.current;
+            const probing = variant !== null && qualityRef.current === 'auto';
+            // Al cambiar de variante se empieza de cero, con su propio controlador
+            if (probeAbrRef.current && (!probing || probeAbrRef.current.variant !== variant)) {
               probeAbrRef.current.close();
               probeAbrRef.current = null;
+            }
+            if (probing && !probeAbrRef.current) {
+              probeAbrRef.current = new MoqProbeAbr(player, variant);
+              // Acceso desde la consola, como window.moqPlayer
+              (window as any).moqProbeAbr = probeAbrRef.current;
             }
             const probeState = probeAbrRef.current?.state ?? null;
             const wanted =
@@ -490,7 +493,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <label
           className="flex items-center space-x-1.5 whitespace-nowrap"
-          title="Experimento, no el comportamiento de @moq/watch. Librería: decide @moq/watch (la estimación del relay y su regla del 80 %). Sondeo: decide un controlador del banco que, a ratos, pide la calidad siguiente con la prioridad mínima y sube si cabe en lo que reciben las dos; baja si la actual deja de llegar a su ritmo (README 6.3). Solo actúa con Calidad en Auto. Se recuerda en este navegador."
+          title="Experimento, no el comportamiento de @moq/watch. Librería: decide @moq/watch (la estimación del relay y su regla del 80 %). Sondeo: decide un controlador del banco que, a ratos, pide la calidad siguiente con la prioridad mínima y sube si cabe en lo que reciben las dos; baja si la actual deja de llegar a su ritmo (README 6.3). Sondeo v2: el mismo, sin pedir 10 s de atraso de golpe y subiendo también si la siguiente llega a su ritmo. Solo actúa con Calidad en Auto. Se recuerda en este navegador."
         >
           <span>ABR:</span>
           <select
@@ -500,6 +503,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
           >
             <option value="watch">Librería</option>
             <option value="probe">Sondeo</option>
+            <option value="probe2">Sondeo v2</option>
           </select>
         </label>
         <label

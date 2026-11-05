@@ -37,7 +37,7 @@ const STATE_STYLE: Record<string, string> = {
 };
 const PLAYER_SHORT: Record<PlayerId, string> = { dash: 'DASH', moq: 'MoQ', rtc: 'RTC' };
 
-const ABR_LABEL: Record<string, string> = { default: 'por defecto', l2a: 'L2A', lolp: 'LoL+', watch: 'librería', probe: 'sondeo (experimento)' };
+const ABR_LABEL: Record<string, string> = { default: 'por defecto', l2a: 'L2A', lolp: 'LoL+', watch: 'librería', probe: 'sondeo (experimento)', probe2: 'sondeo v2 (experimento)' };
 const SWITCHING_LABEL: Record<string, string> = { seamless: 'sin corte', cancel: 'cancelar (experimento)', priority: 'prioridad (experimento)' };
 
 /** Ajustes de los reproductores de la campaña, de los protocolos que prueba. Sin player_options (campañas

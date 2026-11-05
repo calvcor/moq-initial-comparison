@@ -79,13 +79,15 @@ export const MoqExplain: React.FC<Props> = ({ abr, switching, quality, switching
     );
   }
 
-  if (abr === 'probe') {
+  if (abr === 'probe' || abr === 'probe2') {
+    const v2 = abr === 'probe2';
     return (
       <div className="space-y-2">
         <p>
           <b className="text-amber-300">Experimento (README 6.3), no el comportamiento de @moq/watch.</b> Decide un
           controlador del banco, que pide la calidad a @moq/watch por nombre; la regla de la librería y la estimación del
           relay no intervienen (la estimación solo se muestra). Arranca en la calidad más baja.
+          {v2 && ' Versión corregida del sondeo: la primera se quedaba en la calidad más baja con enlaces de 4-10 Mbit/s.'}
         </p>
         <Section title="Subir de calidad">
           <li>
@@ -95,19 +97,45 @@ export const MoqExplain: React.FC<Props> = ({ abr, switching, quality, switching
             al sondeo lo que sobra del enlace.
           </li>
           <li>
+            {v2 ? (
+              <>
+                La suscripción de sondeo tolera <b>2 s</b> de retraso: al abrirse llega como mucho el grupo en curso y el
+                anterior.
+              </>
+            ) : (
+              <>
+                La suscripción de sondeo tolera <b>10 s</b> de retraso, y al abrirse pide todo ese atraso: llega de golpe y, con
+                límite de caudal, puede hundir a la calidad actual en la cola del router.
+              </>
+            )}
+          </li>
+          <li>
             <b>Capacidad</b> = lo que reciben la actual y la de sondeo en los 2 últimos segundos. <b>Bitrate real</b> de la
             siguiente = bytes por frame × cadencia, con al menos dos grupos completos (no el del catálogo, que es el pico).
           </li>
           <li>
-            Sube si <b>0,8 × capacidad ≥ bitrate real</b>; si no, espera el doble hasta el siguiente sondeo. Tras subir, sondea
-            la siguiente a los 5 s. Los datos del sondeo no se reutilizan: la librería abre su propia suscripción.
+            {v2 ? (
+              <>
+                Sube si la siguiente <b>llega a su cadencia</b> (90 % de sus frames por segundo: va al día, así que cabe) o si{' '}
+                <b>0,8 × capacidad ≥ bitrate real</b> (cuando va por detrás, lo que recibe es lo que sobra del enlace); si no,
+                espera el doble hasta el siguiente sondeo, salvo si se cortó en sus 2 primeros segundos.
+              </>
+            ) : (
+              <>
+                Sube si <b>0,8 × capacidad ≥ bitrate real</b>; si no, espera el doble hasta el siguiente sondeo.
+              </>
+            )}{' '}
+            Tras subir, sondea la siguiente a los 5 s. Los datos del sondeo no se reutilizan: la librería abre su propia
+            suscripción.
           </li>
           {UP_HANDOVER}
         </Section>
         <Section title="Bajar de calidad">
           <li>
             Si la actual recibe menos del <b>90 % de su cadencia</b> en frames por segundo durante 2 s, baja <b>un escalón</b>.
-            Si eso pasa durante un sondeo, corta el sondeo en vez de bajar. La medida de capacidad no se usa para bajar.
+            Si eso pasa durante un sondeo, corta el sondeo en vez de bajar
+            {v2 ? ' (no antes de 2,5 s de sondeo), y al terminarlo la medida de la actual empieza de cero: si perdió ritmo, fue por el sondeo' : ''}.
+            La medida de capacidad no se usa para bajar.
           </li>
           {downHandover(switching, switchingSupported)}
         </Section>
