@@ -90,7 +90,8 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 
 - `root@10.20.40.90` (LXC `phd-testing`, 8 vCPU), checkout en `/opt/moq-dash-initial-comparison`,
   accesible por SSH con clave desde el Mac del usuario (red local o VPN WireGuard).
-- Actualizar: `git pull` y reconstruir **solo lo que haya cambiado**:
+- Actualizar: el servidor no tiene credenciales de GitHub, así que `git pull` falla; el código llega con un
+  `git bundle` copiado por scp (`git pull --ff-only /tmp/x.bundle main`). Después, reconstruir **solo lo que haya cambiado**:
   - web: `docker compose up -d --build --no-deps web` (**sin `--no-deps` también recrea el
     orquestador**);
   - orquestador: `docker compose up -d --build --no-deps orchestrator`.
@@ -127,9 +128,10 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   espectador conectado.** La 0.14.4 acumula retraso sin parar y la 0.14.5 se queda atrás con un
   espectador; la 0.14.7 (desplegada del 19 al 21-10-2026) no tiene ese problema. Desde el 21-10-2026 el
   servidor usa moq-cli compilado desde `main` (`git@bc64b9c`, `MOQ_CLI_FROM=git` en su `.env`). La versión desplegada y
-  sus medidas están anotadas en `server/Dockerfile`. Desde el 4-11-2026 el servidor está en prueba en la rama
-  `ultimas-versiones`: relay 0.17.12, `@moq/watch` 0.6.6 y dash.js 5.3.0 publicados, y moq-cli `git@ffcb7cd`; cómo
-  volver, en `/root/antes-ultimas/VOLVER.md`. Al probar un commit nuevo de moq-cli, mira también que arranque
+  sus medidas están anotadas en `server/Dockerfile`. Del 4 al 5-11-2026 el servidor estuvo en prueba en la rama
+  `ultimas-versiones` (relay 0.17.12, `@moq/watch` 0.6.6 y dash.js 5.3.0 publicados, moq-cli `git@ffcb7cd`); el
+  5-11-2026 volvió a `main` con las versiones de antes, las mismas que el segundo servidor (`/root/antes-ultimas/`
+  guarda los dos `.env` y las imágenes). Al probar un commit nuevo de moq-cli, mira también que arranque
   (`restarts.moq` en `GET /api/status`): `ffcb7cd` rechazaba las variables `MOQ_*` del orquestador.
 - La medida: `POST /api/trace` con marcas cada 4 ms de los últimos 20 s devuelve, por frame, la llegada
   a la compuerta (`encoded_ms`) y la entrega al empaquetador (`forwarded_ms`). Si los huecos en la
