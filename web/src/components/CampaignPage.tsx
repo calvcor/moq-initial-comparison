@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Archive, ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
 import { CampaignEditor, DEFAULT_PLAYER_OPTIONS, formatDuration } from './CampaignEditor';
 import { CampaignWorker } from './CampaignWorker';
@@ -627,6 +627,7 @@ const CampaignMonitorPage: React.FC = () => {
   const [selected, setSelected] = useState<Campaign | null>(null);
   // Vista previa de una prueba: el servidor aplica su red y su emisión y aquí se montan sus reproductores
   const [preview, setPreview] = useState<Preview | null>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const openPreview = async (run: CampaignRun) => {
     if (!selected) return;
@@ -634,6 +635,8 @@ const CampaignMonitorPage: React.FC = () => {
       const body = await call(`/api/campaigns/${selected.id}/runs/${run.id}/preview`, 'POST');
       setPreview({ ...body, settle_s: selected.plan.stream_settle_s });
       setPreviewError(null);
+      // En escritorio se desplaza el contenido, no la ventana
+      mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
       setPreviewError((e as Error).message);
@@ -715,8 +718,10 @@ const CampaignMonitorPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 font-sans">
-      <div className="w-full space-y-4">
+    // En escritorio la página ocupa la ventana: la cabecera queda fija y la lista y el contenido se desplazan cada uno
+    // por su cuenta, para que la lista llegue siempre al borde de abajo (si no, dependía del alto del contenido)
+    <div className="min-h-screen md:h-screen md:flex md:flex-col bg-slate-950 text-slate-100 p-6 font-sans">
+      <div className="w-full space-y-4 md:space-y-0 md:flex md:flex-col md:gap-4 md:flex-1 md:min-h-0">
         <header className="flex flex-wrap items-center gap-4 pb-4 border-b border-slate-800">
           <a href="/" className="text-slate-400 hover:text-white flex items-center gap-1 text-xs">
             <ArrowLeft className="w-4 h-4" /> Dashboard
@@ -747,6 +752,20 @@ const CampaignMonitorPage: React.FC = () => {
         </header>
 
         {managing && <WorkersModal onClose={() => setManaging(false)} />}
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-stretch md:flex-1 md:min-h-0">
+        <CampaignList
+          list={list}
+          selectedId={selectedId}
+          creating={editing && !editor.initial}
+          editing={editing}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setEditor(null);
+          }}
+          onNew={() => setEditor({})}
+          onArchive={archive}
+        />
+        <div ref={mainRef} className="flex-1 min-w-0 w-full space-y-4 md:h-full md:overflow-y-auto md:pr-1">
         {worker && <CampaignWorker />}
 
         {preview && (
@@ -760,20 +779,6 @@ const CampaignMonitorPage: React.FC = () => {
         )}
         {previewError && <p className="text-xs text-rose-400">Vista previa: {previewError}</p>}
 
-        <div className="flex flex-col md:flex-row gap-4 items-start">
-        <CampaignList
-          list={list}
-          selectedId={selectedId}
-          creating={editing && !editor.initial}
-          editing={editing}
-          onSelect={(id) => {
-            setSelectedId(id);
-            setEditor(null);
-          }}
-          onNew={() => setEditor({})}
-          onArchive={archive}
-        />
-        <div className="flex-1 min-w-0 w-full space-y-4">
         {listError && <p className="text-xs text-rose-400">{listError}</p>}
         {queue && queue.ids.length > 0 && <QueuePanel queue={queue} onChanged={refresh} onSelect={setSelectedId} />}
 

@@ -73,7 +73,7 @@ export const CampaignList: React.FC<{
 
   if (!open)
     return (
-      <aside className="md:sticky md:top-4 shrink-0 flex md:flex-col items-center gap-2 text-xs">
+      <aside className="shrink-0 flex md:flex-col items-center gap-2 text-xs">
         <button className="p-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500" title="Mostrar la lista de campañas" onClick={toggle}>
           <PanelLeftOpen className="w-4 h-4" />
         </button>
@@ -118,7 +118,7 @@ export const CampaignList: React.FC<{
   };
 
   return (
-    <aside className="md:sticky md:top-4 w-full md:w-72 shrink-0 bg-slate-900/60 border border-slate-800 rounded-xl p-2 text-xs md:max-h-[calc(100vh-2rem)] md:overflow-y-auto">
+    <aside className="w-full md:w-72 shrink-0 bg-slate-900/60 border border-slate-800 rounded-xl p-2 text-xs md:h-full md:overflow-y-auto">
       <div className="flex items-center gap-2 px-1 pb-2">
         <span className="font-semibold text-slate-200">Campañas</span>
         <span className="text-slate-500">{active.length}</span>

@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Barras de desplazamiento oscuras en todo (la de la ventana y las de los contenedores con desplazamiento propio, como
+   la lista y el contenido de /campaign), con los colores de la página: sin esto, las de los contenedores salen claras */
+* {
+  scrollbar-color: #475569 transparent;
+}
+
 /* Trabajador independiente de campañas (CampaignWorker con nombre, README 4.8, trabajadores independientes): la zona de vídeo del único
    reproductor ocupa toda la ventana, que el servidor pide del tamaño de la calidad más alta, así que el
    navegador compone la imagen a 1:1. El resto de la tarjeta del reproductor queda debajo, sin verse. */
