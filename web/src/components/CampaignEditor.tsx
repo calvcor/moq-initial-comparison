@@ -218,7 +218,10 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
   const controls = controlEvery ? Math.ceil(tests / controlEvery) * groups : 0;
   // Con la cámara no se reinicia por prueba: no hay contenido que repetir
   const restartEachRun = content === 'restart' && streams.some((s) => s.source === 'file');
-  const etaS = (tests + controls) * (warmup + measure + RUN_OVERHEAD_S) + (restartEachRun ? tests + controls : streams.length) * settle;
+  // Con pruebas en paralelo, por tandas de una emisión: tantas pruebas a la vez como quepan en los trabajadores del grupo
+  const perBatch = workerMode === 'pool' && parallel ? Math.max(1, Math.floor(group.length / (playerMode === 'together' ? players.length : 1))) : 1;
+  const batches = streams.length * Math.ceil((tests + controls) / Math.max(1, streams.length) / perBatch);
+  const etaS = batches * (warmup + measure + RUN_OVERHEAD_S) + (restartEachRun ? batches : streams.length) * settle;
 
   const setStream = (i: number, patch: Partial<Stream>) => setStreams((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const setLadder = (i: number, text: string) => {
@@ -750,6 +753,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
       <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-800">
         <span className="text-slate-300">
           {tests} pruebas{controls ? ` + ${controls} de control` : ''} · unas <span className="font-semibold text-white">{formatDuration(etaS)}</span>
+          {perBatch > 1 ? ` (${perBatch} a la vez, con ${group.length} trabajadores)` : ''}
         </span>
         <button disabled={saving} className="px-4 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-medium disabled:opacity-50" onClick={create}>
           {editId ? 'Guardar cambios' : 'Crear campaña'}

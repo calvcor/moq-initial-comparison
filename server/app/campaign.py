@@ -43,6 +43,7 @@ import csv
 import io
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -361,8 +362,21 @@ class Campaigns:
         plan = campaign["plan"]
         pending = [r for r in campaign["runs"] if r["state"] == "pending"]
         per_run = plan["warmup_s"] + plan["measure_s"] + OVERHEAD_S + UPLOAD_GRACE_S
-        restarts = len(pending) if self.restarts_each_run(plan) else len({r["stream"] for r in pending})
-        return len(pending) * per_run + restarts * plan["stream_settle_s"]
+        if not plan.get("parallel"):
+            restarts = len(pending) if self.restarts_each_run(plan) else len({r["stream"] for r in pending})
+            return len(pending) * per_run + restarts * plan["stream_settle_s"]
+        # Con pruebas en paralelo, por tandas (desde el 6-11-2026; antes contaba las pruebas una tras otra): cada tanda es
+        # de una emisión y lleva tantas pruebas como quepan en los trabajadores. Cuentan los que pueden medir en paralelo
+        # ahora (conectados y con IP propia) si está en marcha y alguno lo está; si no, todos los del grupo
+        free = len(self.parallel_free(plan)) if campaign["state"] == "running" else 0
+        workers = free or len(plan.get("worker_pool") or []) or 1
+        batches = 0
+        for stream in {r["stream"] for r in pending}:
+            runs = [r for r in pending if r["stream"] == stream]
+            size = max(1, workers // max(len(r["players"]) for r in runs))
+            batches += math.ceil(len(runs) / size)
+        restarts = batches if self.restarts_each_run(plan) else len({r["stream"] for r in pending})
+        return batches * per_run + restarts * plan["stream_settle_s"]
 
     @staticmethod
     def restarts_each_run(plan: dict, stream: Optional[int] = None) -> bool:
