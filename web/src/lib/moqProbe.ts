@@ -17,6 +17,30 @@
 // calidades y no la capacidad. `probe2` acota el atraso a ~2 s, sube también si la siguiente llega a su cadencia (si
 // va al día, cabe, sin necesidad de medir la capacidad) y no dobla la espera si el sondeo se corta en su arranque.
 import type * as Watch from '@moq/watch';
+import { serverNowMs } from './clock';
+
+/** Cómo terminó un sondeo: subió a la calidad sondeada (up), terminó pero no cabía (stay), se cortó porque la actual
+ * perdió ritmo (cut) o se cerró el controlador a mitad (abort). */
+export type ProbeResult = 'up' | 'stay' | 'cut' | 'abort';
+
+// Registro de los sondeos para el CSV (desde el 6-11-2026), como los parones del medidor: los que terminaron desde la
+// última fila, con su inicio y su fin en reloj del servidor, y el inicio del que siga abierto. Solo se anota: no
+// cambia ninguna decisión del controlador. Hay un reproductor MoQ por página, así que basta un registro.
+let probeLog: { finished: [number, number, ProbeResult][]; openSince: number | null } | null = null;
+
+/** Sondeos terminados desde la última llamada ("inicio-fin-resultado;...") y el inicio del abierto; null sin
+ * controlador de sondeo (con la adaptación de la librería). */
+export function takeProbeSpans(): { spans: string; openSince: number | null } | null {
+  if (!probeLog) return null;
+  const spans = probeLog.finished.map(([a, b, r]) => `${a}-${b}-${r}`).join(';');
+  probeLog.finished = [];
+  return { spans, openSince: probeLog.openSince };
+}
+
+const serverMs = (perf: number): number | null => {
+  const t = serverNowMs(perf);
+  return t === null ? null : Math.round(t);
+};
 
 /** Prioridad de la suscripción de sondeo: la mínima (en moq-lite se envía antes la mayor). */
 const PROBE_PRIORITY = 0;
@@ -90,6 +114,9 @@ export interface ProbeState {
   ups: number;
   downs: number;
   probes: number;
+  /** Sondeos cortados porque la calidad actual perdió ritmo (los demás duran PROBE_MS). Solo se cuenta: no cambia
+   * ninguna decisión. Va al CSV para marcar los cortes en la gráfica (desde el 6-11-2026). */
+  cuts: number;
 }
 
 type Sample = [number, number]; // [instante, valor acumulado]
@@ -108,7 +135,7 @@ function ratePerSecond(samples: Sample[], now: number, windowMs: number): number
 export class MoqProbeAbr {
   readonly state: ProbeState = {
     current: null, probing: false, capacityKbps: null, probeContentKbps: null,
-    currentKbps: null, probeKbps: null, currentFps: null, probeFps: null, keptUp: null, ups: 0, downs: 0, probes: 0,
+    currentKbps: null, probeKbps: null, currentFps: null, probeFps: null, keptUp: null, ups: 0, downs: 0, probes: 0, cuts: 0,
   };
   readonly variant: ProbeVariant;
   #settings: VariantSettings;
@@ -139,12 +166,24 @@ export class MoqProbeAbr {
     this.variant = variant;
     this.#settings = VARIANTS[variant];
     this.#player = player;
+    probeLog = { finished: [], openSince: null };
     this.#timer = setInterval(() => this.#tick(performance.now()), TICK_MS);
   }
 
   close() {
     clearInterval(this.#timer);
+    if (this.#probe) this.#logProbe(this.#probe.started, performance.now(), 'abort');
     this.#stopProbe();
+    probeLog = null;
+  }
+
+  /** Anota un sondeo terminado en el registro del CSV. */
+  #logProbe(started: number, ended: number, result: ProbeResult) {
+    if (!probeLog) return;
+    const a = serverMs(started);
+    const b = serverMs(ended);
+    if (a !== null && b !== null) probeLog.finished.push([a, b, result]);
+    probeLog.openSince = null;
   }
 
   #ladder(): Rendition[] {
@@ -198,6 +237,7 @@ export class MoqProbeAbr {
       // El sondeo no debe perjudicar a la actual: si se queda atrás, se corta y se espera más
       if (!healthy && now - p.started > this.#settings.healthGraceMs) {
         p.healthy = false;
+        this.state.cuts++;
         this.#endProbe(now, false);
         return;
       }
@@ -252,6 +292,7 @@ export class MoqProbeAbr {
     this.#probe = probe;
     this.state.probing = true;
     this.state.probes++;
+    if (probeLog) probeLog.openSince = serverMs(now);
     // Solo se cuentan bytes y frames: no se decodifica nada
     (async () => {
       for (;;) {
@@ -313,6 +354,7 @@ export class MoqProbeAbr {
     }
 
     const fits = keptUp || (capacity !== null && content !== null && capacity * UP_MARGIN >= content);
+    this.#logProbe(p.started, now, !completed ? 'cut' : p.healthy && fits ? 'up' : 'stay');
     if (completed && p.healthy && fits) {
       this.state.ups++;
       this.#interval = PROBE_INTERVAL_MS;

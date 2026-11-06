@@ -163,6 +163,8 @@ export interface PlayerMetrics {
   moqAbr?: MoqAbr; // solo MoQ: quién decide la calidad (la librería o el experimento de sondeo)
   probing?: boolean | null; // solo MoQ con sondeo: hay un sondeo en curso
   probeCapacityKbps?: number | null; // solo MoQ con sondeo: capacidad estimada en el último sondeo // solo MoQ: cambio de calidad hacia abajo (parche de web/patches); null sin el parche
+  probeCount?: number | null; // solo MoQ con sondeo: sondeos empezados desde que arrancó el controlador
+  probeCuts?: number | null; // solo MoQ con sondeo: de ellos, cortados porque la actual perdió ritmo
   abr?: DashAbr; // solo DASH: reglas de adaptación de dash.js
   packetsLost?: number | null; // solo WebRTC: paquetes RTP perdidos según el navegador
   stages?: StageBreakdown | null;
@@ -285,6 +287,12 @@ export interface SampleRow {
   moq_abr: string; // watch (la librería), probe o probe2 (experimento de sondeo y su versión corregida, README 6.3)
   moq_probing: number | null; // 1 si había un sondeo en curso en la muestra
   moq_probe_capacity_kbps: number | null; // capacidad estimada en el último sondeo // seamless (original), cancel o priority; vacío sin el parche
+  // Sondeos exactos desde la fila anterior (desde el 6-11-2026): "inicio-fin-resultado;..." en ms del reloj del servidor;
+  // resultado up (subió), stay (terminó y no cabía), cut (cortado: la actual perdió ritmo) o abort (se cerró a mitad)
+  moq_probe_spans: string | null;
+  moq_probe_open_since_ms: number | null; // inicio del sondeo en curso, si lo hay
+  moq_probe_count: number | null; // sondeos empezados desde que arrancó el controlador (acumulado)
+  moq_probe_cuts: number | null; // de ellos, cortados (acumulado)
   // Desglose de la latencia por etapas (ms); la suma de las de cada rama es su glass-to-glass
   dash_stage_encode_ms: number | null;
   dash_stage_package_ms: number | null;

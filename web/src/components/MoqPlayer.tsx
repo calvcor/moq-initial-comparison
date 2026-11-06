@@ -375,6 +375,8 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
               qualityMode: qualityRef.current === 'auto' ? 'auto' : 'manual',
               probing: probeState ? probeState.probing : null,
               probeCapacityKbps: probeState ? probeState.capacityKbps : null,
+              probeCount: probeState ? probeState.probes : null,
+              probeCuts: probeState ? probeState.cuts : null,
               status: 'playing',
             });
           } catch (_) {}

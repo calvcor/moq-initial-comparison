@@ -65,7 +65,7 @@ const METRICS: Record<string, Metric> = {
     unit: 'kbit/s',
     field: 'probe_capacity_kbps',
     only: 'moq',
-    note: 'Solo MoQ con el ABR en Sondeo o Sondeo v2 (README 6.3): lo que recibían la calidad actual y la de sondeo en los últimos segundos del último sondeo, completo o cortado. Se mantiene hasta el siguiente, así que la línea va a escalones; queda vacía hasta el primero, y también si un sondeo se corta en su arranque. En la calidad más alta no se sondea. No es la estimación del relay, que va en Ancho de banda estimado.',
+    note: 'Solo MoQ con el ABR en Sondeo o Sondeo v2 (README 6.3): lo que recibían la calidad actual y la de sondeo en los últimos segundos del último sondeo, completo o cortado. Se mantiene hasta el siguiente, así que la línea va a escalones; queda vacía hasta el primero, y también si un sondeo se corta en su arranque. En la calidad más alta no se sondea. No es la estimación del relay, que va en Ancho de banda estimado. Las bandas son los sondeos, de su inicio a su fin, del color de cómo terminaron (exactos desde el 6-11-2026; antes, cada fila con sondeo como un segundo entero, sin resultado).',
   },
   // DASH: vídeo descargado por delante en el instante de la fila; MoQ y WebRTC: espera media de los frames
   // entregados desde la fila anterior
@@ -190,6 +190,93 @@ const crosshair = (at: React.MutableRefObject<number | null>): Plugin<'line'> =>
   },
 });
 
+// Sondeos de MoQ (experimento de README 6.3) en la franja de su capacidad: cada uno de su inicio a su fin, del color
+// de cómo terminó. Exactos desde el 6-11-2026 (probe_spans, en reloj del servidor, como los parones); en filas
+// anteriores solo se sabe si había uno en curso en cada fila (probing), así que se dibuja cada fila con sondeo como un
+// segundo entero y sin resultado.
+type ProbeOutcome = 'up' | 'stay' | 'cut' | 'abort' | 'open' | null;
+type ProbeSpan = [number, number, ProbeOutcome];
+const PROBE_COLOR: Record<string, string> = { up: '#38bdf8', stay: '#94a3b8', cut: '#f43f5e', abort: '#a78bfa', open: '#facc15', unknown: '#64748b' };
+const PROBE_LABEL: Record<string, string> = {
+  up: 'subió',
+  stay: 'terminó sin subir (no cabía)',
+  cut: 'cortado (la calidad actual perdió ritmo)',
+  abort: 'cerrado a mitad',
+  open: 'en curso al acabar las filas',
+  unknown: 'sondeo, sin resultado (filas anteriores al 6-11-2026)',
+};
+
+function probeSpans(series: Series | undefined): { spans: ProbeSpan[]; exact: boolean } | null {
+  const rows = (series?.rows ?? []).filter((r) => 'moq_probing' in r);
+  const zero = series?.zero_ms;
+  if (!rows.length) return null;
+  if (zero !== undefined && rows.some((r) => typeof r.moq_probe_spans === 'string')) {
+    const spans: ProbeSpan[] = [];
+    for (const row of rows) {
+      for (const part of String(row.moq_probe_spans ?? '').split(';')) {
+        const [a, b, result] = part.split('-');
+        if (Number.isFinite(Number(a)) && Number.isFinite(Number(b)) && result) {
+          spans.push([(Number(a) - zero) / 1000, (Number(b) - zero) / 1000, result as ProbeOutcome]);
+        }
+      }
+    }
+    const last = rows[rows.length - 1];
+    const open = last.moq_probe_open_since_ms as number | null | undefined;
+    if (open != null) spans.push([(open - zero) / 1000, last.t_s, 'open']);
+    return { spans, exact: true };
+  }
+  if (!rows.some((r) => typeof r.moq_probing === 'number')) return null;
+  return { spans: rows.filter((r) => r.moq_probing === 1).map((r) => [r.t_s - 0.5, r.t_s + 0.5, null] as ProbeSpan), exact: false };
+}
+
+const PROBE_LANE_PX = 8;
+
+// Con una prueba, cada sondeo ocupa todo el alto; con varias superpuestas, cada prueba en su carril abajo
+const shadeProbes: Plugin<'line'> = {
+  id: 'shadeProbes',
+  beforeDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+    ctx.clip();
+    chart.data.datasets.forEach((d, i) => {
+      const spans = (d as any).probes as ProbeSpan[] | undefined;
+      if (!spans || !chart.isDatasetVisible(i)) return;
+      const lane = (d as any).probeLane as number | undefined;
+      const top = lane === undefined ? chartArea.top : chartArea.bottom - (lane + 1) * (PROBE_LANE_PX + 2);
+      const height = lane === undefined ? chartArea.height : PROBE_LANE_PX;
+      for (const [x0, x1, outcome] of spans) {
+        ctx.fillStyle = PROBE_COLOR[outcome ?? 'unknown'];
+        ctx.globalAlpha = lane === undefined ? 0.22 : 0.9;
+        const left = scales.x.getPixelForValue(x0);
+        const width = Math.max(2, scales.x.getPixelForValue(x1) - left);
+        ctx.fillRect(left, top, width, height);
+        // El final de un sondeo cortado, marcado con una raya: es el instante del corte
+        if (outcome === 'cut' && lane === undefined) {
+          ctx.globalAlpha = 0.9;
+          ctx.fillRect(left + width - 2, top, 2, height);
+        }
+      }
+    });
+    ctx.restore();
+  },
+};
+
+/** Leyenda de los colores de los sondeos que aparecen en las pruebas elegidas. */
+const ProbeLegend: React.FC<{ outcomes: string[]; exact: boolean }> = ({ outcomes, exact }) =>
+  outcomes.length ? (
+    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-400 mt-0.5">
+      {outcomes.map((o) => (
+        <span key={o} className="flex items-center gap-1">
+          <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: PROBE_COLOR[o], opacity: 0.8 }} />
+          {PROBE_LABEL[o]}
+        </span>
+      ))}
+      {!exact && <span>(cada fila con sondeo, como un segundo entero)</span>}
+    </div>
+  ) : null;
+
 const GRID = '#334155';
 const TICK = '#94a3b8';
 
@@ -303,6 +390,12 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
 
   const byId = Object.fromEntries(runs.map((r) => [r.id, r]));
   const chosen = fetchIds.filter((id) => byId[id]);
+  // Los sondeos de las pruebas elegidas, para la leyenda de sus colores
+  const probeInfo = chosen.map((id) => probeSpans(data[id])).filter((x): x is NonNullable<typeof x> => !!x);
+  const probeOutcomes = ['up', 'stay', 'cut', 'abort', 'open', 'unknown'].filter((o) =>
+    probeInfo.some((info) => info.spans.some(([, , outcome]) => (outcome ?? 'unknown') === o)),
+  );
+  const probeLegend = <ProbeLegend outcomes={probeOutcomes} exact={probeInfo.every((info) => info.exact)} />;
   const aligned = chosen.some((id) => data[id]?.aligned === 'measure') ? 'measure' : 'source';
   // En la vista de métricas, todos los de la prueba: cada franja quita los que no tengan esa métrica
   const players = plan.players.filter((p) => (view === 'metrics' || !metric.only || metric.only === p) && chosen.some((id) => byId[id].players.includes(p)));
@@ -409,6 +502,10 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
           label: together ? `${PLAYER_LABEL[p]}, ${id} (rep. ${byId[id].rep + 1}${streamOf(byId[id])})` : `${id} (rep. ${byId[id].rep + 1}${streamOf(byId[id])})`,
           protocol: p,
           ...(() => {
+            // En la franja de la capacidad del sondeo se dibujan los sondeos en vez de los parones
+            if (p === 'moq' && metric.field === 'probe_capacity_kbps') {
+              return { probes: probeSpans(data[id])?.spans, probeLane: view === 'metrics' ? undefined : chosen.indexOf(id) };
+            }
             if (!shade) return {};
             const { spans, exact } = stallSpans(data[id], p);
             return { stalls: spans, stallsExact: exact };
@@ -644,6 +741,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
             .map(([k, m]) => (
               <div key={k}>
                 <div className="text-[11px] text-slate-400">{m.label}</div>
+                {k === 'probe' && probeLegend}
                 {stripOverlay ? (
                   <div className="h-44">
                     <Line
@@ -652,7 +750,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                       }}
                       data={{ datasets: shown(m).flatMap((p) => datasetsFor(p, true, m)) }}
                       options={stripOptions(m, true)}
-                      plugins={[shadeStalls, crosshairPlugin, hoverPlugin]}
+                      plugins={[shadeStalls, shadeProbes, crosshairPlugin, hoverPlugin]}
                     />
                   </div>
                 ) : (
@@ -671,7 +769,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                               }}
                               data={{ datasets: datasetsFor(p, false, m) }}
                               options={stripOptions(m, false, rangeOf(m))}
-                              plugins={[shadeStalls, crosshairPlugin, hoverPlugin]}
+                              plugins={[shadeStalls, shadeProbes, crosshairPlugin, hoverPlugin]}
                             />
                           ) : (
                             <div className="h-full flex items-center justify-center text-slate-600 text-[11px]">--</div>
@@ -690,8 +788,9 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
       ) : overlay ? (
         <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
           <h4 className="text-xs font-medium text-slate-300 mb-2">{players.map((p) => PLAYER_LABEL[p]).join(', ')}: una línea por prueba, con el color del protocolo{shade && players.length > 1 && <span className="text-slate-500 font-normal"> · arriba, un carril de parones por protocolo, en el orden de la leyenda</span>}</h4>
+          {metricKey === 'probe' && probeLegend}
           <div className="h-[28rem]">
-            <Line data={{ datasets: players.flatMap((p) => datasetsFor(p, true)) }} options={overlayOptions} plugins={[shadeStalls]} />
+            <Line data={{ datasets: players.flatMap((p) => datasetsFor(p, true)) }} options={overlayOptions} plugins={[shadeStalls, shadeProbes]} />
           </div>
         </div>
       ) : (
@@ -699,8 +798,14 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
           {players.map((p) => (
             <div key={p} className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
               <h4 className="text-xs font-medium text-slate-300 mb-2">{PLAYER_LABEL[p]}</h4>
+              {metricKey === 'probe' && p === 'moq' && (
+                <div className="mb-1">
+                  {probeLegend}
+                  {chosen.length > 1 && <div className="text-[10px] text-slate-500">Los sondeos de cada prueba, en carriles abajo: el de más abajo es la primera de la leyenda</div>}
+                </div>
+              )}
               <div className="h-80">
-                <Line data={{ datasets: datasetsFor(p) }} options={options} plugins={[shadeStalls]} />
+                <Line data={{ datasets: datasetsFor(p) }} options={options} plugins={[shadeStalls, shadeProbes]} />
               </div>
             </div>
           ))}

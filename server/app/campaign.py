@@ -1633,8 +1633,9 @@ class Campaigns:
     # selected_height y bw_estimate_kbps: la calidad que elige la adaptación y su estimación de ancho de banda
     SERIES_FIELDS = ("g2g_ms", "kbps", "height", "selected_height", "bw_estimate_kbps", "stall_ms", "frametime_p95_ms", "stall_spans", "stall_open_since_ms", "playback_rate", "content_speed", "content_skipped_ms")
     # Columnas que solo tiene un reproductor: la capacidad que estima el sondeo de MoQ (README 6.3), la última medida,
-    # vacía si no ha terminado ningún sondeo
-    PLAYER_SERIES_FIELDS = {"moq": ("probe_capacity_kbps",)}
+    # vacía si no ha terminado ningún sondeo; y los sondeos, para dibujarlos: exactos con su resultado (probe_spans y
+    # probe_open_since_ms, desde el 6-11-2026) o, en filas anteriores, solo si había uno en curso en cada fila (probing)
+    PLAYER_SERIES_FIELDS = {"moq": ("probe_capacity_kbps", "probing", "probe_spans", "probe_open_since_ms")}
     # Columnas de la página, comunes a los reproductores: se repiten en cada uno para dibujarlas junto a sus métricas
     PAGE_SERIES_FIELDS = ("main_refreshes_missed", "main_long_frame_ms")
 

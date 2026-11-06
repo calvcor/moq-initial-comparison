@@ -270,6 +270,13 @@ const Telemetry: React.FC<{
           hint="Experimento (README 6.3): lo que recibían la calidad actual y la de sondeo en el último sondeo. Con él decide el controlador del banco, no @moq/watch."
         />
       )}
+      {(metrics.moqAbr === 'probe' || metrics.moqAbr === 'probe2') && (
+        <Stat
+          label="Sondeos (cortados)"
+          value={metrics.probeCount == null ? '--' : `${metrics.probeCount} (${metrics.probeCuts ?? 0})`}
+          hint="Sondeos empezados desde que arrancó el controlador y, entre paréntesis, cuántos se cortaron porque la calidad actual perdió ritmo (README 6.3). En el CSV, moq_probe_count, moq_probe_cuts y cada sondeo con su inicio, fin y resultado en moq_probe_spans."
+        />
+      )}
       <Stat label="Bitrate vídeo recibido" value={fmt(metrics.bitrateKbps, 'kbps')} hint={VIDEO_HINT} />
       <Stat label="Descarga total" value={fmt(metrics.networkKbps, 'kbps')} hint={networkHint} />
       <Stat label={bufferLabel} value={fmt(metrics.bufferLengthSec, 's')} hint={bufferHint} />

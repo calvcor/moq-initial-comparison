@@ -5,6 +5,7 @@ import { getClockSync } from './clock';
 import { meters } from './qoe';
 import { rateTrackers } from './playbackRate';
 import { mainThread } from './mainThread';
+import { takeProbeSpans } from './moqProbe';
 import { versionsLabel } from '../components/VersionsPanel';
 import type { PlayerId, PlayerMetrics, SampleRow, ServerStatus, VersionReport } from '../types';
 
@@ -148,6 +149,8 @@ export function buildSampleRow({ epoch, epochStartedAt, active, metrics, status,
   const spans = Object.fromEntries(PLAYER_IDS.map((p) => [p, stallSpans(p, active[p])])) as Record<PlayerId, ReturnType<typeof stallSpans>>;
   // Carga del hilo principal desde la fila anterior; recogerla la vacía
   const main = mainThread.take();
+  // Sondeos de MoQ terminados desde la fila anterior; recogerlos los vacía, como los parones
+  const probes = active.moq ? takeProbeSpans() : null;
   return {
   time_iso: new Date().toISOString(),
   epoch: epoch,
@@ -226,6 +229,10 @@ export function buildSampleRow({ epoch, epochStartedAt, active, metrics, status,
   moq_abr: currentMoq.moqAbr ?? 'watch',
   moq_probing: currentMoq.probing == null ? null : currentMoq.probing ? 1 : 0,
   moq_probe_capacity_kbps: currentMoq.probeCapacityKbps ?? null,
+  moq_probe_spans: probes?.spans ?? null,
+  moq_probe_open_since_ms: probes?.openSince ?? null,
+  moq_probe_count: currentMoq.probeCount ?? null,
+  moq_probe_cuts: currentMoq.probeCuts ?? null,
   dash_stage_encode_ms: stage(currentDash, 'encode'),
   dash_stage_package_ms: stage(currentDash, 'package'),
   dash_stage_deliver_ms: stage(currentDash, 'deliver'),
