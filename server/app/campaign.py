@@ -524,6 +524,23 @@ class Campaigns:
                 self.save(campaign)
             return self.view(campaign)
 
+    def archive(self, cid: str, archived: bool) -> dict:
+        """Archiva o desarchiva: solo cambia dónde se lista (la página la guarda aparte, plegada). No se archiva la que
+        está en marcha; archivar una encolada la saca de la cola, y una archivada no se arranca ni se encola."""
+        with self.lock:
+            campaign = self.campaigns[cid]
+            if archived and cid == self.active:
+                raise RuntimeError("La campaña está en marcha: ponla en pausa antes de archivarla")
+            if bool(campaign.get("archived")) != archived:
+                if archived and cid in self.queue:
+                    self.queue.remove(cid)
+                    self.save_queue()
+                    self.log(campaign, "Fuera de la cola")
+                campaign["archived"] = archived
+                self.log(campaign, "Archivada" if archived else "Desarchivada")
+                self.save(campaign)
+            return self.view(campaign)
+
     def delete(self, cid: str):
         with self.lock:
             if cid == self.active:
@@ -549,6 +566,8 @@ class Campaigns:
                 raise RuntimeError("La campaña todavía se está deteniendo: vuelve a intentarlo en unos segundos")
             if campaign["state"] not in ("ready", "paused"):
                 raise RuntimeError(f"La campaña está {campaign['state']}")
+            if campaign.get("archived"):
+                raise RuntimeError("La campaña está archivada: desarchívala antes de arrancarla")
             # Antes de anotar lo que habrá que restaurar, se deshace la vista previa que hubiera
             self.stop_preview()
             # reopened: una campaña en pausa, o terminada o cancelada (antes del 6-11-2026) a la que se le ha pedido
@@ -611,6 +630,8 @@ class Campaigns:
                 raise RuntimeError("La campaña ya está en la cola")
             if not self.queueable(cid):
                 raise RuntimeError(f"Solo se encolan campañas listas o en pausa (esta está {self.campaigns[cid]['state']})")
+            if self.campaigns[cid].get("archived"):
+                raise RuntimeError("La campaña está archivada: desarchívala antes de encolarla")
             self.queue.append(cid)
             self.log(self.campaigns[cid], f"En la cola, puesto {len(self.queue)}")
             self.save(self.campaigns[cid])

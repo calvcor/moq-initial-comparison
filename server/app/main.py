@@ -1169,17 +1169,26 @@ def get_campaign(cid: str):
     """Plan, estado, pruebas con su resumen y registro de eventos."""
     return campaign_or_404(cid)
 
-class CampaignRename(BaseModel):
-    name: str = Field(..., min_length=1, max_length=120)
+class CampaignPatch(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=120)
+    archived: Optional[bool] = None
 
 @app.patch("/api/campaigns/{cid}")
-def rename_campaign(cid: str, req: CampaignRename):
-    """Cambia el nombre de una campaña, en cualquier estado."""
+def patch_campaign(cid: str, req: CampaignPatch):
+    """Cambia el nombre de una campaña (en cualquier estado) o la archiva o desarchiva (no la que está en marcha)."""
     campaign_or_404(cid)
-    name = req.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="El nombre no puede quedar vacío")
-    return campaigns.rename(cid, name)
+    out = None
+    if req.name is not None:
+        name = req.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="El nombre no puede quedar vacío")
+        out = campaigns.rename(cid, name)
+    if req.archived is not None:
+        try:
+            out = campaigns.archive(cid, req.archived)
+        except RuntimeError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+    return out if out is not None else campaigns.get(cid)
 
 # Antes que /{action}: la primera ruta que encaja es la que responde
 class CampaignRows(BaseModel):

@@ -476,6 +476,7 @@ export interface Campaign {
   name: string;
   state: CampaignState;
   created_ms: number;
+  archived?: boolean; // archivada: se lista aparte, plegada; no se arranca ni se encola (desde el 6-11-2026)
   plan: CampaignPlan;
   runs?: CampaignRun[];
   events?: { t_ms: number; message: string }[];

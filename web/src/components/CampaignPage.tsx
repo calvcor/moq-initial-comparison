@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
 import { CampaignEditor, DEFAULT_PLAYER_OPTIONS, formatDuration } from './CampaignEditor';
 import { CampaignWorker } from './CampaignWorker';
 import { WorkersModal } from './WorkersModal';
+import { CampaignList } from './CampaignList';
 import { PLAYER_IDS } from '../lib/samples';
 import { CampaignResults } from './CampaignResults';
 import { CampaignPreview, stopPreview, type Preview } from './CampaignPreview';
@@ -320,14 +321,32 @@ const Monitor: React.FC<{
           </div>
         )}
         <Badge state={campaign.state} />
+        {campaign.archived && <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-600 text-slate-400">archivada</span>}
         <span className="text-slate-500 font-mono">{campaign.id}</span>
-        <div className="ml-auto flex gap-2">
-          {(campaign.state === 'ready' || campaign.state === 'paused') && (
+        <div className="ml-auto flex flex-wrap gap-2">
+          {campaign.state !== 'running' && (
+            <button
+              className="flex items-center gap-1 px-3 py-1 rounded border border-slate-700 text-slate-300 hover:border-slate-500"
+              title={campaign.archived ? 'Vuelve a la lista principal; se puede arrancar y encolar' : 'Se lista aparte, plegada, y no se puede arrancar ni encolar hasta desarchivarla. No borra nada; si estaba en la cola, sale de ella'}
+              onClick={async () => {
+                try {
+                  await call(`/api/campaigns/${campaign.id}`, 'PATCH', { archived: !campaign.archived });
+                  setError(null);
+                  onChanged();
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              {campaign.archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />} {campaign.archived ? 'Desarchivar' : 'Archivar'}
+            </button>
+          )}
+          {!campaign.archived && (campaign.state === 'ready' || campaign.state === 'paused') && (
             <button className="flex items-center gap-1 px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white" onClick={() => act('start')}>
               <Play className="w-3.5 h-3.5" /> {campaign.state === 'paused' ? 'Reanudar' : 'Arrancar'}
             </button>
           )}
-          {(campaign.state === 'ready' || campaign.state === 'paused') &&
+          {!campaign.archived && (campaign.state === 'ready' || campaign.state === 'paused') &&
             (campaign.queue_position ? (
               <button
                 className="flex items-center gap-1 px-3 py-1 rounded border border-slate-700 text-slate-300 hover:border-rose-500"
@@ -640,7 +659,7 @@ const CampaignMonitorPage: React.FC = () => {
       call('/api/campaigns')
         .then((all: Campaign[]) => {
           setList(all);
-          setSelectedId((id) => id ?? all.find((c) => c.state === 'running')?.id ?? all[0]?.id ?? null);
+          setSelectedId((id) => id ?? all.find((c) => c.state === 'running')?.id ?? all.find((c) => !c.archived)?.id ?? null);
         })
         .catch(() => {});
       call('/api/campaigns-queue')
@@ -661,6 +680,18 @@ const CampaignMonitorPage: React.FC = () => {
     const timer = setInterval(load, worker ? 10000 : 3000);
     return () => clearInterval(timer);
   }, [selectedId, worker, tick]);
+
+  // Archivar o desarchivar desde la lista o el monitor
+  const [listError, setListError] = useState<string | null>(null);
+  const archive = async (id: string, archived: boolean) => {
+    try {
+      await call(`/api/campaigns/${id}`, 'PATCH', { archived });
+      setListError(null);
+      refresh();
+    } catch (e) {
+      setListError(`No se pudo ${archived ? 'archivar' : 'desarchivar'}: ${(e as Error).message}`);
+    }
+  };
 
   const toggleWorker = () => {
     const next = !worker;
@@ -729,29 +760,21 @@ const CampaignMonitorPage: React.FC = () => {
         )}
         {previewError && <p className="text-xs text-rose-400">Vista previa: {previewError}</p>}
 
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-slate-400">Campañas:</span>
-          {list.map((c) => (
-            <button
-              key={c.id}
-              className={`px-2.5 py-1 rounded-lg border flex items-center gap-2 ${c.id === selectedId && !editing ? 'border-indigo-500 bg-indigo-900/40 text-indigo-100' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
-              onClick={() => {
-                setSelectedId(c.id);
-                setEditor(null);
-              }}
-            >
-              {c.name} <Badge state={c.state} />
-              {c.queue_position && <span className="text-[10px] text-emerald-300 font-mono">cola {c.queue_position}.ª</span>}
-            </button>
-          ))}
-          <button
-            className={`px-2.5 py-1 rounded-lg border ${editing && !editor.initial ? 'border-emerald-500 bg-emerald-900/40 text-emerald-100' : 'border-slate-700 text-emerald-300 hover:border-emerald-500'}`}
-            onClick={() => setEditor({})}
-          >
-            + Nueva campaña
-          </button>
-        </div>
-
+        <div className="flex flex-col md:flex-row gap-4 items-start">
+        <CampaignList
+          list={list}
+          selectedId={selectedId}
+          creating={editing && !editor.initial}
+          editing={editing}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setEditor(null);
+          }}
+          onNew={() => setEditor({})}
+          onArchive={archive}
+        />
+        <div className="flex-1 min-w-0 w-full space-y-4">
+        {listError && <p className="text-xs text-rose-400">{listError}</p>}
         {queue && queue.ids.length > 0 && <QueuePanel queue={queue} onChanged={refresh} onSelect={setSelectedId} />}
 
         {editing ? (
@@ -782,6 +805,8 @@ const CampaignMonitorPage: React.FC = () => {
         ) : (
           <p className="text-xs text-slate-500">No hay campañas todavía.</p>
         )}
+        </div>
+        </div>
       </div>
     </div>
   );
