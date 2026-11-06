@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eraser, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
 import { CampaignEditor, DEFAULT_PLAYER_OPTIONS, formatDuration } from './CampaignEditor';
 import { CampaignWorker } from './CampaignWorker';
 import { WorkersModal } from './WorkersModal';
@@ -301,6 +301,25 @@ const Monitor: React.FC<{
     }
   };
 
+  // Borra las medidas y la deja lista, con las mismas pruebas sorteadas de nuevo (no se deshace)
+  const clearMeasures = async () => {
+    const measured = (campaign.runs ?? []).filter((r) => r.state !== 'pending').length;
+    const manual = (campaign.runs ?? []).filter((r) => r.manual).length;
+    const text =
+      `¿Borrar las medidas de ${campaign.name}?\n\n` +
+      `Se pierden ${measured} pruebas medidas o intentadas (samples, runs e IP) y no se puede deshacer.` +
+      (manual ? ` También desaparecen las ${manual} repeticiones añadidas a mano.` : '') +
+      `\n\nQueda lista, con el mismo plan y las mismas pruebas en el mismo orden (misma semilla); el nombre, la descripción y los eventos se conservan.`;
+    if (!window.confirm(text)) return;
+    try {
+      await call(`/api/campaigns/${campaign.id}/clear`, 'POST');
+      setError(null);
+      onChanged();
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
+  };
+
   const c = campaign.counts;
   const finished = (c.done ?? 0) + (c.invalid ?? 0) + (c.replaced ?? 0);
   const current = campaign.runs?.find((r) => r.id === campaign.current);
@@ -424,6 +443,15 @@ const Monitor: React.FC<{
               <Download className="w-3.5 h-3.5" /> {name === 'runs' ? 'Resumen CSV' : name === 'samples' ? 'Muestras CSV' : 'Tráfico IP CSV'}
             </a>
           ))}
+          {campaign.state !== 'running' && (campaign.state !== 'ready' || Object.keys(campaign.counts).some((k) => k !== 'pending')) && (
+            <button
+              className="flex items-center gap-1 px-3 py-1 rounded border border-slate-700 text-slate-300 hover:border-rose-500 hover:text-rose-300"
+              title="Borra las medidas y la deja lista, con el mismo plan y las mismas pruebas (misma semilla). No se puede deshacer"
+              onClick={clearMeasures}
+            >
+              <Eraser className="w-3.5 h-3.5" /> Borrar medidas
+            </button>
+          )}
           {campaign.state !== 'running' && (
             <button className="text-slate-500 hover:text-rose-400 px-1" title="Borrar la campaña" onClick={remove}>
               <Trash2 className="w-4 h-4" />

@@ -1233,6 +1233,16 @@ def resume_campaign_queue():
     campaigns.resume_queue()
     return campaigns.queue_view()
 
+# Antes que /{action}: la primera ruta que encaja es la que responde
+@app.post("/api/campaigns/{cid}/clear")
+def clear_campaign(cid: str):
+    """Borra las medidas de una campaña que no está en marcha y la deja lista, con las pruebas sorteadas de nuevo."""
+    campaign_or_404(cid)
+    try:
+        return campaigns.clear(cid)
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
 @app.post("/api/campaigns/{cid}/{action}")
 def control_campaign(cid: str, action: Literal["start", "pause", "enqueue", "dequeue"]):
     """start (o reanudar), pause (restaura la red y la emisión, saca la campaña de la cola y la detiene si quedan

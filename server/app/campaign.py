@@ -554,6 +554,33 @@ class Campaigns:
                 self.save(campaign)
             return self.view(campaign)
 
+    # Lo que una campaña gana al medir y se quita al borrar sus medidas
+    MEASURED_FIELDS = ("restore", "versions", "worker_browsers", "reopened", "holds_queue", "current", "batch")
+    MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl")
+
+    def clear(self, cid: str) -> dict:
+        """Borra las medidas de una campaña que no está en marcha y la deja lista, como recién creada: las pruebas se
+        vuelven a sortear con la semilla del plan (las mismas y en el mismo orden; las repeticiones añadidas a mano
+        desaparecen) y se borran samples.jsonl, runs.jsonl e ip.jsonl. Conserva el plan, el nombre, la descripción, el
+        archivado, la cola y los eventos, con uno que lo dice. La red y la emisión no se tocan: al arrancarla de nuevo
+        se anota lo que haya entonces para restaurarlo al terminar."""
+        with self.lock:
+            campaign = self.campaigns[cid]
+            if cid == self.active:
+                raise RuntimeError("La campaña está en marcha: ponla en pausa antes de borrar sus medidas")
+            done = sum(1 for r in campaign["runs"] if r["state"] not in ("pending",))
+            for key in self.MEASURED_FIELDS:
+                campaign.pop(key, None)
+            campaign.update(state="ready", runs=self.expand(campaign["plan"]), current=None, batch=None, restore=None)
+            for name in self.MEASURED_FILES:
+                try:
+                    os.remove(self.path(cid, name))
+                except FileNotFoundError:
+                    pass
+            self.log(campaign, f"Medidas borradas ({done} pruebas medidas o intentadas): campaña lista de nuevo")
+            self.save(campaign)
+            return self.view(campaign)
+
     def delete(self, cid: str):
         with self.lock:
             if cid == self.active:
