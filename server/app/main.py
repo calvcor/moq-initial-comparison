@@ -283,6 +283,9 @@ class CampaignRequest(BaseModel):
             if bad:
                 raise ValueError(f"Nombre de trabajador no válido: {', '.join(bad)}")
             self.worker_pool = sorted(set(self.worker_pool))
+            # El router tiene 8 plazas por cola para clientes con red propia (router/agent.py, MAX_CLIENTS)
+            if len(self.worker_pool) > 8:
+                raise ValueError("Con pruebas en paralelo, como mucho 8 trabajadores en el grupo (plazas del router)")
             # A la vez, cada prueba lleva todos los reproductores: uno por trabajador
             if self.player_mode == "together" and len(self.worker_pool) < len(self.players):
                 raise ValueError("Con los reproductores a la vez hacen falta al menos tantos trabajadores como reproductores")
@@ -293,6 +296,15 @@ def campaign_guard():
     running = campaigns.running()
     if running and running["state"] == "running":
         raise HTTPException(status_code=409, detail=f"Hay una campaña en marcha ({running['name']}): ponla en pausa antes")
+
+def router_clients(clients: dict) -> None:
+    """Perfiles propios por cliente en el router ({IP: perfil}; {} los quita): pruebas en paralelo de una campaña."""
+    for profile in clients.values():
+        if any(profile[d]["jitter_ms"] > profile[d]["delay_ms"] for d in ("down", "up")):
+            raise ValueError("El jitter no puede superar el retardo")
+    result = requests.post(f"{ROUTER_URL}/clients", json=clients, timeout=10).json()
+    if "error" in result:
+        raise RuntimeError(result["error"])
 
 def router_call(profile: Optional[NetworkProfile] = None) -> Optional[dict]:
     """Lee (o aplica) el perfil de red del router. None si el router no responde."""
@@ -1281,10 +1293,16 @@ class WorkerBeat(BaseModel):
     mounted_at_ms: Optional[float] = None
     info: dict = {}
 
+def client_ip(request: Request) -> Optional[str]:
+    """La IP del navegador: la primera de X-Forwarded-For (la añaden el proxy de entrada y, delante, NPM) o, sin ella,
+    la de la conexión. Es la que ve el router en el tráfico de los reproductores si el navegador llega igual a los dos."""
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return forwarded or (request.client.host if request.client else None)
+
 @app.post("/api/campaigns-worker")
-def campaign_worker(beat: WorkerBeat):
+def campaign_worker(beat: WorkerBeat, request: Request):
     """Devuelve lo que debe tener montado el trabajador. Sin nombre, un solo trabajador a la vez."""
-    return campaigns.heartbeat(beat.worker_id, beat.mounted, beat.mounted_at_ms, beat.info, beat.name)
+    return campaigns.heartbeat(beat.worker_id, beat.mounted, beat.mounted_at_ms, beat.info, beat.name, client_ip(request))
 
 # El trabajador de campañas y su instalador (scripts/, montado en el contenedor), para instalar un trabajador
 # independiente en cualquier máquina con un comando (README 4.8, trabajadores independientes)
@@ -1433,6 +1451,13 @@ def on_startup():
     versions.start()
     campaigns.apply_stream = lambda config, restart=False: start_pipeline(StreamConfig(**config), restart_source=restart)
     campaigns.apply_network = lambda profile: set_network(NetworkProfile(**profile))
+    campaigns.apply_clients = lambda clients: router_clients({ip: NetworkProfile(**p).model_dump() for ip, p in clients.items()})
+    # Las colas propias de una tanda que quedaran de antes del reinicio: si no la retoma una campaña, esas IP seguirían con
+    # la red de su prueba también fuera de ella
+    try:
+        router_clients({})
+    except Exception as e:
+        logger.warning(f"No se pudieron quitar las colas por cliente del router: {e}")
     campaigns.stop_stream = stop_pipeline
     campaigns.snapshot = campaign_snapshot
     campaigns.load()

@@ -424,6 +424,7 @@ export interface CampaignRun {
   worker_info?: Record<string, Record<string, unknown>>; // lo que anunciaba cada trabajador al montar (también el único)
   batch?: string; // pruebas en paralelo: la tanda (id de su primera prueba)
   concurrent?: string[]; // las pruebas medidas a la vez que esta
+  client_ips?: Record<string, string>; // pruebas en paralelo: la IP de cada trabajador, con su cola propia en el router
   concurrent_players?: PlayerId[];
   state: RunState;
   invalid_reasons: string[];
@@ -456,7 +457,8 @@ export interface PoolWorker {
   connected: boolean;
   seen_ms: number | null; // último latido (null: no ha latido desde que arrancó el orquestador)
   mounted: string | null;
-  // Lo que anuncia: user_agent, viewport (ancho x alto), browser (modo en que está abierto), display (tiene pantalla)
+  // Lo que anuncia: user_agent, viewport (ancho x alto), browser (modo en que está abierto), display (tiene pantalla);
+  // ip la pone el orquestador: desde dónde late (el router separa por ella las colas de las pruebas en paralelo)
   info: Record<string, unknown>;
   browser: WorkerBrowser; // modo de Chrome que se le pide; cada campaña fija el que tenga al empezar
   busy: string | null; // la campaña en marcha que lo usa

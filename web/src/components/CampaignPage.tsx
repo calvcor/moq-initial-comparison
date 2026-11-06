@@ -165,7 +165,13 @@ const RunsTable: React.FC<{
                 {(run.workers || run.worker_info || run.concurrent) && (
                   <div className="text-[10px] text-slate-500 font-sans">
                     {run.workers
-                      ? run.players.map((p) => `${PLAYER_SHORT[p]} en ${run.workers![p] ?? '?'}`).join(' · ')
+                      ? run.players
+                          .map((p) => {
+                            const w = run.workers![p];
+                            const ip = w ? run.client_ips?.[w] : undefined;
+                            return `${PLAYER_SHORT[p]} en ${w ?? '?'}${ip ? ` (${ip})` : ''}`;
+                          })
+                          .join(' · ')
                       : run.worker_info
                         ? `en ${Object.keys(run.worker_info).join(', ')}`
                         : ''}

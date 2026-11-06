@@ -391,10 +391,10 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
           {workerMode === 'pool' && (
             <label
               className="flex items-center gap-2 text-slate-300 w-fit"
-              title="Cada prueba toma un trabajador libre cualquiera del grupo, y se ejecutan a la vez las pruebas pendientes de la misma emisión, red y objetivo, de protocolos distintos (dos del mismo compartirían su cola en el router), mientras haya trabajadores libres. Acaba antes, pero un mismo protocolo puede medirse en máquinas distintas, y las pruebas medidas a la vez comparten servidor: cada una anota en qué trabajador se midió y con qué otras (concurrent)."
+              title="Cada prueba toma un trabajador libre cualquiera del grupo, y se ejecutan a la vez las pruebas pendientes de la misma emisión, de cualquier red, objetivo o protocolo, mientras haya trabajadores libres. Cada trabajador tiene en el router su propia cola con la red de su prueba, distinguido por su IP: dos trabajadores con la misma IP (misma máquina o detrás del mismo NAT) no miden a la vez. Acaba antes, pero un mismo protocolo puede medirse en máquinas distintas, y las pruebas medidas a la vez comparten servidor (relay, SFU, publicador y CPU): cada una anota en qué trabajador se midió, con qué IP y con qué otras (concurrent)."
             >
               <input type="checkbox" checked={parallel} onChange={(e) => setParallel(e.target.checked)} />
-              Pruebas en paralelo con los trabajadores libres (misma red y objetivo)
+              Pruebas en paralelo con los trabajadores libres (cada uno con su red)
             </label>
           )}
           {workerMode === 'pool' && parallel && (
@@ -411,7 +411,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                     />
                     <span className="font-mono">{name}</span>
                     <span className="text-slate-500">
-                      {w ? `${w.browser === 'kiosk' ? 'quiosco' : 'headless'}${!w.connected ? ', sin conexión' : w.busy ? `, en uso: ${w.busy}` : ''}` : 'sin conexión'}
+                      {w ? `${w.browser === 'kiosk' ? 'quiosco' : 'headless'}${w.connected && w.info.ip ? `, ${String(w.info.ip)}` : ''}${!w.connected ? ', sin conexión' : w.busy ? `, en uso: ${w.busy}` : ''}` : 'sin conexión'}
                     </span>
                   </label>
                 );

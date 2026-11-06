@@ -239,6 +239,11 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                     </td>
                     <td className="py-2 pr-3">
                       <div className="font-mono text-slate-300">{w.connected ? String(w.info.viewport ?? '?') : '—'}</div>
+                      {w.connected && w.info.ip != null && (
+                        <div className="font-mono text-slate-500" title="La IP desde la que late: el router separa por ella las colas de las pruebas en paralelo">
+                          {String(w.info.ip)}
+                        </div>
+                      )}
                       <div className="text-slate-500 flex items-center gap-1">
                         {display === false ? <MonitorOff className="w-3 h-3" /> : <Monitor className="w-3 h-3" />}
                         {display === false ? 'Sin pantalla' : display === true ? 'Con pantalla' : 'Pantalla desconocida'}

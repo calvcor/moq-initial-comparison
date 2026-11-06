@@ -240,9 +240,12 @@ class Campaigns:
         # Los pone main.py
         self.apply_stream: Callable[..., None] = lambda config, restart=False: None
         self.apply_network: Callable[[dict], None] = lambda profile: None
+        # Perfiles propios por cliente en el router ({IP: perfil}; {} los quita): las pruebas en paralelo
+        self.apply_clients: Callable[[dict], None] = lambda clients: None
         self.stop_stream: Callable[[], None] = lambda: None
         self.snapshot: Callable[[], dict] = lambda: {}
-        # Contadores acumulados del router por cola ({"dash_down": {"bytes": ...}, ...}); None si no responde
+        # Contadores acumulados del router por cola ({"dash_down": {"bytes": ...}, ...}, y en "clients" los de cada
+        # cliente con perfil propio); None si no responde
         self.read_counters: Callable[[], Optional[dict]] = lambda: None
         # Retraso de la fuente (ms) en un intervalo de reloj del servidor (trace.FrameLog.source_lag)
         self.read_source_lag: Callable[[int, int], Optional[float]] = lambda from_ms, to_ms: None
@@ -663,6 +666,7 @@ class Campaigns:
     def restore(self, campaign: dict):
         restore = campaign.get("restore") or {}
         try:
+            self.apply_clients({})
             self.apply_network((restore.get("network") or UNRESTRICTED))
         except Exception as e:
             self.log(campaign, f"No se pudo restaurar la red: {e}")
@@ -679,7 +683,7 @@ class Campaigns:
     # --- trabajador ---
 
     def heartbeat(self, worker_id: str, mounted: Optional[str], mounted_at_ms: Optional[float], info: dict,
-                  name: Optional[str] = None) -> dict:
+                  name: Optional[str] = None, ip: Optional[str] = None) -> dict:
         """El trabajador dice qué tiene montado y recibe lo que debe tener.
 
         Sin nombre es el trabajador único de siempre: el primero que late se queda con las campañas sin
@@ -701,7 +705,8 @@ class Campaigns:
             elif mounted_at_ms is None or not now * 1000 - 60000 <= mounted_at_ms <= now * 1000 + 1000:
                 same = entry["mounted"] == mounted and entry["mounted_at_ms"]
                 mounted_at_ms = entry["mounted_at_ms"] if same else now * 1000
-            entry.update(id=worker_id, seen=now, mounted=mounted, mounted_at_ms=mounted_at_ms, info=info)
+            # La IP desde la que llega el latido: la que debe ver el router en su tráfico (pruebas en paralelo)
+            entry.update(id=worker_id, seen=now, mounted=mounted, mounted_at_ms=mounted_at_ms, info={**info, "ip": ip})
             self.wake.set()
             return {"busy": False, "assignment": self.assignment(name)}
 
@@ -854,6 +859,7 @@ class Campaigns:
         changed = not snap.get("running") or not self.same_stream(stream, snap.get("config"))
         if changed:
             self.apply_stream(stream)
+        self.apply_clients({})
         self.apply_network(UNRESTRICTED if run["network"] is None else plan["networks"][run["network"]]["profile"])
         with self.lock:
             self.preview = {"campaign": cid, "run": run_id, "started_ms": int(time.time() * 1000), "restore": restore}
@@ -965,9 +971,10 @@ class Campaigns:
         return campaign["state"] == "running"
 
     def pick_batch(self, campaign: dict) -> list[dict]:
-        """La siguiente tanda: la primera prueba pendiente y, con pruebas en paralelo, las pendientes de su misma
-        emisión, red y objetivo, de otros protocolos (dos del mismo compartirían su cola en el router), mientras quepan
-        en los trabajadores conectados. Sin pruebas en paralelo, una sola."""
+        """La siguiente tanda: la primera prueba pendiente y, con pruebas en paralelo, las siguientes pendientes de su
+        misma emisión (la fuente es una), de cualquier red, objetivo o protocolo, mientras quepan en los trabajadores
+        libres. Cada trabajador tiene en el router su propia cola con la red de su prueba (desde el 6-11-2026; antes solo
+        se juntaban protocolos distintos con la misma red y objetivo). Sin pruebas en paralelo, una sola."""
         pending = [r for r in campaign["runs"] if r["state"] == "pending"]
         if not pending:
             return []
@@ -975,15 +982,23 @@ class Campaigns:
         batch = [first]
         if not plan.get("parallel"):
             return batch
-        room = sum(self.pool_alive(n) for n in self.pool_names(plan)) - len(first["players"])
-        used = set(first["players"])
-        key = lambda r: (r["stream"], r["network"], r["target"])
+        room = len(self.parallel_free(plan)) - len(first["players"])
         for run in pending[1:]:
-            if key(run) == key(first) and not used & set(run["players"]) and len(run["players"]) <= room:
+            if run["stream"] == first["stream"] and len(run["players"]) <= room:
                 batch.append(run)
-                used |= set(run["players"])
                 room -= len(run["players"])
         return batch
+
+    def parallel_free(self, plan: dict) -> list[str]:
+        """Los trabajadores del grupo que pueden medir en paralelo: conectados y con una IP propia, porque el router
+        separa las colas por IP (de dos con la misma, solo el primero por nombre)."""
+        out, ips = [], set()
+        for name in sorted(self.pool_names(plan)):
+            ip = (self.pool.get(name) or {}).get("info", {}).get("ip")
+            if self.pool_alive(name) and ip and ip not in ips:
+                out.append(name)
+                ips.add(ip)
+        return out
 
     def assign_batch(self, plan: dict, batch: list[dict]) -> Optional[dict[str, dict[str, str]]]:
         """Qué trabajador monta cada reproductor de cada prueba de la tanda: el fijo del plan o, con pruebas en paralelo,
@@ -994,12 +1009,28 @@ class Campaigns:
             if not all(self.pool_alive(plan["workers"][p]) for r in batch for p in r["players"]):
                 return None
             return {r["id"]: {p: plan["workers"][p] for p in r["players"]} for r in batch}
-        free = sorted(n for n in self.pool_names(plan) if self.pool_alive(n))
+        free = self.parallel_free(plan)
         if len(free) < sum(len(r["players"]) for r in batch):
             return None
         out = {}
         for run in batch:
             out[run["id"]] = {p: free.pop(0) for p in run["players"]}
+        return out
+
+    def batch_clients(self, campaign: dict, batch: list[dict]) -> dict[str, dict]:
+        """Con pruebas en paralelo, el perfil de red de cada trabajador de la tanda, por su IP, y anota la IP en cada
+        prueba (client_ips). Vacío sin pruebas en paralelo: entonces todo va por la cola general."""
+        plan = campaign["plan"]
+        if not plan.get("parallel"):
+            return {}
+        out = {}
+        for run in batch:
+            profile = UNRESTRICTED if run["network"] is None else plan["networks"][run["network"]]["profile"]
+            run["client_ips"] = {}
+            for name in self.run_workers(plan, run) or {}:
+                ip = self.pool[name]["info"]["ip"]
+                run["client_ips"][name] = ip
+                out[ip] = profile
         return out
 
     def enough_workers(self, campaign: dict) -> bool:
@@ -1018,7 +1049,7 @@ class Campaigns:
         """Con qué trabajador se midió la prueba, para todos los modos: el independiente de cada reproductor o el
         trabajador único (la pestaña o el script sin nombre), con lo que anunciaba al montar."""
         workers = self.run_workers(plan, run)
-        pick = lambda info: {k: info.get(k) for k in ("user_agent", "browser", "decode", "display", "viewport") if k in info}
+        pick = lambda info: {k: info.get(k) for k in ("user_agent", "browser", "decode", "display", "viewport", "ip") if k in info}
         if workers is None:
             return {self.worker["id"] or "?": pick(self.worker["info"])}
         return {n: pick(self.pool.get(n, {}).get("info") or {}) for n in workers}
@@ -1061,12 +1092,12 @@ class Campaigns:
                     for run in batch:
                         run.update(state="preparing", started_ms=int(time.time() * 1000), mounted_ms=None, warmup_start_ms=None,
                                    measure_start_ms=None, ended_ms=None, invalid_reasons=[], summary=None)
-                        for k in ("mounted_by", "workers", "worker_info", "batch", "concurrent", "concurrent_players"):
+                        for k in ("mounted_by", "workers", "worker_info", "batch", "concurrent", "concurrent_players", "client_ips"):
                             run.pop(k, None)
                         if assigned:
                             run["workers"] = assigned[run["id"]]
                         if len(batch) > 1:
-                            # Lo que se midió a la vez: otros protocolos con la misma emisión, red y objetivo
+                            # Lo que se midió a la vez: otras pruebas de la misma emisión, cada una con su red
                             others = [r for r in batch if r is not run]
                             run.update(batch=batch[0]["id"], concurrent=[r["id"] for r in others],
                                        concurrent_players=[p for r in others for p in r["players"]])
@@ -1101,8 +1132,13 @@ class Campaigns:
                         for run in batch:
                             self.requeue(campaign, run)
                         break
+                # La cola general lleva la red de la primera; con pruebas en paralelo, cada trabajador la de la suya, en su
+                # cola propia (sin pruebas en paralelo, ninguno: se quitan las que hubiera)
                 network = UNRESTRICTED if first["network"] is None else plan["networks"][first["network"]]["profile"]
                 self.apply_network(network)
+                with self.lock:
+                    clients = self.batch_clients(campaign, batch)
+                self.apply_clients(clients)
             except Exception as e:
                 self.log(campaign, f"No se pudo preparar {', '.join(r['id'] for r in batch)}: {e}; se reintenta en 30 s")
                 applied_stream = None
@@ -1221,6 +1257,13 @@ class Campaigns:
                 "players": {p: summarize_player(p, of(p, rows), plan["measure_s"], target.get(f"{p}_ms")) for p in run["players"]},
             }
             ip = [s for s in self.ip.pop(run["id"], []) if s["phase"] == "measuring"]
+            # Con pruebas en paralelo, el tráfico de cada reproductor tiene que haber ido por la cola de su trabajador:
+            # si el router lo vio llegar desde otra IP (otra ruta, un NAT, DASH por el proxy sin DASH_HOST), fue por la
+            # general, con la red de otra prueba
+            if run.get("client_ips") and ip and not reasons:
+                for p in run["players"]:
+                    if not sum(s.get(f"{p}_down_bytes") or 0 for s in ip):
+                        reasons.append(f"{p}: su tráfico no pasó por la cola de su trabajador en el router")
             source = summarize_source(ip)
             for p in run["players"]:
                 run["summary"]["players"][p].update(summarize_ip(p, ip), **source, **summarize_main(of(p, rows), plan["measure_s"]))
@@ -1348,7 +1391,8 @@ class Campaigns:
             "workers": "|".join(f"{p}={w}" for p, w in self.player_workers(campaign, run).items()) or None,
             **({"worker_browsers": "|".join(f"{n}={self.browser_of(campaign, n)}" for n in sorted(self.pool_names(plan)))}
                if self.independent(plan) else {}),
-            # Pruebas en paralelo: la tanda y lo que se midió a la vez (otros protocolos, misma emisión, red y objetivo)
+            # Pruebas en paralelo: la tanda y lo que se midió a la vez (misma emisión; cada una con su red desde el 6-11-2026,
+            # antes otros protocolos con la misma red y objetivo)
             "parallel": bool(plan.get("parallel")),
             "batch": run.get("batch"), "concurrent": "|".join(run.get("concurrent") or []) or None,
             "concurrent_players": "|".join(run.get("concurrent_players") or []) or None,
@@ -1383,7 +1427,7 @@ class Campaigns:
                        "ingest_anomalies": summary["server"]["ingest_anomalies"], **values}
                 worker = self.player_workers(campaign, run).get(player)
                 info = (run.get("worker_info") or {}).get(worker) or {}
-                row.update(worker=worker, worker_user_agent=info.get("user_agent"), worker_decode=info.get("decode"),
+                row.update(worker=worker, worker_ip=info.get("ip"), worker_user_agent=info.get("user_agent"), worker_decode=info.get("decode"),
                            worker_browser=self.browser_of(campaign, worker) if worker and self.independent(campaign["plan"]) else None)
                 f.write(json.dumps(row) + "\n")
 
@@ -1432,9 +1476,10 @@ class Campaigns:
                     sample = {"campaign": campaign["id"], "run_id": run["id"], "attempt": run["attempt"], "run_started_ms": run["started_ms"],
                               "phase": phase, "from_ms": last["t"], "t_server_ms": t}
                     dt = t - last["t"]
+                    old, new = self.run_counters(campaign["plan"], run, last["counters"]), self.run_counters(campaign["plan"], run, counters)
                     for q in IP_KEYS:
-                        a = (last["counters"].get(q) or {}).get("bytes")
-                        b = (counters.get(q) or {}).get("bytes")
+                        a = (old.get(q) or {}).get("bytes")
+                        b = (new.get(q) or {}).get("bytes")
                         # Sin contador o con el contador reiniciado (router recreado), el intervalo queda vacío
                         size = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
                         sample[f"{q}_bytes"] = size
@@ -1443,8 +1488,8 @@ class Campaigns:
                         # por desbordamiento o por la pérdida aleatoria del perfil (desde el 3-11-2026). Mismo criterio
                         # ante un contador reiniciado: el router los pone a cero al cambiar la red
                         for counter in ("packets", "dropped"):
-                            a = (last["counters"].get(q) or {}).get(counter)
-                            b = (counters.get(q) or {}).get(counter)
+                            a = (old.get(q) or {}).get(counter)
+                            b = (new.get(q) or {}).get(counter)
                             sample[f"{q}_{counter}"] = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
                     # Cuánto fue la fuente por detrás del tiempo real en el intervalo: común a las tres ramas
                     try:
@@ -1454,6 +1499,16 @@ class Campaigns:
                     self.ip.setdefault(run["id"], []).append(sample)
                     with open(self.path(campaign["id"], "ip.jsonl"), "a") as f:
                         f.write(json.dumps(sample) + "\n")
+
+    def run_counters(self, plan: dict, run: dict, counters: dict) -> dict:
+        """Los contadores del router que corresponden a la prueba: con pruebas en paralelo, los de la cola propia del
+        trabajador de cada reproductor (los de los demás protocolos quedan vacíos); si no, los de cada cola entera."""
+        ips = run.get("client_ips")
+        if not ips:
+            return counters
+        per_client = counters.get("clients") or {}
+        owner = {p: ips.get(n) for n, players in (self.run_workers(plan, run) or {}).items() for p in players}
+        return {q: (per_client.get(owner.get(q.split("_")[0])) or {}).get(q) for q in IP_KEYS}
 
     # Columnas de cada reproductor que se devuelven en las series (las mismas del CSV de muestras)
     # stall_spans y stall_open_since_ms: parones exactos, en reloj del servidor (desde el 28-10-2026)
