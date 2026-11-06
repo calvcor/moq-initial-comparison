@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartDataset, type ChartOptions, type Plugin } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
-import { multiStream, streamName } from '../lib/campaignStreams';
+import { multiStream, streamDifferences, streamName } from '../lib/campaignStreams';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -192,23 +192,34 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
   focus,
 }) => {
   const plan = campaign.plan;
-  // Emisión, red y objetivo (emisión:red:objetivo; la red vacía, las de control): con varias emisiones, las pruebas
-  // de una condición son siempre de la misma
+  // Emisión, red y objetivo (emisión:red:objetivo; la red vacía, las de control). Con varias emisiones, además, la
+  // misma red y objetivo en todas (emisión *), para comparar las emisiones entre sí
   const conditionOf = (r: CampaignRun) => `${r.stream}:${r.network ?? ''}:${r.target}`;
+  const inCondition = (r: CampaignRun, key: string) =>
+    key.startsWith('*:') ? `${r.network ?? ''}:${r.target}` === key.slice(2) : conditionOf(r) === key;
+  // Con varias emisiones, cada prueba dice de cuál es (en la condición de todas se mezclan); lo que cambia entre ellas
+  // va en la clave, debajo de las casillas
+  const streamOf = (r: CampaignRun) => (multiStream(plan) ? `, ${streamName(r.stream).toLowerCase()}` : '');
   const conditionLabel = (key: string) => {
     const [st, n, t] = key.split(':');
-    const prefix = multiStream(plan) ? `${streamName(Number(st)).toLowerCase()} · ` : '';
+    const prefix = !multiStream(plan) ? '' : st === '*' ? 'todas las emisiones · ' : `${streamName(Number(st)).toLowerCase()} · `;
     if (n === '') return prefix ? `${prefix}pruebas de control` : 'Pruebas de control';
     return `${prefix}objetivo ${plan.targets[Number(t)].label} · ${plan.networks[Number(n)].label}`;
   };
-  // Por emisión, objetivo y, dentro de cada uno, red, en el orden del plan; las de control al final de su emisión
+  // Por emisión, objetivo y, dentro de cada uno, red, en el orden del plan; las de control al final de su emisión, y
+  // las de todas las emisiones detrás, en el mismo orden (solo las que se midieron en más de una)
   const conditions = useMemo(() => {
     const rank = (key: string) => {
       const [st, n, t] = key.split(':');
       const inStream = n === '' ? plan.targets.length * plan.networks.length : Number(t) * plan.networks.length + Number(n);
-      return Number(st) * (plan.targets.length * plan.networks.length + 1) + inStream;
+      return (st === '*' ? plan.streams.length : Number(st)) * (plan.targets.length * plan.networks.length + 1) + inStream;
     };
-    return [...new Set(runs.map(conditionOf))].sort((a, b) => rank(a) - rank(b));
+    const own = [...new Set(runs.map(conditionOf))];
+    const across = multiStream(plan)
+      ? [...new Set(runs.map((r) => `*:${r.network ?? ''}:${r.target}`))].filter(
+          (key) => new Set(runs.filter((r) => inCondition(r, key)).map((r) => r.stream)).size > 1)
+      : [];
+    return [...own, ...across].sort((a, b) => rank(a) - rank(b));
   }, [runs]);
   const [condition, setCondition] = useState(conditions[0] ?? '');
   const [selected, setSelected] = useState<string[]>([]);
@@ -242,7 +253,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
   // Al cambiar de condición se eligen sus pruebas (sus repeticiones), hasta el máximo de colores. La campaña se
   // recarga cada pocos segundos con un runs nuevo: se depende de sus ids, no del array, y si cambian (termina una
   // prueba, otra queda sustituida) se añaden las nuevas sin volver a marcar las que se desmarcaron
-  const ids = runs.filter((r) => conditionOf(r) === condition).map((r) => r.id);
+  const ids = runs.filter((r) => inCondition(r, condition)).map((r) => r.id);
   const idsKey = ids.join(',');
   const known = useRef<{ condition: string; ids: string[] } | null>(null);
   useEffect(() => {
@@ -258,8 +269,8 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
 
   // En la vista de métricas, la prueba elegida (por defecto, la primera marcada de la condición)
   // La elegida solo vale si es de la condición actual: si no, al cambiar de condición se seguiría viendo la anterior
-  const inCondition = (id: string | null) => !!id && runs.some((r) => r.id === id && conditionOf(r) === condition);
-  const singleId = inCondition(single) ? single : (selected.find(inCondition) ?? ids[0] ?? null);
+  const isChosen = (id: string | null) => !!id && runs.some((r) => r.id === id && inCondition(r, condition));
+  const singleId = isChosen(single) ? single : (selected.find(isChosen) ?? ids[0] ?? null);
   const fetchIds = view === 'metrics' ? (singleId ? [singleId] : []) : selected;
 
   useEffect(() => {
@@ -387,7 +398,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
           .filter((row) => `${p}_${metric.field}` in row)
           .map((row) => ({ x: row.t_s, y: (row[`${p}_${metric.field}`] as number | null) ?? null, phase: row.phase }));
         return {
-          label: together ? `${PLAYER_LABEL[p]}, ${id} (rep. ${byId[id].rep + 1})` : `${id} (rep. ${byId[id].rep + 1})`,
+          label: together ? `${PLAYER_LABEL[p]}, ${id} (rep. ${byId[id].rep + 1}${streamOf(byId[id])})` : `${id} (rep. ${byId[id].rep + 1}${streamOf(byId[id])})`,
           protocol: p,
           ...(() => {
             if (!shade) return {};
@@ -540,10 +551,10 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
             <span className="text-[11px] text-slate-400">Prueba</span>
             <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 font-mono" value={singleId ?? ''} onChange={(e) => setSingle(e.target.value)}>
               {runs
-                .filter((r) => conditionOf(r) === condition)
+                .filter((r) => inCondition(r, condition))
                 .map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.id} · rep. {r.rep + 1}
+                    {r.id} · rep. {r.rep + 1}{streamOf(r)}
                   </option>
                 ))}
             </select>
@@ -580,15 +591,24 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
       )}
       <div className={`flex flex-wrap gap-x-3 gap-y-1 ${view === 'metrics' ? 'hidden' : ''}`}>
         {runs
-          .filter((r) => conditionOf(r) === condition || selected.includes(r.id))
+          .filter((r) => inCondition(r, condition) || selected.includes(r.id))
           .map((r) => (
             <label key={r.id} className="flex items-center gap-1 text-slate-300">
               <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} />
               <span className="font-mono">{r.id}</span>
-              <span className="text-slate-500">rep. {r.rep + 1}</span>
+              <span className="text-slate-500">rep. {r.rep + 1}{streamOf(r)}</span>
             </label>
           ))}
       </div>
+      {condition.startsWith('*:') && (
+        <ul className="text-slate-400">
+          {streamDifferences(plan).map((d, i) => (
+            <li key={i}>
+              <span className="text-slate-300">{streamName(i)}:</span> {d || 'igual que las demás'}
+            </li>
+          ))}
+        </ul>
+      )}
       {error && <p className="text-rose-400">No se pudieron leer las series: {error}</p>}
       {view === 'metrics' ? (
         <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-1">

@@ -14,14 +14,15 @@ import {
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
 import { CampaignSeries } from './CampaignSeries';
-import { multiStream, streamName, streamText } from '../lib/campaignStreams';
+import { multiStream, streamDifferences, streamName, streamText } from '../lib/campaignStreams';
 
 ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Tooltip, Legend);
 
 // Resultados de una campaña (README, 4.8): una gráfica por condición de red o por latencia objetivo, con un
 // punto por prueba válida (cada repetición) y una línea por la mediana de las repeticiones. Solo pruebas
 // terminadas y válidas; las de control van aparte, en orden de ejecución, para ver la deriva del sistema. Con varias
-// emisiones, cada gráfica es de una sola: sus pruebas no se mezclan.
+// emisiones, cada gráfica es de una sola (sus pruebas no se mezclan), salvo con las emisiones en el eje: entonces hay
+// una gráfica por red y objetivo y cada emisión es un punto del eje.
 
 // Los colores de cada protocolo en todo el dashboard (el color sigue a la entidad); la forma del punto es la
 // segunda codificación, para no depender solo del color
@@ -194,7 +195,9 @@ export const CampaignResults: React.FC<{
 }> = ({ campaign, onSelectRun, seriesFocus }) => {
   const plan = campaign.plan;
   const [metricKey, setMetricKey] = useState('g2g_p50');
-  const [xAxis, setXAxis] = useState<'network' | 'target'>('network');
+  const [axisChoice, setXAxis] = useState<'network' | 'target' | 'stream'>('network');
+  // El eje de emisiones solo existe con varias (una campaña duplicada puede tener una sola)
+  const xAxis = axisChoice === 'stream' && !multiStream(plan) ? 'network' : axisChoice;
   const [log, setLog] = useState(false);
   const metric = METRICS[metricKey];
 
@@ -205,23 +208,36 @@ export const CampaignResults: React.FC<{
 
   if (!valid.length) return <p className="text-slate-500">Todavía no hay pruebas terminadas y válidas.</p>;
 
-  // Una gráfica por valor del otro factor; en el eje, las condiciones de red o los objetivos en el orden del plan
+  // Una gráfica por valor del otro factor (con las emisiones en el eje, por red y objetivo); en el eje, las condiciones
+  // de red, los objetivos o las emisiones en el orden del plan
   const networkLabels = plan.networks.map((n) => n.label);
   const targetLabels = plan.targets.map((t) => t.label);
-  const categories = xAxis === 'network' ? networkLabels : targetLabels;
-  const others = xAxis === 'network' ? plan.targets.map((_, i) => i) : plan.networks.map((_, i) => i);
+  const streamLabels = plan.streams.map((_, i) => streamName(i));
+  const categories = xAxis === 'network' ? networkLabels : xAxis === 'target' ? targetLabels : streamLabels;
   const streams = plan.streams.map((_, i) => i);
-  const facets = streams.flatMap((st) => others.map((f) => ({ st, f })));
-  const streamPrefix = (st: number) => (multiStream(plan) ? `${streamName(st)} · ` : '');
-  const xOf = (r: CampaignRun) => (xAxis === 'network' ? networkLabels[r.network!] : targetLabels[r.target]);
-  const options = chartOptions(metric, log, xAxis === 'network' ? 'Condición de red' : 'Latencia objetivo', onSelectRun);
+  // Facetas: emisión (st), objetivo (t) y red (n); null en lo que va en el eje
+  type Facet = { st: number | null; t: number | null; n: number | null };
+  const facets: Facet[] =
+    xAxis === 'network'
+      ? streams.flatMap((st) => plan.targets.map((_, t) => ({ st, t, n: null })))
+      : xAxis === 'target'
+        ? streams.flatMap((st) => plan.networks.map((_, n) => ({ st, t: null, n })))
+        : plan.targets.flatMap((_, t) => plan.networks.map((_, n) => ({ st: null, t, n })));
+  const streamPrefix = (st: number | null) => (st !== null && multiStream(plan) ? `${streamName(st)} · ` : '');
+  const facetTitle = ({ st, t, n }: Facet) =>
+    streamPrefix(st) + [t !== null && `Objetivo ${targetLabels[t]}`, n !== null && networkLabels[n]].filter(Boolean).join(' · ');
+  const inFacet = (r: CampaignRun, { st, t, n }: Facet) => (st === null || r.stream === st) && (t === null || r.target === t) && (n === null || r.network === n);
+  const xOf = (r: CampaignRun) => (xAxis === 'network' ? networkLabels[r.network!] : xAxis === 'target' ? targetLabels[r.target] : streamLabels[r.stream]);
+  const options = chartOptions(metric, log, xAxis === 'network' ? 'Condición de red' : xAxis === 'target' ? 'Latencia objetivo' : 'Emisión', onSelectRun);
+  // Con las emisiones en el eje, qué tiene cada una (la etiqueta del eje solo lleva lo que cambia)
+  const streamsHint = plan.streams.map((st, i) => `${streamName(i)}: ${streamText(st)}`).join('\n');
 
   // Línea del objetivo pedido, si es la misma en los tres reproductores y numérica (en auto no hay valor que pintar)
-  const targetLine = (targetIdx: number[]): ChartDataset<'line'> | null => {
+  const targetLine = (facetTarget: number | null): ChartDataset<'line'> | null => {
     if (!metric.latency) return null;
     const data = categories
       .map((c, i) => {
-        const t = plan.targets[xAxis === 'network' ? targetIdx[0] : i];
+        const t = plan.targets[xAxis === 'target' ? i : facetTarget!];
         const same = t.dash_ms === t.moq_ms && t.moq_ms === t.rtc_ms;
         return same && t.dash_ms !== null ? { x: c, y: t.dash_ms } : null;
       })
@@ -256,9 +272,10 @@ export const CampaignResults: React.FC<{
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[11px] text-slate-400">En el eje horizontal</span>
-          <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" value={xAxis} onChange={(e) => setXAxis(e.target.value as 'network' | 'target')}>
+          <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" value={xAxis} onChange={(e) => setXAxis(e.target.value as 'network' | 'target' | 'stream')}>
             <option value="network">Condición de red (una gráfica por objetivo)</option>
             <option value="target">Latencia objetivo (una gráfica por condición de red)</option>
+            {multiStream(plan) && <option value="stream">Emisión (una gráfica por objetivo y red)</option>}
           </select>
         </label>
         <label className="flex items-center gap-1.5 pb-1 text-slate-300">
@@ -272,19 +289,36 @@ export const CampaignResults: React.FC<{
         </span>
       </div>
 
+      {/* Con las emisiones en el eje, la clave: lo que cambia entre ellas (la descripción entera, en el título) */}
+      {xAxis === 'stream' && (
+        <ul className="text-slate-400" title={streamsHint}>
+          {streamDifferences(plan).map((d, i) => (
+            <li key={i}>
+              <span className="text-slate-300">{streamName(i)}:</span> {d || 'igual que las demás'}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {facets.map(({ st, f }) => {
-          const runs = tests.filter((r) => r.stream === st && (xAxis === 'network' ? r.target === f : r.network === f));
+        {facets.map((facet) => {
+          const runs = tests.filter((r) => inFacet(r, facet));
           if (!runs.length) return null;
           const ds = datasets(runs, players, xOf, categories, metric);
-          const line = targetLine([f]);
+          const line = targetLine(facet.t);
+          const { st } = facet;
           return (
-            <Panel key={`${st}:${f}`} title={streamPrefix(st) + (xAxis === 'network' ? `Objetivo ${targetLabels[f]}` : networkLabels[f])} hint={multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
+            <Panel key={`${st}:${facet.t}:${facet.n}`} title={facetTitle(facet)} hint={st === null ? streamsHint : multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
               <Line data={{ labels: categories, datasets: line ? [...ds, line] : ds }} options={options} />
             </Panel>
           );
         })}
-        {streams.map((st) => {
+        {/* Con las emisiones en el eje, las de control también, juntas: la misma red sin restricción en cada emisión */}
+        {xAxis === 'stream' && controls.length > 0 && (
+          <Panel key="control:streams" title="Pruebas de control (sin restricción), por emisión" hint={streamsHint}>
+            <Line data={{ labels: categories, datasets: datasets(controls, players, xOf, categories, metric) }} options={options} />
+          </Panel>
+        )}
+        {xAxis !== 'stream' && streams.map((st) => {
           const own = controls.filter((r) => r.stream === st);
           if (!own.length) return null;
           return (
