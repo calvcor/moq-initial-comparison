@@ -439,9 +439,13 @@ class Campaigns:
             return out
 
     def locked_by(self, name: str) -> Optional[str]:
-        """La campaña en marcha o en pausa que usa este trabajador independiente (None si ninguna)."""
-        return next((c["id"] for c in self.campaigns.values()
-                     if c["state"] in ("running", "paused") and name in self.pool_names(c["plan"])), None)
+        """La campaña que usa este trabajador independiente: la que está en marcha y, si no, la primera en pausa (None si
+        ninguna). Antes del 6-11-2026 devolvía la primera de las dos que encontrara, y la pestaña de trabajadores podía
+        nombrar una campaña en pausa mientras el trabajador medía para la que estaba en marcha."""
+        holders = [c for c in self.campaigns.values()
+                   if c["state"] in ("running", "paused") and name in self.pool_names(c["plan"])]
+        running = next((c["id"] for c in holders if c["state"] == "running"), None)
+        return running or next((c["id"] for c in holders), None)
 
     def set_worker_browser(self, name: str, browser: str) -> dict:
         """Cambia el modo de Chrome de un trabajador independiente. No con una campaña en marcha o en pausa que lo
