@@ -1186,7 +1186,7 @@ def upload_campaign_rows(cid: str, batch: CampaignRows):
 
 @app.get("/api/campaigns-queue")
 def get_campaign_queue():
-    """Cola de campañas: en orden, si está detenida por una cancelación y qué campaña en pausa la retiene."""
+    """Cola de campañas: en orden y si está detenida por una pausa."""
     return campaigns.queue_view()
 
 class CampaignQueueOrder(BaseModel):
@@ -1202,14 +1202,14 @@ def reorder_campaign_queue(req: CampaignQueueOrder):
 
 @app.post("/api/campaigns-queue/resume")
 def resume_campaign_queue():
-    """Reanuda la cola detenida por una cancelación: arranca la primera si no hay ninguna activa."""
+    """Reanuda la cola detenida por una pausa: arranca la primera si no hay ninguna activa."""
     campaigns.resume_queue()
     return campaigns.queue_view()
 
 @app.post("/api/campaigns/{cid}/{action}")
-def control_campaign(cid: str, action: Literal["start", "pause", "abort", "enqueue", "dequeue"]):
-    """start (o reanudar), pause (la prueba en curso se repetirá), abort (restaura la red y la emisión),
-    enqueue (al final de la cola; arranca ya si no hay ninguna activa) o dequeue (la saca de la cola)."""
+def control_campaign(cid: str, action: Literal["start", "pause", "enqueue", "dequeue"]):
+    """start (o reanudar), pause (restaura la red y la emisión, saca la campaña de la cola y la detiene si quedan
+    otras; la prueba en curso se repetirá al reanudar), enqueue (al final de la cola; arranca ya si no hay ninguna activa) o dequeue (la saca de la cola)."""
     campaign_or_404(cid)
     try:
         getattr(campaigns, action)(cid)

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
 import { CampaignEditor, DEFAULT_PLAYER_OPTIONS, formatDuration } from './CampaignEditor';
 import { CampaignWorker } from './CampaignWorker';
 import { WorkersModal } from './WorkersModal';
@@ -257,7 +257,7 @@ const Monitor: React.FC<{
       setError(String((e as Error).message));
     }
   };
-  const act = async (action: 'start' | 'pause' | 'abort' | 'enqueue' | 'dequeue') => {
+  const act = async (action: 'start' | 'pause' | 'enqueue' | 'dequeue') => {
     try {
       await call(`/api/campaigns/${campaign.id}/${action}`, 'POST');
       setError(null);
@@ -342,7 +342,7 @@ const Monitor: React.FC<{
           {campaign.state === 'running' && (
             <button
               className="flex items-center gap-1 px-3 py-1 rounded bg-amber-700 hover:bg-amber-600 text-white"
-              title="La prueba en curso se repetirá al reanudar. En pausa se pueden tocar la emisión y la red desde el dashboard."
+              title="Detiene la campaña: la red y la emisión vuelven a como estaban al empezar, sale de la cola y, si quedan otras, la cola se detiene hasta reanudarla. Lo medido se conserva y la prueba en curso se repetirá al reanudar."
               onClick={() => act('pause')}
             >
               <Pause className="w-3.5 h-3.5" /> Pausa
@@ -365,15 +365,6 @@ const Monitor: React.FC<{
           >
             <Copy className="w-3.5 h-3.5" /> Duplicar
           </button>
-          {(campaign.state === 'running' || campaign.state === 'paused' || campaign.state === 'ready') && (
-            <button
-              className="flex items-center gap-1 px-3 py-1 rounded bg-rose-800 hover:bg-rose-700 text-white"
-              title="Termina la campaña y deja la red y la emisión como estaban al empezar"
-              onClick={() => act('abort')}
-            >
-              <Square className="w-3.5 h-3.5" /> Cancelar
-            </button>
-          )}
           {(['runs', 'samples', 'ip'] as const).map((name) => (
             <a
               key={name}
@@ -416,15 +407,13 @@ const Monitor: React.FC<{
           </span>
           <span>{optionsText(plan)}</span>
         </div>
-        {multiStream(plan) && (
-          <ul className="text-slate-400">
-            {plan.streams.map((st, i) => (
-              <li key={i}>
-                <span className="text-slate-300">{streamName(i)}:</span> {streamText(st)}
-              </li>
-            ))}
-          </ul>
-        )}
+        <ul className="text-slate-400">
+          {plan.streams.map((st, i) => (
+            <li key={i}>
+              <span className="text-slate-300">{multiStream(plan) ? streamName(i) : 'Emisión'}:</span> {streamText(st)}
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* Prueba en curso y trabajador */}
@@ -515,8 +504,8 @@ const Monitor: React.FC<{
   );
 };
 
-// Cola de campañas (README, 4.8): al terminar la que está en marcha, el servidor arranca la primera. Una
-// cancelación la detiene hasta reanudarla, y una campaña en pausa la retiene hasta reanudarla o cancelarla
+// Cola de campañas (README, 4.8): al terminar la que está en marcha, el servidor arranca la primera. Pausar la que
+// está en marcha la saca de la cola y la detiene hasta reanudarla
 const QueuePanel: React.FC<{ queue: CampaignQueue; onChanged: () => void; onSelect: (id: string) => void }> = ({ queue, onChanged, onSelect }) => {
   const [error, setError] = useState<string | null>(null);
   const run = async (f: () => Promise<unknown>) => {
@@ -543,7 +532,7 @@ const QueuePanel: React.FC<{ queue: CampaignQueue; onChanged: () => void; onSele
         </span>
         {queue.halted ? (
           <>
-            <span className="text-amber-300">Detenida por una cancelación: no arranca ninguna hasta reanudarla.</span>
+            <span className="text-amber-300">Detenida por una pausa: no arranca ninguna hasta reanudarla.</span>
             <button
               className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white"
               onClick={() => run(() => call('/api/campaigns-queue/resume', 'POST'))}
@@ -551,10 +540,6 @@ const QueuePanel: React.FC<{ queue: CampaignQueue; onChanged: () => void; onSele
               <Play className="w-3 h-3" /> Reanudar la cola
             </button>
           </>
-        ) : queue.held_by ? (
-          <span className="text-amber-300">
-            En espera: <span className="font-mono">{queue.held_by}</span> está en pausa; sigue al reanudarla o cancelarla.
-          </span>
         ) : (
           <span className="text-slate-500">Arranca la siguiente al terminar la que está en marcha.</span>
         )}

@@ -484,12 +484,10 @@ export interface Campaign {
   queue_position?: number; // puesto en la cola de campañas (1 = la siguiente)
 }
 
-// Cola de campañas: al terminar una, arranca la primera. halted: detenida por una cancelación hasta reanudarla;
-// held_by: la campaña en pausa que la retiene
+// Cola de campañas: al terminar una, arranca la primera. halted: detenida por una pausa hasta reanudarla
 export interface CampaignQueue {
   ids: string[];
   halted: boolean;
-  held_by: string | null;
   campaigns: { id: string; name: string; state: CampaignState; eta_s: number }[];
 }
 

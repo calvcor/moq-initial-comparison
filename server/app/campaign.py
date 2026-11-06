@@ -36,7 +36,7 @@ distintos (dos del mismo compartirían su cola en el router). La tanda comparte 
 prueba se cierra y se valida por separado, y anota con qué otras se midió (concurrent). Cada prueba guarda el
 trabajador que la midió (workers, worker_info), en todos los modos.
 
-Al terminar (o al cancelar) la red vuelve a quedar sin restricción y la emisión como estaba al empezar.
+Al terminar (o al pausar) la red vuelve a quedar sin restricción y la emisión como estaba al empezar.
 Si el orquestador se reinicia con una campaña en marcha, al arrancar la retoma: la prueba en curso se repite.
 """
 import csv
@@ -233,8 +233,8 @@ class Campaigns:
         self.pool: dict[str, dict] = {}
         # Vista previa de una prueba (preview): su red y su emisión aplicadas, y cómo estaba todo antes
         self.preview: Optional[dict] = None
-        # Cola de campañas (queue.json): al terminar una, el planificador arranca la primera. Una cancelación la
-        # detiene (queue_halted) hasta que se reanude a mano: cancelar es una intervención y no se sigue solo
+        # Cola de campañas (queue.json): al terminar una, el planificador arranca la primera. Pausar la que está en
+        # marcha la detiene (queue_halted) hasta que se reanude a mano: es una intervención y no se sigue solo
         self.queue: list[str] = []
         self.queue_halted = False
         # Los pone main.py
@@ -301,6 +301,8 @@ class Campaigns:
                     run["state"] = "pending"
             # La tanda interrumpida (pruebas en paralelo) vuelve entera a la cola, como una prueba sola
             campaign["batch"] = None
+            # Hasta el 6-11-2026 una campaña en pausa retenía la cola; ahora sale de ella, como las canceladas
+            campaign.pop("holds_queue", None)
             self.campaigns[cid] = campaign
             if campaign["state"] == "running":
                 self.log(campaign, "Orquestador reiniciado: se retoma la campaña y se repite la prueba en curso")
@@ -521,7 +523,7 @@ class Campaigns:
     def delete(self, cid: str):
         with self.lock:
             if cid == self.active:
-                raise RuntimeError("La campaña está en marcha: cancélala antes de borrarla")
+                raise RuntimeError("La campaña está en marcha: ponla en pausa antes de borrarla")
             if cid not in self.campaigns:
                 raise KeyError(cid)
             del self.campaigns[cid]
@@ -539,12 +541,14 @@ class Campaigns:
             campaign = self.campaigns[cid]
             if self.active and self.active != cid:
                 raise RuntimeError(f"Ya hay otra campaña en marcha ({self.active})")
+            if self.active == cid and campaign["state"] != "running":
+                raise RuntimeError("La campaña todavía se está deteniendo: vuelve a intentarlo en unos segundos")
             if campaign["state"] not in ("ready", "paused"):
                 raise RuntimeError(f"La campaña está {campaign['state']}")
             # Antes de anotar lo que habrá que restaurar, se deshace la vista previa que hubiera
             self.stop_preview()
-            # reopened: una campaña terminada o cancelada a la que se le ha pedido repetir una prueba; lo de
-            # entonces ya se restauró y puede haber cambiado
+            # reopened: una campaña en pausa, o terminada o cancelada (antes del 6-11-2026) a la que se le ha pedido
+            # repetir una prueba; lo de entonces ya se restauró y puede haber cambiado
             if campaign["restore"] is None or campaign.pop("reopened", False):
                 # Cómo estaba todo al empezar, para dejarlo igual al terminar (sobrevive a reinicios)
                 snap = self.snapshot()
@@ -556,7 +560,6 @@ class Campaigns:
                 campaign["worker_browsers"] = {n: self.pool[n]["browser"] if n in self.pool else "headless"
                                                for n in self.pool_names(campaign["plan"])}
             campaign["state"] = "running"
-            campaign.pop("holds_queue", None)
             self.log(campaign, "Campaña en marcha")
             self.save(campaign)
             self.active = cid
@@ -566,37 +569,24 @@ class Campaigns:
             self.wake.set()
 
     def pause(self, cid: str):
-        """Detiene la campaña sin restaurar nada; la prueba en curso se repetirá al reanudar."""
+        """Detiene la campaña como antes la cancelación: sale de la cola, la detiene si quedan otras (pausar es una
+        intervención y no se sigue solo) y la red y la emisión vuelven a como estaban al empezar (lo hace el
+        planificador al salir). Lo medido se conserva; al reanudarla se repite la prueba en curso y se anota de nuevo
+        lo que habrá que restaurar."""
         with self.lock:
             campaign = self.campaigns[cid]
             if campaign["state"] != "running":
                 raise RuntimeError(f"La campaña está {campaign['state']}")
-            campaign["state"] = "paused"
-            # Mientras siga en pausa, la cola espera: no arranca la siguiente hasta reanudarla o cancelarla
-            campaign["holds_queue"] = True
-            self.log(campaign, "Campaña en pausa")
-            self.save(campaign)
-            self.wake.set()
-
-    def abort(self, cid: str):
-        with self.lock:
-            campaign = self.campaigns[cid]
-            if campaign["state"] not in ("running", "paused", "ready"):
-                raise RuntimeError(f"La campaña está {campaign['state']}")
             if cid in self.queue:
                 self.queue.remove(cid)
-            # Cancelar la que está en marcha (o en pausa) detiene la cola; quitar una que esperaba en ella, no
-            if (campaign["state"] == "running" or campaign.get("holds_queue")) and self.queue:
+            if self.queue:
                 self.queue_halted = True
-            campaign.pop("holds_queue", None)
             self.save_queue()
-            campaign["state"] = "aborted"
-            self.log(campaign, "Campaña cancelada")
+            campaign["state"] = "paused"
+            campaign["reopened"] = True
+            self.log(campaign, "Campaña en pausa: la red y la emisión vuelven a como estaban")
             self.save(campaign)
             self.wake.set()
-            if cid != self.active and campaign["restore"] is not None:
-                # En pausa no hay planificador que restaure: se hace aquí
-                threading.Thread(target=self.restore, args=(campaign,), daemon=True).start()
 
     # --- cola ---
 
@@ -606,8 +596,7 @@ class Campaigns:
 
     def queue_view(self) -> dict:
         with self.lock:
-            held = [c["id"] for c in self.campaigns.values() if c["state"] == "paused" and c.get("holds_queue")]
-            return {"ids": list(self.queue), "halted": self.queue_halted, "held_by": held[0] if held else None,
+            return {"ids": list(self.queue), "halted": self.queue_halted,
                     "campaigns": [{"id": c, "name": self.campaigns[c]["name"], "state": self.campaigns[c]["state"],
                                    "eta_s": round(self.estimate_s(self.campaigns[c]))} for c in self.queue]}
 
@@ -648,15 +637,12 @@ class Campaigns:
         self.start_next()
 
     def start_next(self):
-        """Arranca la primera de la cola si no hay ninguna activa (ni en pausa con el planificador parado)."""
+        """Arranca la primera de la cola si no hay ninguna activa y la cola no está detenida."""
         while True:
             with self.lock:
                 if self.active or self.queue_halted or not self.queue:
                     return
                 cid = self.queue[0]
-                held = [c["id"] for c in self.campaigns.values() if c["state"] == "paused" and c.get("holds_queue")]
-                if held and cid not in held:
-                    return
                 if not self.queueable(cid):
                     self.queue.pop(0)
                     self.save_queue()
@@ -1190,13 +1176,16 @@ class Campaigns:
             for run in active:
                 self.close(campaign, run, before, [])
 
+        # Se restaura antes de soltarla: mientras, no se puede reanudar ni arrancar otra (anotarían como lo de antes una
+        # red y una emisión a medio restaurar)
+        stopped = campaign["state"] in ("done", "aborted", "paused")
+        if stopped:
+            self.restore(campaign)
         with self.lock:
-            if campaign["state"] in ("done", "aborted", "paused"):
+            if stopped:
                 campaign["current"] = campaign["batch"] = None
                 self.active = None
             self.save(campaign)
-        if campaign["state"] in ("done", "aborted"):
-            self.restore(campaign)
         # La siguiente de la cola parte de lo que acaba de restaurar esta (y lo restaura igual al acabar)
         if campaign["state"] == "done":
             self.start_next()
@@ -1308,7 +1297,7 @@ class Campaigns:
         """Repetición pedida a mano de una prueba terminada, válida o no: una copia al final de la cola.
 
         Si la original era válida, sigue contando hasta que la copia termine válida (supersede): así no se
-        pierde el resultado si la repetición falla. Una campaña terminada o cancelada queda en pausa, para
+        pierde el resultado si la repetición falla. Una campaña terminada (o cancelada, antes del 6-11-2026) queda en pausa, para
         reanudarla y medir lo pendiente."""
         with self.lock:
             campaign = self.campaigns[cid]
