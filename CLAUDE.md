@@ -42,7 +42,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
    objetivos de menos de 1,5 s y en su fase estable tiene un fallo de unidades en dash.js 5 (README, sección 6; la opción L2A (bugfix), `l2afix`, es el
    experimento con ese fallo corregido), que leer el MPEG-TS retiene 1 frame en MediaMTX, 2 en el publicador de MoQ y 3 en FFmpeg, y solo en DASH cae en la etapa de entrada (PROTOCOLOS, 6.4), y que
    el jitter de netem desordena los paquetes (castiga casi solo a QUIC: README, sección 5), con Tears of Steel, que cambian a la vez contenido y cadencia (24 fps: frames de 41,7 ms; README, 3.1a), y con la
-   cámara como fuente, que el contenido no se repite y la latencia no incluye el tramo cámara → servidor, y si el relay usa certificado autofirmado con huella o uno de Let's Encrypt (`docker-compose.tls.yml`; README, sección 1).
+   cámara como fuente, que el contenido no se repite y la latencia no incluye el tramo cámara → servidor, que las pruebas en paralelo comparten servidor (relay, SFU, publicador y CPU) aunque cada una tenga su cola en el router, y si el relay usa certificado autofirmado con huella o uno de Let's Encrypt (`docker-compose.tls.yml`; README, sección 1).
 5. **Distingue medida de deducción** al informar. Si algo sale del código y no de una prueba, dilo.
 
 ## Arquitectura en una línea por pieza
@@ -55,10 +55,10 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 | Publicador MoQ | `moq import ts` (moq-cli) en el orquestador | El **publicador**; no confundir con el relay |
 | Relay MoQ | contenedor `moq-relay` | Solo reparte; el catálogo lo escribe el publicador |
 | WebRTC | `sfu/` (mediasoup) y `server/app/rtprelay.py`; o MediaMTX | `RTC_SERVER` en el `.env`. `mediasoup` (por defecto): FFmpeg pasa la escalera a RTP sin recodificar, el relay la junta en un socket y el SFU elige la capa (README, 3.4c). `mediamtx` (versión anterior): una sola calidad por WHEP; lee el MPEG-TS por UDP de la compuerta, y `RTC_INGEST=rtsp` vuelve al FFmpeg + RTSP (README, 3.4b) |
-| Router | `router/agent.py` | DNAT + tc/netem, una cola por protocolo y sentido |
+| Router | `router/agent.py` | DNAT + tc/netem, una cola por protocolo y sentido, con 8 plazas por cliente (marca por IP) que solo usan las pruebas en paralelo (README, sección 5) |
 | Entrada HTTP | `edge/nginx.conf` | Único puerto HTTP (80) |
 | Dashboard | `web/` (React + Vite) | Reproductores (cada uno se puede apagar; el CSV registra los activos en `players`), medidor, esquema de etapas, CSV |
-| Campañas | `server/app/campaign.py`, `web/src/components/Campaign*.tsx`, `scripts/campaign-worker.mjs` | Baterías desatendidas; el servidor lleva red y emisión, el navegador (la página o Chrome headless con el script) es el trabajador (README, 4.8). Con `workers` en el plan, un trabajador independiente por reproductor (`--name`), headless o en quiosco, con la ventana de la calidad más alta (README 4.8, trabajadores independientes); con `parallel` y `worker_pool`, cada prueba toma uno libre y se miden a la vez las de la misma red y objetivo; sin ellos, todo como antes. Cada prueba guarda su trabajador. Mientras corre, la API manual responde 409 |
+| Campañas | `server/app/campaign.py`, `web/src/components/Campaign*.tsx`, `scripts/campaign-worker.mjs` | Baterías desatendidas; el servidor lleva red y emisión, el navegador (la página o Chrome headless con el script) es el trabajador (README, 4.8). Con `workers` en el plan, un trabajador independiente por reproductor (`--name`), headless o en quiosco, con la ventana de la calidad más alta (README 4.8, trabajadores independientes); con `parallel` y `worker_pool`, cada prueba toma uno libre y se miden a la vez las de la misma emisión, cada trabajador con su red en su propia cola del router (por IP: dos con la misma no van a la vez); sin ellos, todo como antes. Cada prueba guarda su trabajador. Mientras corre, la API manual responde 409 |
 | Versiones | `server/app/versions.py`, `web/src/components/VersionsPanel.tsx` | Instalado frente a última publicada |
 
 ## Desarrollo local
