@@ -48,6 +48,63 @@ const TARGETS: Record<Target, { label: string; help: string }> = {
   },
 };
 
+// Copia un texto al portapapeles; sin portapapeles (origen no seguro), seleccionando un textarea
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_) {
+    const area = document.createElement('textarea');
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    area.remove();
+  }
+}
+
+/** Un comando con su botón de copiar. */
+const CommandLine: React.FC<{ label: string; command: string; help?: string }> = ({ label, command, help }) => {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-2" title={help}>
+      <span className="w-20 shrink-0 text-slate-500">{label}</span>
+      <code className="flex-1 bg-black/60 border border-slate-800 rounded px-2 py-1 font-mono text-slate-200 break-all select-all">{command}</code>
+      <button
+        className="px-1.5 py-1 rounded border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500"
+        title="Copiar"
+        onClick={async () => {
+          await copyText(command);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+      >
+        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+};
+
+// Los comandos que imprime el instalador al terminar (scripts/install-worker.sh), para gestionar el trabajador ya
+// instalado en esa máquina. En un servidor, como root; en un PC con pantalla, con el usuario que lo instaló
+function manageCommands(target: Target, display: boolean): { label: string; command: string; help?: string }[] {
+  if (target === 'terminal') return [];
+  const ctl = target === 'desktop' ? 'systemctl --user' : 'systemctl';
+  const log = target === 'desktop' ? 'journalctl --user' : 'journalctl';
+  const xvfb = target === 'server' && display;
+  return [
+    { label: 'Estado', command: `${ctl} status moq-worker` },
+    { label: 'Registro', command: `${log} -u moq-worker -f`, help: 'Lo que escribe el trabajador, en directo (Ctrl+C sale)' },
+    { label: 'Reiniciar', command: `${ctl} restart moq-worker`, help: 'Cierra Chrome y lo vuelve a abrir' },
+    { label: 'Parar', command: `${ctl} stop moq-worker`, help: 'Hasta arrancarlo otra vez o reiniciar la máquina (o la sesión)' },
+    { label: 'Arrancar', command: `${ctl} start moq-worker` },
+    {
+      label: 'Quitar',
+      command: `${ctl} disable --now moq-worker${xvfb ? ' moq-worker-xvfb' : ''}`,
+      help: 'Lo para y deja de arrancar con la máquina (o la sesión). No borra Chrome, Node ni el usuario; después, bórralo del registro aquí abajo',
+    },
+  ];
+}
+
 /** Comando para instalar o lanzar un trabajador (scripts/install-worker.sh o el script del trabajador, que sirve el orquestador). */
 const AddWorker: React.FC = () => {
   const origin = window.location.origin;
@@ -65,17 +122,7 @@ const AddWorker: React.FC = () => {
       : `curl -fsSL ${origin}/api/worker/install.sh | bash -s -- ${args}` +
         (target === 'desktop' ? ' --desktop' : display ? ' --display' : '');
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-    } catch (_) {
-      // Sin portapapeles (origen no seguro): se copia seleccionando el texto
-      const area = document.createElement('textarea');
-      area.value = command;
-      document.body.appendChild(area);
-      area.select();
-      document.execCommand('copy');
-      area.remove();
-    }
+    await copyText(command);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -130,6 +177,22 @@ const AddWorker: React.FC = () => {
           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
         </button>
       </div>
+      <p className="text-slate-500">
+        Mismo nombre en dos máquinas: el primero que se conecta se lo queda y el otro espera sin medir; si el primero se desconecta, el otro ocupa su
+        sitio con ese nombre. Aquí abajo se avisa cuando pasa. Usa un nombre por máquina.
+      </p>
+      {target === 'terminal' ? (
+        <p className="text-slate-400">Para gestionarlo: Ctrl+C en esa terminal lo cierra (y su Chrome); volver a ejecutar el comando lo actualiza y lo abre otra vez.</p>
+      ) : (
+        <div className="space-y-1">
+          <div className="text-slate-300">
+            Gestionarlo después, en esa máquina{target === 'desktop' ? ', con tu usuario (sin sudo)' : ', como root'}:
+          </div>
+          {manageCommands(target, display).map((c) => (
+            <CommandLine key={c.label} {...c} />
+          ))}
+        </div>
+      )}
       {LOCAL.includes(window.location.hostname) && (
         <p className="text-amber-300">Esta página va por {window.location.hostname}: otra máquina no llegará ahí. Ábrela por la dirección del servidor para copiar el comando.</p>
       )}
@@ -222,6 +285,12 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                       <div className={w.connected ? 'text-emerald-300' : 'text-slate-400'}>{w.connected ? 'Conectado' : 'Sin conexión'}</div>
                       <div className="text-slate-500">Último latido {ago(w.seen_ms)}</div>
                       {w.locked && <div className="text-amber-300">Lo usa la campaña {w.locked}</div>}
+                      {w.rivals?.map((r) => (
+                        <div key={r.id} className="text-rose-300" title={r.user_agent ?? undefined}>
+                          Otro navegador usa este nombre{r.ip ? ` desde ${r.ip}` : ''} (<span className="font-mono">{r.id}</span>): espera sin medir y, si este se
+                          desconecta, ocupará su sitio. Cambia el nombre de uno de los dos.
+                        </div>
+                      ))}
                       {w.connected && w.outdated && (
                         <div className="text-amber-300" title="No recibe pruebas hasta tener la web que se sirve. Recarga sola entre pruebas; si es de antes del 6-11-2026, hay que reiniciarla (README 4.8)">
                           {w.info.build ? `Web desactualizada (${String(w.info.build)})` : 'Web anterior al 6-11-2026: reinícialo'}

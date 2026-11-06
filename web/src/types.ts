@@ -470,6 +470,9 @@ export interface PoolWorker {
   // Conectado con otra construcción de la web que la que se sirve (info.build frente a info.latest_build) o sin
   // decirla (una pestaña de antes del 6-11-2026): no recibe pruebas hasta recargar (README 4.8)
   outdated?: boolean;
+  // Otros navegadores con el mismo nombre que laten mientras este lo tiene: esperan sin medir y, si este se desconecta,
+  // uno de ellos ocupa su sitio con el mismo nombre (desde el 6-11-2026)
+  rivals?: { id: string; ip: string | null; user_agent: string | null; seen_ms: number }[];
 }
 
 export interface Campaign {

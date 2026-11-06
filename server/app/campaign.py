@@ -441,6 +441,9 @@ class Campaigns:
                 out.append({"name": name, "id": w["id"], "connected": connected, "seen_ms": int(w["seen"] * 1000) or None,
                             "mounted": w["mounted"] if connected else None, "info": w["info"], "browser": w["browser"],
                             "busy": self.active if name in used else None, "task": task, "locked": self.locked_by(name),
+                            # Otros navegadores con este nombre, esperando a que el que lo tiene se desconecte
+                            "rivals": [{"id": k, "ip": v["ip"], "user_agent": v["user_agent"], "seen_ms": int(v["seen"] * 1000)}
+                                       for k, v in (w.get("rivals") or {}).items() if now - v["seen"] < WORKER_TIMEOUT_S],
                             "outdated": connected and self.outdated(w["info"])})
             return out
 
@@ -725,9 +728,22 @@ class Campaigns:
             now = time.time()
             entry = self.pool.get(name) if name else self.worker
             if entry is not None and entry["id"] not in (None, worker_id) and now - entry["seen"] < WORKER_TIMEOUT_S:
+                # Otro navegador con el mismo nombre (o un segundo trabajador único): espera sin montar nada, y se anota
+                # para que el panel lo diga. Si el que lo tiene deja de latir, este ocupa su sitio con el mismo nombre
+                rivals = entry.setdefault("rivals", {})
+                if worker_id not in rivals:
+                    logger.warning(f"Campañas: otro navegador ({worker_id}, {ip}) usa el nombre {name or '(trabajador único)'}, "
+                                   f"que ya tiene {entry['id']}: espera")
+                rivals[worker_id] = {"seen": now, "ip": ip, "user_agent": info.get("user_agent")}
                 return {"busy": True, "worker": entry["id"], "assignment": None}
             if entry is None or entry["id"] != worker_id:
-                logger.info(f"Campañas: trabajador {name or worker_id} conectado" + (f" ({worker_id})" if name else ""))
+                previous = entry and entry["id"]
+                logger.info(f"Campañas: trabajador {name or worker_id} conectado" + (f" ({worker_id})" if name else "")
+                            + (f", en lugar de {previous}" if name and previous else ""))
+            if entry is not None:
+                # Quien tiene el nombre ya no es de los que esperan; los que llevan un rato sin latir, tampoco
+                rivals = entry.get("rivals") or {}
+                entry["rivals"] = {k: v for k, v in rivals.items() if k != worker_id and now - v["seen"] < WORKER_TIMEOUT_S}
             if name and entry is None:
                 entry = self.pool[name] = self.new_worker()
                 self.save_pool()
