@@ -192,6 +192,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
     let metricsInterval: any = null;
     let tracer: MoqTracer | null = null;
     let bufferMeter: MoqBufferMeter | null = null;
+    let stopProbeWatch: (() => void) | null = null;
     const rate = new RateWindow();
     const networkRate = new RateWindow();
     let networkSource: PlayerMetrics['networkSource'];
@@ -237,6 +238,11 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
             : undefined,
         });
         connectionRef.current = connection;
+        // @moq/net solo abre el canal PROBE con el relay mientras alguien observa connection.probe, y @moq/watch deja de
+        // observarlo cuando se le pide una calidad por nombre (el sondeo o una calidad fijada a mano): sin esto, en esos
+        // casos no llegaría ninguna estimación al panel ni al CSV. Observarla solo mantiene abierto ese canal, por el que
+        // el relay informa de su estimación de vez en cuando; no cambia qué calidad se elige ni cómo envía (README 6).
+        stopProbeWatch = connection.probe.subscribe(() => {});
 
         // 3. Instanciar el reproductor oficial @moq/watch con jitter buffer y control reactivo
         const delaySignal = new Signal<Watch.Delay>(toDelay(targetLatencyMs));
@@ -396,6 +402,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
       probeAbrRef.current = null;
       tracer?.close();
       bufferMeter?.close();
+      stopProbeWatch?.();
       if (playerRef.current) {
         try {
           playerRef.current.close();
