@@ -222,6 +222,11 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                       <div className={w.connected ? 'text-emerald-300' : 'text-slate-400'}>{w.connected ? 'Conectado' : 'Sin conexión'}</div>
                       <div className="text-slate-500">Último latido {ago(w.seen_ms)}</div>
                       {w.locked && <div className="text-amber-300">Lo usa la campaña {w.locked}</div>}
+                      {w.connected && w.outdated && (
+                        <div className="text-amber-300" title="No recibe pruebas hasta tener la web que se sirve. Recarga sola entre pruebas; si es de antes del 6-11-2026, hay que reiniciarla (README 4.8)">
+                          {w.info.build ? `Web desactualizada (${String(w.info.build)})` : 'Web anterior al 6-11-2026: reinícialo'}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-3">
                       {w.task ? (

@@ -420,7 +420,7 @@ class Campaigns:
     def worker_view(self) -> dict:
         connected = self.worker["id"] is not None and time.time() - self.worker["seen"] < WORKER_TIMEOUT_S
         return {"connected": connected, "id": self.worker["id"], "seen_ms": int(self.worker["seen"] * 1000),
-                "mounted": self.worker["mounted"], "info": self.worker["info"]}
+                "mounted": self.worker["mounted"], "info": self.worker["info"], "outdated": connected and self.outdated(self.worker["info"])}
 
     def pool_view(self) -> list[dict]:
         """Los trabajadores independientes registrados. busy: los usa la campaña activa; locked: una campaña en marcha
@@ -440,7 +440,8 @@ class Campaigns:
                                 "phase": run["state"], "players": (self.run_workers(campaign["plan"], run) or {}).get(name)}
                 out.append({"name": name, "id": w["id"], "connected": connected, "seen_ms": int(w["seen"] * 1000) or None,
                             "mounted": w["mounted"] if connected else None, "info": w["info"], "browser": w["browser"],
-                            "busy": self.active if name in used else None, "task": task, "locked": self.locked_by(name)})
+                            "busy": self.active if name in used else None, "task": task, "locked": self.locked_by(name),
+                            "outdated": connected and self.outdated(w["info"])})
             return out
 
     def locked_by(self, name: str) -> Optional[str]:
@@ -781,6 +782,24 @@ class Campaigns:
         entry = self.pool.get(name)
         return entry is not None and entry["id"] is not None and time.time() - entry["seen"] < WORKER_TIMEOUT_S
 
+    @staticmethod
+    def outdated(info: dict) -> bool:
+        """El trabajador tiene una construcción de la web distinta de la que se sirve (build frente a latest_build, que
+        lee de /build.json en cada latido), o no la dice: una pestaña cargada antes del 6-11-2026, de la que no se sabe
+        con qué código mide. El 6-11-2026 se vio que los trabajadores medían con bundles de días antes, que no conocían
+        opciones del plan (README 4.8). La pestaña recarga sola entre pruebas; una de antes hay que reiniciarla a mano."""
+        build = info.get("build")
+        latest = info.get("latest_build")
+        return build is None or (latest is not None and build != latest)
+
+    def pool_ready(self, name: str) -> bool:
+        """Puede empezar una prueba: conectado y con la web al día. Con una prueba ya montada basta con pool_alive:
+        si la web cambia a mitad, la termina con el código con el que la empezó (queda en web_build)."""
+        return self.pool_alive(name) and not self.outdated(self.pool[name]["info"])
+
+    def worker_ready(self) -> bool:
+        return self.worker_alive() and not self.outdated(self.worker["info"])
+
     def run_alive(self, plan: dict, run: dict) -> bool:
         """Están conectados los trabajadores que necesita la prueba."""
         workers = self.run_workers(plan, run)
@@ -995,7 +1014,7 @@ class Campaigns:
         out, ips = [], set()
         for name in sorted(self.pool_names(plan)):
             ip = (self.pool.get(name) or {}).get("info", {}).get("ip")
-            if self.pool_alive(name) and ip and ip not in ips:
+            if self.pool_ready(name) and ip and ip not in ips:
                 out.append(name)
                 ips.add(ip)
         return out
@@ -1006,7 +1025,7 @@ class Campaigns:
         if not self.independent(plan):
             return {}
         if not plan.get("parallel"):
-            if not all(self.pool_alive(plan["workers"][p]) for r in batch for p in r["players"]):
+            if not all(self.pool_ready(plan["workers"][p]) for r in batch for p in r["players"]):
                 return None
             return {r["id"]: {p: plan["workers"][p] for p in r["players"]} for r in batch}
         free = self.parallel_free(plan)
@@ -1049,7 +1068,7 @@ class Campaigns:
         """Con qué trabajador se midió la prueba, para todos los modos: el independiente de cada reproductor o el
         trabajador único (la pestaña o el script sin nombre), con lo que anunciaba al montar."""
         workers = self.run_workers(plan, run)
-        pick = lambda info: {k: info.get(k) for k in ("user_agent", "browser", "decode", "display", "viewport", "ip") if k in info}
+        pick = lambda info: {k: info.get(k) for k in ("user_agent", "browser", "decode", "display", "viewport", "ip", "build") if k in info}
         if workers is None:
             return {self.worker["id"] or "?": pick(self.worker["info"])}
         return {n: pick(self.pool.get(n, {}).get("info") or {}) for n in workers}
@@ -1074,6 +1093,7 @@ class Campaigns:
     def drive(self, campaign: dict):
         plan = campaign["plan"]
         applied_stream = None
+        outdated_logged: list = []
         while True:
             with self.lock:
                 if campaign["state"] != "running":
@@ -1086,7 +1106,7 @@ class Campaigns:
                     self.save(campaign)
                     break
                 assigned = self.assign_batch(plan, batch)
-                if assigned is not None and (assigned or self.worker_alive()):
+                if assigned is not None and (assigned or self.worker_ready()):
                     campaign["current"] = batch[0]["id"]
                     campaign["batch"] = [r["id"] for r in batch] if len(batch) > 1 else None
                     for run in batch:
@@ -1112,7 +1132,16 @@ class Campaigns:
             # Sin trabajadores no tiene sentido tocar nada: se espera a que se conecten los que necesita la
             # siguiente prueba (el trabajador único o, con trabajadores independientes, los de sus reproductores)
             if batch is None:
-                if not self.wait(3600 * 24, campaign, lambda: self.enough_workers(campaign) and (self.independent(plan) or self.worker_alive())):
+                # Si espera por trabajadores conectados pero con la web desactualizada, se dice una vez en el registro
+                with self.lock:
+                    if self.independent(plan):
+                        stale = [n for n in sorted(self.pool_names(plan)) if self.pool_alive(n) and self.outdated(self.pool[n]["info"])]
+                    else:
+                        stale = [self.worker["id"]] if self.worker_alive() and self.outdated(self.worker["info"]) else []
+                if stale and stale != outdated_logged:
+                    self.log(campaign, f"Esperando a que recarguen la web (desactualizada; una pestaña de antes del 6-11-2026 hay que reiniciarla): {', '.join(stale)}")
+                outdated_logged = stale
+                if not self.wait(3600 * 24, campaign, lambda: self.enough_workers(campaign) and (self.independent(plan) or self.worker_ready())):
                     break
                 continue
 
@@ -1428,6 +1457,7 @@ class Campaigns:
                 worker = self.player_workers(campaign, run).get(player)
                 info = (run.get("worker_info") or {}).get(worker) or {}
                 row.update(worker=worker, worker_ip=info.get("ip"), worker_user_agent=info.get("user_agent"), worker_decode=info.get("decode"),
+                           web_build=info.get("build"),
                            worker_browser=self.browser_of(campaign, worker) if worker and self.independent(campaign["plan"]) else None)
                 f.write(json.dumps(row) + "\n")
 

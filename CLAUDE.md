@@ -96,7 +96,9 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 - Actualizar: el servidor no tiene credenciales de GitHub, así que `git pull` falla; el código llega con un
   `git bundle` copiado por scp (`git pull --ff-only /tmp/x.bundle main`). Después, reconstruir **solo lo que haya cambiado**:
   - web: `docker compose up -d --build --no-deps web` (**sin `--no-deps` también recrea el
-    orquestador**);
+    orquestador**). Los trabajadores de campañas recargan solos entre pruebas al ver otra `/build.json`, y el
+    orquestador no les da pruebas mientras tanto; uno cargado antes del 6-11-2026 no lo hace y hay que reiniciarlo
+    (README 4.8, «La web, al día»: hasta entonces medían días con un bundle viejo);
   - orquestador: `docker compose up -d --build --no-deps orchestrator`.
 - Cualquier salida nueva de la fuente maestra comparte proceso con la escalera y puede frenarla: FFmpeg
   hace avanzar todas las salidas a la par. Mide el retraso del codificador (`POST /api/trace`) con y sin

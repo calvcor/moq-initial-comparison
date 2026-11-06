@@ -445,8 +445,9 @@ const Monitor: React.FC<{
           {plan.worker_pool ? (
             // Pruebas en paralelo: el grupo de trabajadores, cada uno con lo que mide
             (campaign.workers ?? []).map((w) => (
-              <span key={w.name} className={w.connected ? 'text-emerald-300' : 'text-amber-300'}>
+              <span key={w.name} className={w.connected && !w.outdated ? 'text-emerald-300' : 'text-amber-300'}>
                 {w.name}: {w.connected ? (w.task ? `${w.task.players?.join('|') ?? '?'} · ${w.task.run}` : 'libre') : 'sin conexión'}
+                {w.connected && w.outdated && ' · web desactualizada'}
               </span>
             ))
           ) : plan.workers ? (
@@ -455,14 +456,16 @@ const Monitor: React.FC<{
               const name = plan.workers![p]!;
               const w = campaign.workers?.find((x) => x.name === name);
               return (
-                <span key={p} className={w?.connected ? 'text-emerald-300' : 'text-amber-300'}>
+                <span key={p} className={w?.connected && !w.outdated ? 'text-emerald-300' : 'text-amber-300'}>
                   {p}: {name} {w?.connected ? (w.mounted ? `· ${w.mounted}` : '· conectado') : '· sin conexión'}
+                  {w?.connected && w.outdated && ' · web desactualizada'}
                 </span>
               );
             })
           ) : (
-            <span className={worker?.connected ? 'text-emerald-300' : 'text-amber-300'}>
+            <span className={worker?.connected && !worker.outdated ? 'text-emerald-300' : 'text-amber-300'}>
               {worker?.connected ? `Trabajador ${worker.id} conectado` : 'Esperando a un trabajador: abre /campaign?worker=1 en una pestaña visible'}
+              {worker?.connected && worker.outdated && ' · web desactualizada: recárgalo'}
             </span>
           )}
         </div>

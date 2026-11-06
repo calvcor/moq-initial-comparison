@@ -152,6 +152,8 @@ export function buildSampleRow({ epoch, epochStartedAt, active, metrics, status,
   time_iso: new Date().toISOString(),
   epoch: epoch,
   players: PLAYER_IDS.filter((id) => active[id]).join('|'),
+  // La construcción de la web que midió la fila (vite.config.ts): un trabajador con código viejo se ve aquí
+  web_build: __WEB_BUILD__,
   fullscreen: (document.fullscreenElement as HTMLElement | null)?.dataset.player ?? null,
   audio: audioPlayer,
   rtc_audio: status?.config.rtc_audio ?? null,

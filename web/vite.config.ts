@@ -33,9 +33,25 @@ function dashjsL2aFix(): Plugin {
   }
 }
 
+// Identificador de esta construcción de la web: la hora en que se construyó (en desarrollo, "dev"). Va dentro del
+// código (__WEB_BUILD__) y en /build.json, que se sirve sin caché: un trabajador de campañas compara los dos y, si la
+// web ha cambiado, recarga entre pruebas (README 4.8). Sin él, un trabajador seguía días con el código que cargó.
+function webBuild(id: string): Plugin {
+  return {
+    name: 'web-build',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'build.json', source: JSON.stringify({ build: id }) })
+    },
+  }
+}
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => {
+  const build = command === 'build' ? new Date().toISOString().slice(0, 19) + 'Z' : 'dev'
+  return {
   define: {
+    __WEB_BUILD__: JSON.stringify(build),
     // @moq/net y @moq/hang son dependencias de @moq/watch, pero contienen la parte de red y el catálogo: también
     // condicionan las medidas, y pueden cambiar sin que cambie @moq/watch
     __PLAYER_VERSIONS__: JSON.stringify({
@@ -50,9 +66,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
     dashjsL2aFix(),
+    webBuild(build),
   ],
   server: {
     port: 5173,
     host: true,
+  }
   }
 })

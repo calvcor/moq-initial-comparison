@@ -74,6 +74,14 @@ server {
     add_header Cross-Origin-Opener-Policy same-origin always;
     add_header Cross-Origin-Embedder-Policy require-corp always;
 
+    # La construcción que se sirve: los trabajadores de campañas la comparan con la suya en cada latido
+    location = /build.json {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-store" always;
+        add_header Cross-Origin-Opener-Policy same-origin always;
+        add_header Cross-Origin-Embedder-Policy require-corp always;
+    }
+
     location / {
         root /usr/share/nginx/html;
         index index.html;

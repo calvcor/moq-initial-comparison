@@ -28,6 +28,38 @@ const MAX_PENDING_ROWS = 600; // lo que admite el servidor por lote
 const MOUNTED_PHASES = new Set(['mounting', 'warmup', 'measuring', 'closing']);
 // Lo que un trabajador independiente espera a que su ventana tenga el tamaño pedido antes de montar igualmente
 const VIEWPORT_WAIT_MS = 10000;
+// Construcción de la web que se sirve ahora (/build.json, sin caché): si no es la de esta pestaña, la pestaña recarga
+// en cuanto no tenga prueba montada, y mientras tanto el servidor no le da ninguna (README 4.8). Sin esto, un
+// trabajador seguía con el código que cargó al arrancar: el 6-11-2026 se vio que medían con bundles de días antes.
+const RELOAD_KEY = 'testbed.workerReload';
+// Recargas seguidas hacia la misma construcción sin conseguirla (una caché que devuelve la página vieja): se deja de
+// intentar y queda a la vista como desactualizado
+const MAX_RELOADS = 3;
+
+async function servedBuild(): Promise<string | null> {
+  try {
+    const res = await fetch('/build.json', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return typeof body?.build === 'string' ? body.build : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Recarga para coger la construcción servida, salvo si ya se intentó MAX_RELOADS veces sin conseguirla. */
+function reloadTo(build: string): boolean {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(RELOAD_KEY) ?? 'null') as { build: string; n: number } | null;
+    const n = saved?.build === build ? saved.n + 1 : 1;
+    if (n > MAX_RELOADS) return false;
+    sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ build, n }));
+  } catch (_) {
+    // Sin sessionStorage no se pueden contar los intentos: se recarga igual
+  }
+  window.location.reload();
+  return true;
+}
 
 declare global {
   interface Window {
@@ -97,6 +129,7 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
   const pendingRef = useRef<{ campaign: string; run: string; rows: SampleRow[] }[]>([]);
   const [now, setNow] = useState(Date.now());
   const [lastG2g, setLastG2g] = useState<Partial<Record<PlayerId, number | null>>>({});
+  const [latestBuild, setLatestBuild] = useState<string | null>(null);
 
   // Reloj del servidor, estado de la emisión y versiones, como el dashboard
   useEffect(() => {
@@ -143,7 +176,18 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
   // Latido: dice qué tiene montado y recibe lo que debe tener
   useEffect(() => {
     let stopped = false;
+    let reloading = false;
     const beat = async () => {
+      // La construcción servida, antes de latir: si ha cambiado y no hay prueba montada, se recarga ya
+      const latest = __WEB_BUILD__ === 'dev' ? null : await servedBuild();
+      const stale = latest !== null && latest !== __WEB_BUILD__;
+      if (!stopped) setLatestBuild(latest);
+      // Sin prueba montada y con todas las filas subidas: recargar antes perdería las últimas de la prueba anterior
+      const idle = !mountedRef.current && pendingRef.current.every((b) => !b.rows.length);
+      if (stale && idle && !reloading) {
+        reloading = reloadTo(latest);
+        if (reloading) return;
+      }
       const m = mountedRef.current;
       try {
         const res = await fetch('/api/campaigns-worker', {
@@ -157,6 +201,9 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
             info: {
               user_agent: navigator.userAgent,
               hidden: document.hidden,
+              // El servidor no le da pruebas mientras no coincidan (o si no las dice: una pestaña de antes de esto)
+              build: __WEB_BUILD__,
+              latest_build: latest,
               ...(name ? { viewport: `${window.innerWidth}x${window.innerHeight}`, dpr: window.devicePixelRatio, browser: BROWSER, display: HAS_DISPLAY, decode: DECODE } : {}),
             },
           }),
@@ -318,6 +365,11 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
               </span>
             )}
           </>
+        )}
+        {latestBuild && latestBuild !== __WEB_BUILD__ && (
+          <span className="text-amber-300">
+            Web desactualizada ({__WEB_BUILD__}; se sirve {latestBuild}): {mounted ? 'recargará al terminar la prueba' : 'no recibe pruebas hasta recargar'}
+          </span>
         )}
         {error && <span className="text-rose-300">Sin servidor: {error}</span>}
         <span className="text-slate-500 ml-auto">Deja esta pestaña visible: oculta, la prueba no vale.</span>

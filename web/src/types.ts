@@ -210,6 +210,7 @@ export interface SampleRow {
   time_iso: string;
   epoch: number; // se incrementa en cada reconfiguración del pipeline o de la red, o al activar o apagar un reproductor
   players: string; // reproductores activos en esa muestra, p. ej. dash|moq
+  web_build: string; // construcción de la web que la midió (la hora en que se construyó, o dev; desde el 6-11-2026)
   fullscreen: string | null; // reproductor a pantalla completa en ese momento (dash, moq o rtc), o vacío
   audio: string | null; // reproductor con el sonido activado (dash, moq o rtc), o vacío si todos van silenciados
   rtc_audio: boolean | null; // la rama WebRTC lleva audio (opción del servidor)
@@ -444,6 +445,7 @@ export interface CampaignWorkerState {
   seen_ms: number;
   mounted: string | null;
   info: Record<string, unknown>;
+  outdated?: boolean; // conectado con otra construcción de la web que la servida, o sin decirla: no recibe pruebas
 }
 
 // Chrome de un trabajador independiente: headless o una ventana en quiosco (necesita pantalla)
@@ -464,6 +466,9 @@ export interface PoolWorker {
   busy: string | null; // la campaña en marcha que lo usa
   locked: string | null; // una campaña en marcha o en pausa lo usa: no se borra ni cambia de modo
   task: { campaign: string; campaign_name: string; run: string; phase: string; players: PlayerId[] | null } | null;
+  // Conectado con otra construcción de la web que la que se sirve (info.build frente a info.latest_build) o sin
+  // decirla (una pestaña de antes del 6-11-2026): no recibe pruebas hasta recargar (README 4.8)
+  outdated?: boolean;
 }
 
 export interface Campaign {
