@@ -143,7 +143,7 @@ const AddWorker: React.FC = () => {
     setTimeout(() => setCopied(false), 1500);
   };
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+    <div className="shrink-0 rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2">
       <div className="font-semibold text-slate-200">Añadir un trabajador</div>
       <div className="flex flex-wrap gap-1">
         {(Object.keys(TARGETS) as Target[]).map((t) => (
@@ -259,9 +259,10 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-6 overflow-y-auto" onClick={onClose}>
-      <div className="w-full max-w-7xl bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3 text-xs" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-3">
+    // El panel cabe en la ventana: la cabecera y el bloque de añadir quedan fijos y solo se desplaza la lista
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-6" onClick={onClose}>
+      <div className="w-full max-w-7xl max-h-full overflow-y-auto flex flex-col bg-slate-900 border border-slate-700 rounded-xl p-4 gap-3 text-xs" onClick={(e) => e.stopPropagation()}>
+        <div className="shrink-0 flex items-center gap-3">
           <h2 className="text-sm font-semibold text-white">Trabajadores independientes</h2>
           <span className="text-slate-500">Un navegador por reproductor, lanzado con scripts/campaign-worker.mjs --name</span>
           <button className="ml-auto p-1 text-slate-400 hover:text-white" onClick={onClose} title="Cerrar (Esc)">
@@ -275,8 +276,9 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         ) : !workers.length ? (
           <p className="text-slate-400">Ninguno registrado. Se registran solos al anunciarse por primera vez (comando de arriba).</p>
         ) : (
+          <div className="min-h-[10rem] overflow-y-auto -mx-1 px-1">
           <table className="w-full text-left">
-            <thead className="text-slate-500">
+            <thead className="text-slate-500 [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-900">
               <tr>
                 <th className="py-1 pr-3 font-medium">Trabajador</th>
                 <th className="py-1 pr-3 font-medium">Estado</th>
@@ -372,6 +374,7 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
