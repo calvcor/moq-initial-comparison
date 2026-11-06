@@ -252,6 +252,24 @@ const Monitor: React.FC<{
   };
   // Nombre en edición; null si no se está editando
   const [draftName, setDraftName] = useState<string | null>(null);
+  // Descripción en edición, igual
+  const [draftDescription, setDraftDescription] = useState<string | null>(null);
+  // Al pasar a otra campaña no se arrastra lo que se estuviera escribiendo en la anterior
+  useEffect(() => {
+    setDraftName(null);
+    setDraftDescription(null);
+  }, [campaign.id]);
+  const saveDescription = async () => {
+    if (draftDescription === null) return;
+    try {
+      await call(`/api/campaigns/${campaign.id}`, 'PATCH', { description: draftDescription });
+      setDraftDescription(null);
+      setError(null);
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
   const saveName = async () => {
     const name = draftName?.trim();
     if (!name || name === campaign.name) return setDraftName(null);
@@ -413,6 +431,44 @@ const Monitor: React.FC<{
           )}
         </div>
       </div>
+
+      {/* Descripción: texto libre, editable en cualquier estado (como el nombre) */}
+      {draftDescription === null ? (
+        <div className="group flex items-start gap-1.5">
+          {plan.description ? (
+            <p className="text-slate-300 whitespace-pre-wrap break-words max-w-4xl leading-relaxed">{plan.description}</p>
+          ) : (
+            <span className="text-slate-600">Sin descripción</span>
+          )}
+          <button className="text-slate-500 hover:text-indigo-300 shrink-0 mt-0.5" title={plan.description ? 'Cambiar la descripción' : 'Añadir una descripción'} onClick={() => setDraftDescription(plan.description ?? '')}>
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1 max-w-4xl">
+          <textarea
+            autoFocus
+            maxLength={20000}
+            className="w-full min-h-[6rem] resize-y bg-slate-950 border border-indigo-500 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none"
+            value={draftDescription}
+            placeholder="Qué se quiere ver, hipótesis, qué cambia respecto a otras campañas…"
+            onChange={(e) => setDraftDescription(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveDescription();
+              if (e.key === 'Escape') setDraftDescription(null);
+            }}
+          />
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white" onClick={saveDescription}>
+              <Check className="w-3.5 h-3.5" /> Guardar
+            </button>
+            <button className="px-2.5 py-0.5 rounded border border-slate-700 text-slate-300 hover:border-slate-500" onClick={() => setDraftDescription(null)}>
+              Descartar
+            </button>
+            <span className="text-slate-500">Ctrl/⌘ + Intro guarda, Esc descarta</span>
+          </div>
+        </div>
+      )}
 
       {/* Progreso */}
       <div className="space-y-1">

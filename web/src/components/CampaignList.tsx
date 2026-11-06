@@ -90,7 +90,7 @@ export const CampaignList: React.FC<{
       <li key={c.id} className="group relative">
         <button
           className={`w-full text-left pl-2.5 pr-8 py-1.5 rounded-lg border ${current ? 'border-indigo-500 bg-indigo-900/40 text-indigo-100' : 'border-transparent text-slate-300 hover:bg-slate-900 hover:border-slate-700'}`}
-          title={`${c.name} · ${STATE_LABEL[c.state] ?? c.state} · ${c.id}`}
+          title={`${c.name} · ${STATE_LABEL[c.state] ?? c.state} · ${c.id}${c.plan.description ? `\n\n${c.plan.description}` : ''}`}
           onClick={() => onSelect(c.id)}
         >
           <span className="flex items-start gap-2">

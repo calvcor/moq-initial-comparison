@@ -134,6 +134,7 @@ interface Props {
 
 export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, initial, editId, onCreated }) => {
   const [name, setName] = useState(initial ? (editId ? initial.name : `${initial.name} (copia)`) : '');
+  const [description, setDescription] = useState(initial?.description ?? '');
   const [streams, setStreams] = useState<Stream[]>(initial?.streams ?? [defaultStream]);
   const [ladders, setLadders] = useState<string[]>((initial?.streams ?? [defaultStream]).map(ladderText));
   const [networks, setNetworks] = useState<CampaignNetwork[]>(initial ? JSON.parse(JSON.stringify(initial.networks)) : []);
@@ -243,6 +244,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
     if (inParallel && together && group.length < players.length) return setError('Con «Todos a la vez» hacen falta al menos tantos trabajadores como reproductores');
     const plan: CampaignPlan = {
       name: name.trim() || `Campaña ${new Date().toLocaleString()}`,
+      description: description.trim(),
       streams,
       networks,
       targets,
@@ -290,6 +292,16 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
           <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="p. ej. Barrido de RTT con una calidad" />
         </label>
       </div>
+      <label className="flex flex-col gap-1">
+        <span className={label}>Descripción (opcional; se puede cambiar después, en cualquier estado)</span>
+        <textarea
+          className={`${input} min-h-[5rem] resize-y`}
+          maxLength={20000}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Qué se quiere ver, hipótesis, qué cambia respecto a otras campañas…"
+        />
+      </label>
 
       {/* Protocolos y ajustes de sus reproductores, fijos en toda la campaña */}
       <section className="space-y-2">

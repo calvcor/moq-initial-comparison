@@ -381,6 +381,7 @@ export interface CampaignTarget {
 
 export interface CampaignPlan {
   name: string;
+  description?: string; // texto libre; falta en las campañas anteriores al 6-11-2026
   streams: Omit<StreamConfig, 'fps'>[];
   networks: CampaignNetwork[];
   targets: CampaignTarget[];

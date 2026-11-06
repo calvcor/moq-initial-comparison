@@ -219,6 +219,8 @@ class PlayerOptions(BaseModel):
 class CampaignRequest(BaseModel):
     """Plan de una campaña de medida (ver campaign.py)."""
     name: str = Field(..., min_length=1, max_length=120)
+    # Texto libre (qué se quiere ver, hipótesis, cambios respecto a otras): se puede cambiar en cualquier estado
+    description: str = Field("", max_length=20000)
     streams: list[StreamConfig] = Field(..., min_length=1, max_length=10)
     networks: list[CampaignNetwork] = Field(..., min_length=1, max_length=200)
     # La primera es también la de las pruebas de control
@@ -1171,11 +1173,13 @@ def get_campaign(cid: str):
 
 class CampaignPatch(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=120)
+    description: Optional[str] = Field(None, max_length=20000)
     archived: Optional[bool] = None
 
 @app.patch("/api/campaigns/{cid}")
 def patch_campaign(cid: str, req: CampaignPatch):
-    """Cambia el nombre de una campaña (en cualquier estado) o la archiva o desarchiva (no la que está en marcha)."""
+    """Cambia el nombre o la descripción de una campaña (en cualquier estado), o la archiva o desarchiva (no la que
+    está en marcha)."""
     campaign_or_404(cid)
     out = None
     if req.name is not None:
@@ -1183,6 +1187,8 @@ def patch_campaign(cid: str, req: CampaignPatch):
         if not name:
             raise HTTPException(status_code=422, detail="El nombre no puede quedar vacío")
         out = campaigns.rename(cid, name)
+    if req.description is not None:
+        out = campaigns.describe(cid, req.description.strip())
     if req.archived is not None:
         try:
             out = campaigns.archive(cid, req.archived)

@@ -524,6 +524,16 @@ class Campaigns:
                 self.save(campaign)
             return self.view(campaign)
 
+    def describe(self, cid: str, description: str) -> dict:
+        """Cambia la descripción (plan["description"]), en cualquier estado: como el nombre, no toca las medidas."""
+        with self.lock:
+            campaign = self.campaigns[cid]
+            if description != campaign["plan"].get("description", ""):
+                campaign["plan"]["description"] = description
+                self.log(campaign, "Descripción cambiada")
+                self.save(campaign)
+            return self.view(campaign)
+
     def archive(self, cid: str, archived: bool) -> dict:
         """Archiva o desarchiva: solo cambia dónde se lista (la página la guarda aparte, plegada). No se archiva la que
         está en marcha; archivar una encolada la saca de la cola, y una archivada no se arranca ni se encola."""
