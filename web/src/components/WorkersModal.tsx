@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Monitor, MonitorOff, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Monitor, MonitorOff, Trash2, X } from 'lucide-react';
 import type { PoolWorker, WorkerBrowser } from '../types';
 
 // Gestión de los trabajadores independientes de las campañas (README 4.8, trabajadores independientes): su
@@ -114,6 +114,22 @@ const AddWorker: React.FC = () => {
   const [insecure, setInsecure] = useState(suggestInsecure);
   const [softwareDecode, setSoftwareDecode] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Los comandos de gestión, plegados por defecto; el navegador recuerda si se dejaron abiertos
+  const [showManage, setShowManage] = useState(() => {
+    try {
+      return localStorage.getItem('workers.manage.open') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleManage = () => {
+    try {
+      localStorage.setItem('workers.manage.open', showManage ? '0' : '1');
+    } catch {
+      /* sin almacenamiento: no se recuerda */
+    }
+    setShowManage(!showManage);
+  };
   const valid = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(name);
   const args = `--url ${origin} --name ${valid ? name : '<nombre>'}${insecure ? ' --insecure' : ''}${softwareDecode ? ' --software-decode' : ''}`;
   const command =
@@ -181,18 +197,21 @@ const AddWorker: React.FC = () => {
         Mismo nombre en dos máquinas: el primero que se conecta se lo queda y el otro espera sin medir; si el primero se desconecta, el otro ocupa su
         sitio con ese nombre. Aquí abajo se avisa cuando pasa. Usa un nombre por máquina.
       </p>
-      {target === 'terminal' ? (
-        <p className="text-slate-400">Para gestionarlo: Ctrl+C en esa terminal lo cierra (y su Chrome); volver a ejecutar el comando lo actualiza y lo abre otra vez.</p>
-      ) : (
-        <div className="space-y-1">
-          <div className="text-slate-300">
-            Gestionarlo después, en esa máquina{target === 'desktop' ? ', con tu usuario (sin sudo)' : ', como root'}:
+      <button className="flex items-center gap-1 text-slate-300 hover:text-white" onClick={toggleManage}>
+        {showManage ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        Gestionarlo después, en esa máquina
+        {target === 'desktop' ? ' (con tu usuario, sin sudo)' : target === 'server' ? ' (como root)' : ''}
+      </button>
+      {showManage &&
+        (target === 'terminal' ? (
+          <p className="text-slate-400 pl-5">Ctrl+C en esa terminal lo cierra (y su Chrome); volver a ejecutar el comando lo actualiza y lo abre otra vez.</p>
+        ) : (
+          <div className="space-y-1 pl-5">
+            {manageCommands(target, display).map((c) => (
+              <CommandLine key={c.label} {...c} />
+            ))}
           </div>
-          {manageCommands(target, display).map((c) => (
-            <CommandLine key={c.label} {...c} />
-          ))}
-        </div>
-      )}
+        ))}
       {LOCAL.includes(window.location.hostname) && (
         <p className="text-amber-300">Esta página va por {window.location.hostname}: otra máquina no llegará ahí. Ábrela por la dirección del servidor para copiar el comando.</p>
       )}
@@ -241,7 +260,7 @@ export const WorkersModal: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-6 overflow-y-auto" onClick={onClose}>
-      <div className="w-full max-w-5xl bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3 text-xs" onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-7xl bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3 text-xs" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-white">Trabajadores independientes</h2>
           <span className="text-slate-500">Un navegador por reproductor, lanzado con scripts/campaign-worker.mjs --name</span>
