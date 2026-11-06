@@ -1514,6 +1514,9 @@ class Campaigns:
     # stall_spans y stall_open_since_ms: parones exactos, en reloj del servidor (desde el 28-10-2026)
     # selected_height y bw_estimate_kbps: la calidad que elige la adaptación y su estimación de ancho de banda
     SERIES_FIELDS = ("g2g_ms", "kbps", "height", "selected_height", "bw_estimate_kbps", "stall_ms", "frametime_p95_ms", "stall_spans", "stall_open_since_ms", "playback_rate", "content_speed", "content_skipped_ms")
+    # Columnas que solo tiene un reproductor: la capacidad que estima el sondeo de MoQ (README 6.3), la última medida,
+    # vacía si no ha terminado ningún sondeo
+    PLAYER_SERIES_FIELDS = {"moq": ("probe_capacity_kbps",)}
     # Columnas de la página, comunes a los reproductores: se repiten en cada uno para dibujarlas junto a sus métricas
     PAGE_SERIES_FIELDS = ("main_refreshes_missed", "main_long_frame_ms")
 
@@ -1547,7 +1550,7 @@ class Campaigns:
                     for p in run["players"]:
                         if p not in present:
                             continue
-                        for field in self.SERIES_FIELDS:
+                        for field in self.SERIES_FIELDS + self.PLAYER_SERIES_FIELDS.get(p, ()):
                             point[f"{p}_{field}"] = row.get(f"{p}_{field}")
                         # El búfer va en una columna distinta en cada reproductor (BUFFER_COLUMN): aquí, en ms
                         buffer = row.get(BUFFER_COLUMN[p])

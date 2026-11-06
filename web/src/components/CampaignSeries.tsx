@@ -59,6 +59,14 @@ const METRICS: Record<string, Metric> = {
     field: 'bw_estimate_kbps',
     note: 'cada protocolo el suyo, y no significan lo mismo: DASH, el caudal medio de sus descargas (sin límite de red sigue al bitrate descargado, README 6); MoQ, la estimación del relay que usa su adaptación; WebRTC, la de mediasoup hacia el espectador (vacía con MediaMTX).',
   },
+  // Experimento de README 6.3: solo con el ABR de MoQ en Sondeo o Sondeo v2 (moq_abr probe o probe2)
+  probe: {
+    label: 'Capacidad estimada por el sondeo',
+    unit: 'kbit/s',
+    field: 'probe_capacity_kbps',
+    only: 'moq',
+    note: 'Solo MoQ con el ABR en Sondeo o Sondeo v2 (README 6.3): lo que recibían la calidad actual y la de sondeo en los últimos segundos del último sondeo, completo o cortado. Se mantiene hasta el siguiente, así que la línea va a escalones; queda vacía hasta el primero, y también si un sondeo se corta en su arranque. En la calidad más alta no se sondea. No es la estimación del relay, que va en Ancho de banda estimado.',
+  },
   // DASH: vídeo descargado por delante en el instante de la fila; MoQ y WebRTC: espera media de los frames
   // entregados desde la fila anterior
   buffer: { label: 'Búfer', unit: 'ms', field: 'buffer_ms', note: 'No es la misma magnitud: en DASH, el vídeo descargado por delante del punto de reproducción; en MoQ y WebRTC, lo que espera de media cada frame en el reproductor (vacío si no sale ninguno, como en un parón).' },
