@@ -123,7 +123,8 @@ def increase(rows: list[dict], key: str) -> Optional[float]:
     return total
 
 
-def summarize_player(player: str, rows: list[dict], measure_s: float, target_ms: Optional[int]) -> dict:
+def summarize_player(player: str, rows: list[dict], measure_s: float, target_ms: Optional[int], ladder_top: Optional[int] = None) -> dict:
+    """ladder_top: la calidad más alta de la emisión (o la fija de la campaña), para el tiempo en ella."""
     g2g = column(rows, f"{player}_g2g_ms")
     heights = column(rows, f"{player}_height")
     top = max(heights) if heights else None
@@ -154,6 +155,11 @@ def summarize_player(player: str, rows: list[dict], measure_s: float, target_ms:
         "height_mean": rounded(statistics.fmean(heights)) if heights else None,
         # Fracción del tiempo en la calidad más alta que llegó a reproducir en la prueba
         "top_height_share": rounded(sum(1 for h in heights if h == top) / len(heights), 3) if heights else None,
+        # La más alta y la más baja reproducidas, y la fracción del tiempo en la más alta de la emisión: la anterior es
+        # relativa a lo que alcanzó la prueba (siempre en 360p da 1). Desde el 6-11-2026
+        "height_max": top,
+        "height_min": min(heights) if heights else None,
+        "ladder_top_share": rounded(sum(1 for h in heights if h >= ladder_top) / len(heights), 3) if heights and ladder_top else None,
         "quality_switches": increase(rows, f"{player}_quality_switches"),
         "player_restarts": increase(rows, f"{player}_player_restarts"),
         "down_dropped": increase(rows, f"{player}_down_dropped"),
@@ -1362,6 +1368,7 @@ class Campaigns:
             if not reasons:
                 reasons += self.validity(run, rows, before, after, plan, campaign)
             target = plan["targets"][run["target"]]
+            ladder_top = plan.get("quality") or max(r["height"] for r in plan["streams"][run["stream"]]["renditions"])
             # Las filas de cada reproductor: con el trabajador único, todas; con trabajadores independientes, las del
             # navegador que lo tenía montado (la carga del hilo principal es entonces la de ese navegador)
             of = self.player_rows if self.independent(plan) else (lambda p, rs: rs)
@@ -1371,7 +1378,7 @@ class Campaigns:
                     "restarts": self.delta(before.get("restarts"), after.get("restarts")),
                     "ingest_anomalies": self.delta(before.get("anomalies"), after.get("anomalies")),
                 },
-                "players": {p: summarize_player(p, of(p, rows), plan["measure_s"], target.get(f"{p}_ms")) for p in run["players"]},
+                "players": {p: summarize_player(p, of(p, rows), plan["measure_s"], target.get(f"{p}_ms"), ladder_top) for p in run["players"]},
             }
             ip = [s for s in self.ip.pop(run["id"], []) if s["phase"] == "measuring"]
             # Con pruebas en paralelo, el tráfico de cada reproductor tiene que haber ido por la cola de su trabajador:

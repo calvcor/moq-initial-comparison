@@ -19,6 +19,7 @@ from fastapi.responses import PlainTextResponse
 
 from . import qoe, source, trace, versions
 from .campaign import WORKER_NAME, campaigns
+from . import compare as campaign_compare
 from .origin import origin, router as origin_router
 from .source import VIDEO_FILE
 
@@ -1306,6 +1307,18 @@ def campaign_series(cid: str, runs: str):
     campaign_or_404(cid)
     ids = [r for r in runs.split(",") if r][:20]
     return campaigns.series(cid, ids)
+
+@app.get("/api/compare")
+def compare_runs(a: str, b: str):
+    """Comparación en texto de dos pruebas, de la misma campaña o de dos distintas (README 4.8, «Comparar dos pruebas»):
+    a y b son campaña/prueba/protocolo, p. ej. 20261029-105628/r0069/moq. Devuelve lo que cambia entre las dos, las
+    métricas con su diferencia y la variación entre repeticiones, las frases y los avisos."""
+    try:
+        return campaign_compare.compare(campaigns, a, b)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e.args[0]) if e.args else "No encontrada")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 class WorkerBeat(BaseModel):
     """Latido del trabajador de campañas: quién es y qué prueba tiene montada (None si ninguna)."""

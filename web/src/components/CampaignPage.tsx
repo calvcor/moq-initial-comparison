@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eraser, Eye, FlaskConical, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowDown, ArrowLeft, ArrowUp, ChartLine, Check, Copy, Download, Eraser, Eye, FlaskConical, GitCompare, ListPlus, ListX, Pause, Pencil, Play, RotateCcw, Server, Settings2, Trash2, X } from 'lucide-react';
 import { CampaignEditor, DEFAULT_PLAYER_OPTIONS, formatDuration } from './CampaignEditor';
 import { CampaignWorker } from './CampaignWorker';
 import { WorkersModal } from './WorkersModal';
@@ -7,6 +7,7 @@ import { CampaignList } from './CampaignList';
 import { PLAYER_IDS } from '../lib/samples';
 import { CampaignResults } from './CampaignResults';
 import { CampaignPreview, stopPreview, type Preview } from './CampaignPreview';
+import { CampaignCompare, type CompareSide } from './CampaignCompare';
 import { multiStream, streamName, streamText } from '../lib/campaignStreams';
 import type { Campaign, CampaignPlan, CampaignQueue, CampaignRun, PlayerId, ServerStatus } from '../types';
 
@@ -73,7 +74,10 @@ const RunsTable: React.FC<{
   onChanged: () => void;
   onPreview: (run: CampaignRun) => void;
   onSeries: (id: string) => void;
-}> = ({ campaign, focus, onChanged, onPreview, onSeries }) => {
+  // Comparación de dos pruebas: la elegida como A (de esta campaña o de otra) y elegir una
+  compareFrom: CompareSide | null;
+  onCompare: (side: CompareSide) => void;
+}> = ({ campaign, focus, onChanged, onPreview, onSeries, compareFrom, onCompare }) => {
   const plan = campaign.plan;
   const runs = campaign.runs ?? [];
   const streams = multiStream(plan);
@@ -201,6 +205,23 @@ const RunsTable: React.FC<{
                     <ChartLine className="w-3 h-3" /> Gráfica
                   </button>
                 )}
+                {/* Con resumen: las terminadas, válidas o no (la comparación avisa si no es válida) */}
+                {run.summary && (
+                  <button
+                    className={`flex items-center gap-1 ${compareFrom?.campaign === campaign.id && compareFrom.run === run.id ? 'text-sky-200 font-semibold' : 'text-sky-300 hover:text-sky-200'}`}
+                    title={
+                      !compareFrom
+                        ? 'Elegir esta prueba como A para compararla con otra, de esta campaña o de otra'
+                        : compareFrom.campaign === campaign.id && compareFrom.run === run.id
+                          ? 'Es la prueba A: pulsa para dejar de compararla'
+                          : `Comparar con A (${compareFrom.run} de «${compareFrom.campaignName}»)`
+                    }
+                    onClick={() => onCompare({ campaign: campaign.id, campaignName: campaign.name, run: run.id, players: run.players })}
+                  >
+                    <GitCompare className="w-3 h-3" />{' '}
+                    {!compareFrom ? 'Comparar' : compareFrom.campaign === campaign.id && compareFrom.run === run.id ? 'Es A' : 'Comparar con A'}
+                  </button>
+                )}
                 {(run.state === 'done' || run.state === 'invalid') && !repeated.has(run.id) && (
                   <button
                     className="flex items-center gap-1 text-indigo-300 hover:text-indigo-200"
@@ -234,7 +255,9 @@ const Monitor: React.FC<{
   onDeleted: () => void;
   onEdit: (mode: EditorMode) => void;
   onPreview: (run: CampaignRun) => void;
-}> = ({ campaign, lean, onChanged, onDeleted, onEdit, onPreview }) => {
+  compareFrom: CompareSide | null;
+  onCompare: (side: CompareSide) => void;
+}> = ({ campaign, lean, onChanged, onDeleted, onEdit, onPreview, compareFrom, onCompare }) => {
   const [error, setError] = useState<string | null>(null);
   const [showRuns, setShowRuns] = useState(!lean);
   // Con el trabajador en esta pestaña, las gráficas van plegadas: no se dibujan mientras mide
@@ -606,7 +629,7 @@ const Monitor: React.FC<{
       <button className="text-indigo-300 hover:text-indigo-200" onClick={() => setShowRuns((v) => !v)}>
         {showRuns ? 'Ocultar las pruebas ▴' : 'Ver las pruebas ▾'}
       </button>
-      {showRuns && <RunsTable campaign={campaign} focus={focus} onChanged={onChanged} onPreview={onPreview} onSeries={showSeries} />}
+      {showRuns && <RunsTable campaign={campaign} focus={focus} onChanged={onChanged} onPreview={onPreview} onSeries={showSeries} compareFrom={compareFrom} onCompare={onCompare} />}
 
       <button className="block text-indigo-300 hover:text-indigo-200" onClick={() => setShowResults((v) => !v)}>
         {showResults ? 'Ocultar los resultados ▴' : 'Ver los resultados ▾'}
@@ -725,6 +748,31 @@ const CampaignMonitorPage: React.FC = () => {
     } catch (e) {
       setPreviewError((e as Error).message);
     }
+  };
+  // Comparación de dos pruebas (README 4.8, «Comparar dos pruebas»): la A se elige en una campaña y la B en la misma o
+  // en otra. La A se recuerda en el navegador, para elegirla y volver más tarde a por la B
+  const [compareFrom, setCompareFrom] = useState<CompareSide | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('campaign-compare-from') ?? 'null');
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (compareFrom) localStorage.setItem('campaign-compare-from', JSON.stringify(compareFrom));
+      else localStorage.removeItem('campaign-compare-from');
+    } catch {
+      // Sin almacenamiento, la A dura lo que la página
+    }
+  }, [compareFrom]);
+  const [comparison, setComparison] = useState<{ a: CompareSide; b: CompareSide } | null>(null);
+  const pickCompare = (side: CompareSide) => {
+    if (!compareFrom) return setCompareFrom(side);
+    if (compareFrom.campaign === side.campaign && compareFrom.run === side.run) return setCompareFrom(null);
+    setComparison({ a: compareFrom, b: side });
+    mainRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   // Editor abierto (y con qué plan); null, el monitor
   const [editor, setEditor] = useState<EditorMode | null>(null);
@@ -863,6 +911,27 @@ const CampaignMonitorPage: React.FC = () => {
         )}
         {previewError && <p className="text-xs text-rose-400">Vista previa: {previewError}</p>}
 
+        {compareFrom && (
+          <div className="flex flex-wrap items-center gap-2 text-xs bg-sky-950/40 border border-sky-800/60 rounded-lg px-3 py-2 text-sky-200">
+            <GitCompare className="w-3.5 h-3.5" />
+            <span>
+              A: <span className="font-mono">{compareFrom.run}</span> de «{compareFrom.campaignName}». Elige la prueba B con <span className="font-semibold">Comparar con A</span>, en
+              esta campaña o en otra de la lista.
+            </span>
+            <button className="ml-auto text-slate-300 hover:text-white" onClick={() => setCompareFrom(null)}>
+              Dejar de comparar
+            </button>
+          </div>
+        )}
+        {comparison && (
+          <CampaignCompare
+            a={comparison.a}
+            b={comparison.b}
+            onClose={() => setComparison(null)}
+            onSwap={() => setComparison({ a: comparison.b, b: comparison.a })}
+          />
+        )}
+
         {listError && <p className="text-xs text-rose-400">{listError}</p>}
         {queue && queue.ids.length > 0 && <QueuePanel queue={queue} onChanged={refresh} onSelect={setSelectedId} />}
 
@@ -886,6 +955,8 @@ const CampaignMonitorPage: React.FC = () => {
             onChanged={refresh}
             onEdit={setEditor}
             onPreview={openPreview}
+            compareFrom={compareFrom}
+            onCompare={pickCompare}
             onDeleted={() => {
               setSelectedId(null);
               refresh();

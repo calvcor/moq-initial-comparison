@@ -63,6 +63,14 @@ const METRICS: Record<string, Metric> = {
     get: (s) => (s.buffer_s_mean == null ? null : s.buffer_s_mean * 1000),
     note: 'No es la misma magnitud: en DASH, el vídeo descargado por delante del punto de reproducción; en MoQ y WebRTC, lo que espera de media cada frame en el reproductor (vacío si no sale ninguno, como en un parón).',
   },
+  // Desde el 6-11-2026; antes no está en el resumen (la comparación de dos pruebas sí la saca de sus filas)
+  ladder_top: {
+    label: 'Tiempo en la calidad más alta de la emisión',
+    unit: '%',
+    get: (s) => (s.ladder_top_share == null ? null : s.ladder_top_share * 100),
+    note: 'Fracción de los segundos medidos en la calidad más alta de la escalera (o en la fija de la campaña). Vacío en las pruebas anteriores al 6-11-2026.',
+  },
+  height_max: { label: 'Altura más alta reproducida', unit: 'p', get: (s) => s.height_max },
   switches: { label: 'Cambios de calidad', unit: '', get: (s) => s.quality_switches },
   frametime: { label: 'Tiempo en pantalla p95 (mediana)', unit: 'ms', get: (s) => s.frametime_p95_ms_median },
   startup: { label: 'Del montaje a la primera latencia', unit: 's', get: (s) => s.first_g2g_s },
