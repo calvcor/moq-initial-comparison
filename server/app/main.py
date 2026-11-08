@@ -20,6 +20,7 @@ from fastapi.responses import PlainTextResponse
 from . import qoe, source, trace, versions
 from .campaign import WORKER_NAME, campaigns
 from . import compare as campaign_compare
+from . import analysis as campaign_analysis
 from .origin import origin, router as origin_router
 from .source import VIDEO_FILE
 
@@ -1307,6 +1308,13 @@ def campaign_series(cid: str, runs: str):
     campaign_or_404(cid)
     ids = [r for r in runs.split(",") if r][:20]
     return campaigns.series(cid, ids)
+
+@app.get("/api/campaigns/{cid}/analysis")
+def analyze_campaign(cid: str):
+    """Análisis en texto de una campaña (README 4.8, «Análisis de la campaña»): resumen, secciones (entre protocolos,
+    entre emisiones, con la red, con el objetivo, deriva y casos a mirar), cada una con bloques de frases, y avisos."""
+    campaign_or_404(cid)
+    return campaign_analysis.analyze(campaigns, cid)
 
 @app.get("/api/compare")
 def compare_runs(a: str, b: str):

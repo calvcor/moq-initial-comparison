@@ -8,6 +8,7 @@ import { PLAYER_IDS } from '../lib/samples';
 import { CampaignResults } from './CampaignResults';
 import { CampaignPreview, stopPreview, type Preview } from './CampaignPreview';
 import { CampaignCompare, type CompareSide } from './CampaignCompare';
+import { CampaignAnalysis } from './CampaignAnalysis';
 import { multiStream, streamName, streamText } from '../lib/campaignStreams';
 import type { Campaign, CampaignPlan, CampaignQueue, CampaignRun, PlayerId, ServerStatus } from '../types';
 
@@ -262,6 +263,8 @@ const Monitor: React.FC<{
   const [showRuns, setShowRuns] = useState(!lean);
   // Con el trabajador en esta pestaña, las gráficas van plegadas: no se dibujan mientras mide
   const [showResults, setShowResults] = useState(!lean);
+  // El análisis en texto, plegado por defecto: lee las filas de toda la campaña
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   // La prueba que se abre en la gráfica segundo a segundo desde la tabla (n, como en focus)
   const [seriesFocus, setSeriesFocus] = useState<{ id: string; n: number } | null>(null);
@@ -635,6 +638,11 @@ const Monitor: React.FC<{
         {showResults ? 'Ocultar los resultados ▴' : 'Ver los resultados ▾'}
       </button>
       {showResults && <CampaignResults campaign={campaign} onSelectRun={selectRun} seriesFocus={seriesFocus} />}
+
+      <button className="block text-indigo-300 hover:text-indigo-200" onClick={() => setShowAnalysis((v) => !v)}>
+        {showAnalysis ? 'Ocultar el análisis en texto ▴' : 'Ver el análisis en texto ▾'}
+      </button>
+      {showAnalysis && <CampaignAnalysis campaign={campaign} />}
     </div>
   );
 };
