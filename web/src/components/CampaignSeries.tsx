@@ -317,6 +317,39 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
     return [...own, ...across].sort((a, b) => rank(a) - rank(b));
   }, [runs]);
   const [condition, setCondition] = useState(conditions[0] ?? '');
+  // La condición se elige por partes: emisión (con varias), red y objetivo. Cada selector ofrece los valores que tienen
+  // pruebas; si la combinación con los otros dos no existe (p. ej. las de control solo tienen el primer objetivo), se
+  // toma la condición con ese valor que más se parezca a la actual
+  const parts = (key: string) => key.split(':');
+  const [curStream, curNetwork, curTarget] = parts(condition);
+  // En el orden del plan; «todas las emisiones» y las de control, al final
+  const valuesOf = (i: number) =>
+    [...new Set(conditions.map((c) => parts(c)[i]))].sort((a, b) => (a === '*' || a === '' ? 1e9 : Number(a)) - (b === '*' || b === '' ? 1e9 : Number(b)));
+  const bestFor = (i: number, value: string) => {
+    const current = parts(condition);
+    const score = (key: string) => parts(key).reduce((n, v, j) => n + (j !== i && v === current[j] ? 1 : 0), 0);
+    return conditions.filter((c) => parts(c)[i] === value).sort((a, b) => score(b) - score(a))[0];
+  };
+  const choose = (i: number, value: string) => {
+    const best = bestFor(i, value);
+    if (best) setCondition(best);
+  };
+  // Si un valor solo existe cambiando otro selector, la opción dice cuál cambia
+  const changes = (i: number, value: string) => {
+    const current = parts(condition);
+    const best = parts(bestFor(i, value) ?? condition);
+    return ['la emisión', 'la red', 'el objetivo'].filter((_, j) => j !== i && best[j] !== current[j]);
+  };
+  const optionLabel = (i: number, value: string) => {
+    const base =
+      i === 0
+        ? value === '*' ? 'Todas (comparar emisiones)' : streamName(Number(value))
+        : i === 1
+          ? value === '' ? 'Control (sin restricción)' : plan.networks[Number(value)].label
+          : plan.targets[Number(value)].label;
+    const other = changes(i, value);
+    return other.length ? `${base} (cambia ${other.join(' y ')})` : base;
+  };
   const [selected, setSelected] = useState<string[]>([]);
   const [metricKey, setMetricKey] = useState('g2g');
   // Vista: comparar pruebas (una métrica, varias pruebas) o varias métricas de una prueba, en franjas alineadas
@@ -623,16 +656,27 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
             <option value="metrics">Varias métricas de una prueba</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-400">Condición</span>
-          <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" value={condition} onChange={(e) => setCondition(e.target.value)}>
-            {conditions.map((c) => (
-              <option key={c} value={c}>
-                {conditionLabel(c)}
-              </option>
-            ))}
-          </select>
-        </label>
+        {(
+          [
+            [0, 'Emisión', curStream],
+            [1, 'Red', curNetwork],
+            [2, 'Objetivo', curTarget],
+          ] as const
+        )
+          // La emisión, solo con varias
+          .filter(([i]) => i !== 0 || multiStream(plan))
+          .map(([i, label, value]) => (
+            <label key={i} className="flex flex-col gap-1">
+              <span className="text-[11px] text-slate-400">{label}</span>
+              <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" value={value} onChange={(e) => choose(i, e.target.value)}>
+                {valuesOf(i).map((v) => (
+                  <option key={v} value={v}>
+                    {optionLabel(i, v)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
         {view === 'runs' ? (
           <>
             <label className="flex flex-col gap-1">
