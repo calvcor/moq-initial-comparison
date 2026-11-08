@@ -78,7 +78,8 @@ const RunsTable: React.FC<{
   // Comparación de dos pruebas: la elegida como A (de esta campaña o de otra) y elegir una
   compareFrom: CompareSide | null;
   onCompare: (side: CompareSide) => void;
-}> = ({ campaign, focus, onChanged, onPreview, onSeries, compareFrom, onCompare }) => {
+  busy: string | null; // nombre de la campaña en marcha: sin comparaciones mientras mide
+}> = ({ campaign, focus, onChanged, onPreview, onSeries, compareFrom, onCompare, busy }) => {
   const plan = campaign.plan;
   const runs = campaign.runs ?? [];
   const streams = multiStream(plan);
@@ -209,9 +210,12 @@ const RunsTable: React.FC<{
                 {/* Con resumen: las terminadas, válidas o no (la comparación avisa si no es válida) */}
                 {run.summary && (
                   <button
-                    className={`flex items-center gap-1 ${compareFrom?.campaign === campaign.id && compareFrom.run === run.id ? 'text-sky-200 font-semibold' : 'text-sky-300 hover:text-sky-200'}`}
+                    className={`flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed ${compareFrom?.campaign === campaign.id && compareFrom.run === run.id ? 'text-sky-200 font-semibold' : 'text-sky-300 hover:text-sky-200'}`}
+                    disabled={!!busy}
                     title={
-                      !compareFrom
+                      busy
+                        ? `Hay una campaña en marcha («${busy}»): la comparación espera a que termine o se ponga en pausa, para no interferir en sus medidas`
+                        : !compareFrom
                         ? 'Elegir esta prueba como A para compararla con otra, de esta campaña o de otra'
                         : compareFrom.campaign === campaign.id && compareFrom.run === run.id
                           ? 'Es la prueba A: pulsa para dejar de compararla'
@@ -258,7 +262,8 @@ const Monitor: React.FC<{
   onPreview: (run: CampaignRun) => void;
   compareFrom: CompareSide | null;
   onCompare: (side: CompareSide) => void;
-}> = ({ campaign, lean, onChanged, onDeleted, onEdit, onPreview, compareFrom, onCompare }) => {
+  busy: string | null;
+}> = ({ campaign, lean, onChanged, onDeleted, onEdit, onPreview, compareFrom, onCompare, busy }) => {
   const [error, setError] = useState<string | null>(null);
   const [showRuns, setShowRuns] = useState(!lean);
   // Con el trabajador en esta pestaña, las gráficas van plegadas: no se dibujan mientras mide
@@ -632,7 +637,7 @@ const Monitor: React.FC<{
       <button className="text-indigo-300 hover:text-indigo-200" onClick={() => setShowRuns((v) => !v)}>
         {showRuns ? 'Ocultar las pruebas ▴' : 'Ver las pruebas ▾'}
       </button>
-      {showRuns && <RunsTable campaign={campaign} focus={focus} onChanged={onChanged} onPreview={onPreview} onSeries={showSeries} compareFrom={compareFrom} onCompare={onCompare} />}
+      {showRuns && <RunsTable campaign={campaign} focus={focus} onChanged={onChanged} onPreview={onPreview} onSeries={showSeries} compareFrom={compareFrom} onCompare={onCompare} busy={busy} />}
 
       <button className="block text-indigo-300 hover:text-indigo-200" onClick={() => setShowResults((v) => !v)}>
         {showResults ? 'Ocultar los resultados ▴' : 'Ver los resultados ▾'}
@@ -642,7 +647,7 @@ const Monitor: React.FC<{
       <button className="block text-indigo-300 hover:text-indigo-200" onClick={() => setShowAnalysis((v) => !v)}>
         {showAnalysis ? 'Ocultar el análisis en texto ▴' : 'Ver el análisis en texto ▾'}
       </button>
-      {showAnalysis && <CampaignAnalysis campaign={campaign} />}
+      {showAnalysis && <CampaignAnalysis campaign={campaign} busy={busy} />}
     </div>
   );
 };
@@ -775,6 +780,9 @@ const CampaignMonitorPage: React.FC = () => {
     }
   }, [compareFrom]);
   const [comparison, setComparison] = useState<{ a: CompareSide; b: CompareSide } | null>(null);
+  // Con una campaña en marcha no se analiza ni se compara (el servidor responde 409): lee cientos de MB y ocupa CPU del
+  // orquestador mientras mide
+  const busy = list.find((c) => c.state === 'running')?.name ?? null;
   const pickCompare = (side: CompareSide) => {
     if (!compareFrom) return setCompareFrom(side);
     if (compareFrom.campaign === side.campaign && compareFrom.run === side.run) return setCompareFrom(null);
@@ -935,6 +943,7 @@ const CampaignMonitorPage: React.FC = () => {
           <CampaignCompare
             a={comparison.a}
             b={comparison.b}
+            busy={busy}
             onClose={() => setComparison(null)}
             onSwap={() => setComparison({ a: comparison.b, b: comparison.a })}
           />
@@ -965,6 +974,7 @@ const CampaignMonitorPage: React.FC = () => {
             onPreview={openPreview}
             compareFrom={compareFrom}
             onCompare={pickCompare}
+            busy={busy}
             onDeleted={() => {
               setSelectedId(null);
               refresh();

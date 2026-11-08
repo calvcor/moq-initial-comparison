@@ -92,7 +92,8 @@ function plainText(c: Comparison): string {
   return lines.join('\n');
 }
 
-export const CampaignCompare: React.FC<{ a: CompareSide; b: CompareSide; onClose: () => void; onSwap: () => void }> = ({ a, b, onClose, onSwap }) => {
+// busy: el nombre de la campaña en marcha, si la hay: entonces no se pide (el servidor respondería 409)
+export const CampaignCompare: React.FC<{ a: CompareSide; b: CompareSide; busy: string | null; onClose: () => void; onSwap: () => void }> = ({ a, b, busy, onClose, onSwap }) => {
   // El protocolo de cada lado: por defecto, el primero que tengan las dos; si no comparten ninguno, el primero de cada una
   const shared = ORDER.filter((p) => a.players.includes(p) && b.players.includes(p));
   const [pa, setPa] = useState<PlayerId>(shared[0] ?? a.players[0]);
@@ -107,6 +108,7 @@ export const CampaignCompare: React.FC<{ a: CompareSide; b: CompareSide; onClose
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (busy) return;
     let cancelled = false;
     setError(null);
     const q = new URLSearchParams({ a: `${a.campaign}/${a.run}/${pa}`, b: `${b.campaign}/${b.run}/${pb}` });
@@ -126,7 +128,7 @@ export const CampaignCompare: React.FC<{ a: CompareSide; b: CompareSide; onClose
     return () => {
       cancelled = true;
     };
-  }, [a.campaign, a.run, b.campaign, b.run, pa, pb]);
+  }, [a.campaign, a.run, b.campaign, b.run, pa, pb, busy]);
 
   const copy = async () => {
     if (!data) return;
@@ -200,10 +202,11 @@ export const CampaignCompare: React.FC<{ a: CompareSide; b: CompareSide; onClose
         ))}
       </div>
 
-      {error && <p className="text-rose-300">{error}</p>}
-      {!data && !error && <p className="text-slate-500">Comparando…</p>}
+      {busy && <p className="text-amber-300/90">Hay una campaña en marcha («{busy}»): el análisis y la comparación esperan a que termine o se ponga en pausa, para no interferir en sus medidas.</p>}
+      {!busy && error && <p className="text-rose-300">{error}</p>}
+      {!busy && !data && !error && <p className="text-slate-500">Comparando…</p>}
 
-      {data && (
+      {!busy && data && (
         <>
           <ul className="space-y-1.5 text-[13px] leading-snug text-slate-200">
             {data.sentences.map((s, i) => (

@@ -1309,18 +1309,29 @@ def campaign_series(cid: str, runs: str):
     ids = [r for r in runs.split(",") if r][:20]
     return campaigns.series(cid, ids)
 
+def no_campaign_running():
+    """El análisis y la comparación leen ficheros de cientos de MB y ocupan CPU del orquestador: con una campaña en marcha
+    no se hacen, para no interferir en lo que mide (README 4.8)."""
+    running = campaigns.running()
+    if running:
+        raise HTTPException(status_code=409, detail=f"Hay una campaña en marcha («{running['name']}»): el análisis y la comparación "
+                                                    "esperan a que termine o se ponga en pausa, para no interferir en sus medidas")
+
 @app.get("/api/campaigns/{cid}/analysis")
 def analyze_campaign(cid: str):
     """Análisis en texto de una campaña (README 4.8, «Análisis de la campaña»): resumen, secciones (entre protocolos,
-    entre emisiones, con la red, con el objetivo, deriva y casos a mirar), cada una con bloques de frases, y avisos."""
+    entre emisiones, con la red, con el objetivo, deriva y casos a mirar), cada una con bloques de frases, y avisos.
+    409 con una campaña en marcha."""
     campaign_or_404(cid)
+    no_campaign_running()
     return campaign_analysis.analyze(campaigns, cid)
 
 @app.get("/api/compare")
 def compare_runs(a: str, b: str):
     """Comparación en texto de dos pruebas, de la misma campaña o de dos distintas (README 4.8, «Comparar dos pruebas»):
     a y b son campaña/prueba/protocolo, p. ej. 20261029-105628/r0069/moq. Devuelve lo que cambia entre las dos, las
-    métricas con su diferencia y la variación entre repeticiones, las frases y los avisos."""
+    métricas con su diferencia y la variación entre repeticiones, las frases y los avisos. 409 con una campaña en marcha."""
+    no_campaign_running()
     try:
         return campaign_compare.compare(campaigns, a, b)
     except KeyError as e:

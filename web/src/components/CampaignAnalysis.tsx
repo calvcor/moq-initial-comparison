@@ -28,7 +28,8 @@ function plainText(name: string, a: Analysis): string {
   return lines.join('\n');
 }
 
-export const CampaignAnalysis: React.FC<{ campaign: Campaign }> = ({ campaign }) => {
+// busy: el nombre de la campaña en marcha, si la hay: entonces no se pide (el servidor respondería 409)
+export const CampaignAnalysis: React.FC<{ campaign: Campaign; busy: string | null }> = ({ campaign, busy }) => {
   const [data, setData] = useState<Analysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -36,6 +37,7 @@ export const CampaignAnalysis: React.FC<{ campaign: Campaign }> = ({ campaign })
   const done = campaign.counts?.done ?? 0;
 
   useEffect(() => {
+    if (busy) return;
     let cancelled = false;
     fetch(`/api/campaigns/${campaign.id}/analysis`)
       .then(async (res) => {
@@ -53,7 +55,7 @@ export const CampaignAnalysis: React.FC<{ campaign: Campaign }> = ({ campaign })
     return () => {
       cancelled = true;
     };
-  }, [campaign.id, done]);
+  }, [campaign.id, done, busy]);
 
   const copy = async () => {
     if (!data) return;
@@ -66,6 +68,7 @@ export const CampaignAnalysis: React.FC<{ campaign: Campaign }> = ({ campaign })
     }
   };
 
+  if (busy) return <p className="text-amber-300/90">Hay una campaña en marcha («{busy}»): el análisis y la comparación esperan a que termine o se ponga en pausa, para no interferir en sus medidas.</p>;
   if (error) return <p className="text-rose-300">Análisis: {error}</p>;
   if (!data) return <p className="text-slate-500">Analizando…</p>;
   return (

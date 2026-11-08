@@ -52,6 +52,7 @@ import threading
 import time
 from typing import Callable, Optional
 
+from . import samples_index
 from .source import VIDEO_FILE
 
 logger = logging.getLogger("orchestrator")
@@ -576,7 +577,8 @@ class Campaigns:
 
     # Lo que una campaña gana al medir y se quita al borrar sus medidas
     MEASURED_FIELDS = ("restore", "versions", "worker_browsers", "reopened", "holds_queue", "current", "batch")
-    MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl")
+    # Con el índice de las filas y el análisis guardado, que salen de ellas (README 4.8)
+    MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl", "samples_index.json", "analysis.json")
 
     def clear(self, cid: str) -> dict:
         """Borra las medidas de una campaña que no está en marcha y la deja lista, como recién creada: las pruebas se
@@ -597,6 +599,7 @@ class Campaigns:
                     os.remove(self.path(cid, name))
                 except FileNotFoundError:
                     pass
+            samples_index.forget(cid)
             self.log(campaign, f"Medidas borradas ({done} pruebas medidas o intentadas): campaña lista de nuevo")
             self.save(campaign)
             return self.view(campaign)
@@ -614,6 +617,7 @@ class Campaigns:
             for name in os.listdir(self.path(cid)):
                 os.remove(self.path(cid, name))
             os.rmdir(self.path(cid))
+            samples_index.forget(cid)
 
     # --- control ---
 

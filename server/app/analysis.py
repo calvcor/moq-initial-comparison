@@ -15,16 +15,20 @@ variación entre repeticiones.
   a mayor. Cada valor de la serie es la mediana, entre las demás condiciones, de las medianas de cada condición.
 - Es una lectura descriptiva, no un contraste estadístico: con dos o tres repeticiones el recorrido se queda corto.
 """
+import hashlib
 import json
 import os
 import re
 import statistics
 from typing import Optional
 
+from . import samples_index
 from .compare import INVALID_BEFORE, PLAYER_LABEL, SOURCE_LABEL, STALL_FIX, hp, local_day, num, relative
 
 PLAYERS = ("dash", "moq", "rtc")
-RUN_ID = re.compile(r'"run_id": "([^"]+)"')
+# El código del análisis entra en la clave del análisis guardado: al desplegar otra versión, se rehace
+CODE = hashlib.sha1(b"".join(open(os.path.join(os.path.dirname(__file__), name), "rb").read()
+                             for name in ("analysis.py", "compare.py", "samples_index.py"))).hexdigest()
 
 # Métricas del análisis: etiqueta, unidad, escala de presentación, decimales, diferencia por debajo de la cual se
 # consideran iguales (en unidades del resumen; "frame": un frame de la emisión; "1%": el 1 % del valor), por debajo de
@@ -61,39 +65,6 @@ FAMILIES = {
     "queue": (("queue_ms",), lambda v: -sum(x or 0 for x in v), "al acortar la cola del router"),
 }
 
-# Alturas por prueba y reproductor, de las filas: (campaña, tamaño y fecha de samples.jsonl) -> {(prueba, inicio): ...}
-_heights_cache: dict = {}
-
-
-def scan_heights(path: str, wanted: dict[str, int]) -> dict[tuple[str, str], list[float]]:
-    """Alturas reproducidas en la medida de cada prueba pedida (id -> started_ms de su último intento) y reproductor,
-    en una sola pasada por samples.jsonl."""
-    try:
-        st = os.stat(path)
-    except OSError:
-        return {}
-    key = (path, st.st_size, st.st_mtime)
-    cached = _heights_cache.get(key)
-    if cached is not None and all(rid in cached["runs"] for rid in wanted):
-        return cached["heights"]
-    out: dict[tuple[str, str], list[float]] = {}
-    with open(path) as f:
-        for line in f:
-            m = RUN_ID.search(line)
-            if not m or m.group(1) not in wanted or '"measuring"' not in line:
-                continue
-            row = json.loads(line)
-            if row.get("run_started_ms") != wanted[m.group(1)] or row.get("phase") != "measuring":
-                continue
-            for p in (row.get("players") or "").split("|"):
-                h = row.get(f"{p}_height")
-                if p in PLAYERS and isinstance(h, (int, float)) and not isinstance(h, bool):
-                    out.setdefault((m.group(1), p), []).append(h)
-    _heights_cache.clear()
-    _heights_cache[key] = {"runs": set(wanted), "heights": out}
-    return out
-
-
 def median(values: list[float]) -> Optional[float]:
     return statistics.median(values) if values else None
 
@@ -106,11 +77,10 @@ class Data:
     """Las pruebas válidas de la campaña agrupadas por condición y reproductor, con la mediana y el recorrido de cada
     métrica."""
 
-    def __init__(self, store, campaign: dict):
+    def __init__(self, campaign: dict, idx: dict):
         self.campaign = campaign
         self.plan = plan = campaign["plan"]
         self.valid = [r for r in campaign["runs"] if r["state"] == "done" and (r.get("summary") or {}).get("players")]
-        heights = scan_heights(store.path(campaign["id"], "samples.jsonl"), {r["id"]: r["started_ms"] for r in self.valid})
         self.tops = [plan.get("quality") or max(x["height"] for x in s["renditions"]) for s in plan["streams"]]
         self.fps = [s.get("fps") or 60 for s in plan["streams"]]
         # (emisión, red, objetivo) -> reproductor -> lista de resúmenes (uno por repetición), con las métricas de las filas
@@ -118,11 +88,10 @@ class Data:
         self.controls: list[tuple[dict, str, dict]] = []
         for run in self.valid:
             for p, s in run["summary"]["players"].items():
-                hs = heights.get((run["id"], p)) or []
-                top = self.tops[run["stream"]]
-                full = {**s, "height_max": s.get("height_max") if s.get("height_max") is not None else (max(hs) if hs else None)}
-                if full.get("ladder_top_share") is None and hs:
-                    full["ladder_top_share"] = sum(1 for h in hs if h >= top) / len(hs)
+                # La altura más alta y el tiempo en la más alta de la emisión: del resumen (desde el 6-11-2026) o, en los
+                # anteriores, del índice de las filas
+                stats = samples_index.height_stats(samples_index.player_entry(idx, run, p), self.tops[run["stream"]])
+                full = {**s, **{k: v for k, v in stats.items() if s.get(k) is None}}
                 if run["kind"] == "control":
                     self.controls.append((run, p, full))
                 else:
@@ -595,13 +564,35 @@ def warnings(data: Data) -> list[str]:
 
 
 def analyze(store, cid: str) -> dict:
-    # Copia con el cerrojo; las filas se leen sin él, para no frenar al planificador de una campaña en marcha
+    # Copia con el cerrojo; las filas se leen sin él, para no frenar al planificador
     with store.lock:
         campaign = store.campaigns.get(cid)
         if campaign is None:
             raise KeyError(f"No existe la campaña {cid}")
         campaign = json.loads(json.dumps(campaign))
-    data = Data(store, campaign)
+    idx = samples_index.index(store, cid)
+    # El análisis guardado vale mientras no cambien el código, las filas, el plan ni el estado de las pruebas
+    key = hashlib.sha1(json.dumps([CODE, idx["inode"], idx["offset"], campaign["plan"],
+                                   [(r["id"], r["state"], r.get("started_ms")) for r in campaign["runs"]]],
+                                  sort_keys=True, default=str).encode()).hexdigest()
+    path = store.path(cid, "analysis.json")
+    try:
+        with open(path) as f:
+            saved = json.load(f)
+        if saved.get("key") == key:
+            return saved["result"]
+    except (OSError, ValueError):
+        pass
+    result = compute(campaign, idx)
+    tmp = path + ".part"
+    with open(tmp, "w") as f:
+        json.dump({"key": key, "result": result}, f)
+    os.replace(tmp, path)
+    return result
+
+
+def compute(campaign: dict, idx: dict) -> dict:
+    data = Data(campaign, idx)
     if not data.valid:
         return {"overview": ["La campaña no tiene pruebas válidas todavía."], "sections": [], "warnings": []}
     sections = []

@@ -16,6 +16,8 @@ import json
 import time
 from typing import Optional
 
+from . import samples_index
+
 PLAYERS = ("dash", "moq", "rtc")
 PLAYER_LABEL = {"dash": "LL-DASH", "moq": "MoQ", "rtc": "WebRTC"}
 SOURCE_LABEL = {"file": "Big Buck Bunny", "tos": "Tears of Steel", "camera": "cámara"}
@@ -74,41 +76,6 @@ def parse_ref(text: str) -> tuple[str, str, str]:
 
 # --- lo que se sabe de cada lado ---
 
-def scan_samples(path: str, wanted: dict[str, int], player: str) -> dict[str, dict]:
-    """Por prueba pedida (id -> started_ms de su último intento), las alturas de las filas de su medida que tienen ese
-    reproductor y la primera de esas filas (versiones, servidor WebRTC, sonido...)."""
-    out = {rid: {"heights": [], "first": None} for rid in wanted}
-    keys = {rid: f'"run_id": "{rid}"' for rid in wanted}
-    try:
-        with open(path) as f:
-            for line in f:
-                hit = next((rid for rid, key in keys.items() if key in line), None)
-                if hit is None:
-                    continue
-                row = json.loads(line)
-                if row.get("run_id") != hit or row.get("run_started_ms") != wanted[hit] or row.get("phase") != "measuring":
-                    continue
-                if player not in (row.get("players") or "").split("|"):
-                    continue
-                entry = out[hit]
-                if entry["first"] is None:
-                    entry["first"] = row
-                h = row.get(f"{player}_height")
-                if isinstance(h, (int, float)) and not isinstance(h, bool):
-                    entry["heights"].append(h)
-    except OSError:
-        pass
-    return out
-
-
-def height_stats(heights: list[float], ladder_top: int) -> dict:
-    """La altura más alta y más baja reproducidas y la fracción del tiempo en la más alta de la escalera."""
-    if not heights:
-        return {"height_max": None, "height_min": None, "ladder_top_share": None}
-    return {"height_max": max(heights), "height_min": min(heights),
-            "ladder_top_share": round(sum(1 for h in heights if h >= ladder_top) / len(heights), 3)}
-
-
 def load_side(store, ref: tuple[str, str, str], campaign: Optional[dict]) -> dict:
     """campaign: una copia de la campaña, tomada con el cerrojo (aquí se leen sus filas sin él)."""
     cid, rid, player = ref
@@ -131,16 +98,17 @@ def load_side(store, ref: tuple[str, str, str], campaign: Optional[dict]) -> dic
             and ((r.get("summary") or {}).get("players") or {}).get(player)]
     if run not in reps:
         reps.append(run)
-    scanned = scan_samples(store.path(cid, "samples.jsonl"), {r["id"]: r["started_ms"] for r in reps}, player)
+    idx = samples_index.index(store, cid)
     top = plan["quality"] if plan.get("quality") else ladder[0]
 
     def full(r: dict) -> dict:
-        # El resumen y, de las filas, la altura máxima y el tiempo en la más alta (no están en los resúmenes antiguos)
-        return {**r["summary"]["players"][player], **height_stats(scanned[r["id"]]["heights"], top)}
+        # El resumen y, del índice de las filas, la altura máxima y el tiempo en la más alta (no están en los resúmenes
+        # antiguos; en los nuevos salen igual)
+        return {**r["summary"]["players"][player], **samples_index.height_stats(samples_index.player_entry(idx, r, player), top)}
 
     return {"ref": ref, "campaign": campaign, "plan": plan, "run": run, "player": player, "stream": stream,
             "ladder": ladder, "top": top, "s": full(run), "reps": [full(r) for r in reps],
-            "row": scanned[run["id"]]["first"] or {}}
+            "row": samples_index.player_entry(idx, run, player).get("context") or {}}
 
 
 # --- 1. lo que cambia ---
