@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeftRight } from 'lucide-react';
 import type { Campaign } from '../types';
 import { BUSY_NOTE, TextReport, type TextAnalysis } from './CampaignAnalysis';
+import { CampaignVersusTables, type VersusTables } from './CampaignVersusTables';
 
 // Comparación en texto de dos campañas enteras (README 4.8, «Comparar dos campañas»): la que se está viendo y otra que
 // se elige. La escribe el orquestador (GET /api/campaigns-compare) emparejando condiciones por perfil de red, latencia
@@ -12,7 +13,7 @@ export const CampaignVersus: React.FC<{ campaign: Campaign; busy: string | null 
   const [other, setOther] = useState<string>('');
   // Por defecto, la que se ve es A y la elegida, B; se puede dar la vuelta
   const [swapped, setSwapped] = useState(false);
-  const [data, setData] = useState<TextAnalysis | null>(null);
+  const [data, setData] = useState<(TextAnalysis & { tables?: VersusTables }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const done = campaign.counts?.done ?? 0;
 
@@ -35,7 +36,7 @@ export const CampaignVersus: React.FC<{ campaign: Campaign; busy: string | null 
       .then(async (res) => {
         const body = await res.json().catch(() => null);
         if (!res.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${res.status}`);
-        return body as TextAnalysis & { a: { name: string }; b: { name: string } };
+        return body as TextAnalysis & { tables?: VersusTables };
       })
       .then((body) => !cancelled && setData(body))
       .catch((e) => !cancelled && setError((e as Error).message));
@@ -82,6 +83,7 @@ export const CampaignVersus: React.FC<{ campaign: Campaign; busy: string | null 
           method="Reglas fijas sobre las pruebas válidas de las dos: se emparejan las condiciones con el mismo perfil de red, la misma latencia objetivo (en ms) y la misma emisión (con una sola en cada campaña, aunque difieran). Una diferencia cuenta en una condición si supera la variación entre repeticiones de las dos; las tendencias usan solo los niveles medidos en las dos. Es una lectura descriptiva, no un contraste estadístico (README 4.8)."
         />
       )}
+      {data?.tables && <CampaignVersusTables tables={data.tables} />}
     </div>
   );
 };

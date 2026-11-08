@@ -20,8 +20,8 @@ from typing import Optional
 
 from . import samples_index
 from .analysis import (CODE, METRICS, TREND_METRICS, Data, compare_levels, describe, fmt, grouped, listing, median,
-                       network_series, seq, series_values, trend_tolerance)
-from .compare import INVALID_BEFORE, PLAYER_LABEL, SOURCE_LABEL, STALL_FIX, local_day, net_text, num
+                       network_series, paired, seq, series_values, trend_tolerance)
+from .compare import INVALID_BEFORE, PLAYER_LABEL, SOURCE_LABEL, STALL_FIX, local_day, net_text, num, relative
 
 PLAYERS = ("dash", "moq", "rtc")
 VERSUS_CODE = hashlib.sha1((CODE + open(__file__, "rb").read().decode()).encode()).hexdigest()
@@ -174,8 +174,45 @@ def players_section(A: Data, B: Data, smap: dict, nmap: dict) -> list[dict]:
     return blocks
 
 
-def side_by_side(A: Data, B: Data, verb: str, labels: list[str], levels: dict[str, tuple[list, list]], which: str) -> list[str]:
-    """Por métrica, la serie de cada protocolo en A y en B, con cómo cambia en cada una."""
+def player_tables(A: Data, B: Data, smap: dict, nmap: dict) -> tuple[dict, dict]:
+    """Las tablas por protocolo: el resumen de cada métrica (media de las condiciones emparejadas en A y en B y el recuento
+    de las que B va por encima o por debajo) y cada condición emparejada con su veredicto."""
+    keys = keys_for(A, B)
+    summary, by_condition = {}, {}
+    for p in (p for p in PLAYERS if p in A.players and p in B.players):
+        pairs = sorted(matched(A, B, smap, nmap, p), key=lambda x: (x[0][0], -1 if x[0][1] is None else x[0][1], x[0][2]))
+        if not pairs:
+            continue
+        rows = []
+        for key in keys:
+            r = paired(B, key, [(cb, p, ca, p) for ca, cb in pairs], other=A)
+            if r:
+                rows.append({"key": key, "a": r["y"], "b": r["x"], "diff": r["x"] - r["y"], "relative": relative(r["x"], r["y"]), "n": r["n"],
+                             "b_lower": r["lower"], "b_higher": r["higher"], "unclear": r["unclear"]})
+        summary[p] = rows
+        conditions = []
+        for ca, cb in pairs:
+            values = {}
+            for key in keys:
+                a, b = A.value(ca, p, key), B.value(cb, p, key)
+                noises = [n for n in (A.spread(ca, p, key), B.spread(cb, p, key)) if n is not None]
+                if a is None or b is None:
+                    verdict = "sin_dato"
+                else:
+                    # El mismo criterio que el recuento (analysis.paired): por encima del umbral de la métrica y de la
+                    # variación entre repeticiones de las dos condiciones
+                    tol = B.tolerance(key, cb[0], a)
+                    verdict = ("b_mayor" if b > a else "b_menor") if abs(b - a) > max([tol] + noises) else "igual" if abs(b - a) <= tol else "no_concluyente"
+                values[key] = {"a": a, "b": b, "noise": max(noises) if noises else None, "verdict": verdict}
+            conditions.append({"label": A.cell_label(ca), "reps": [len(A.cells[ca][p]), len(B.cells[cb][p])], "values": values})
+        by_condition[p] = conditions
+    return summary, by_condition
+
+
+def side_by_side(A: Data, B: Data, verb: str, labels: list[str], levels: dict[str, tuple[list, list]], which: str,
+                 table: Optional[list] = None) -> list[str]:
+    """Por métrica, la serie de cada protocolo en A y en B, con cómo cambia en cada una. table: si se pasa, recibe los
+    valores de cada serie para la tabla de la página."""
     out, flat = [], []
     for key in (k for k in TREND_METRICS if k in keys_for(A, B)):
         parts = []
@@ -183,6 +220,8 @@ def side_by_side(A: Data, B: Data, verb: str, labels: list[str], levels: dict[st
             va, vb = series_values(A, p, key, la, which), series_values(B, p, key, lb, which)
             if all(v is None for v in va) or all(v is None for v in vb):
                 continue
+            if table is not None:
+                table.append({"player": p, "key": key, "a": va, "b": vb})
             ha = describe(va, labels, trend_tolerance(A, p, key, la, which, va))
             hb = describe(vb, labels, trend_tolerance(B, p, key, lb, which, vb))
             if ha is None and hb is None:
@@ -212,9 +251,10 @@ def trends_section(A: Data, B: Data, smap: dict, nmap: dict) -> list[dict]:
             continue
         labels = [A.plan["networks"][i]["label"] for i in both]
         levels = {p: (both, [nmap[i] for i in both]) for p in common}
-        sentences = side_by_side(A, B, verb, labels, levels, "network")
+        rows: list = []
+        sentences = side_by_side(A, B, verb, labels, levels, "network", rows)
         if sentences:
-            blocks.append({"title": f"Red: {' → '.join(labels)}", "sentences": sentences})
+            blocks.append({"title": f"Red: {' → '.join(labels)}", "sentences": sentences, "table": {"levels": labels, "rows": rows}})
     # Objetivos: los valores en ms de cada protocolo que tienen las dos
     for p in common:
         ms_a = {A.plan["targets"][t].get(f"{p}_ms") for t in range(len(A.plan["targets"]))} - {None}
@@ -223,13 +263,17 @@ def trends_section(A: Data, B: Data, smap: dict, nmap: dict) -> list[dict]:
         if len(values) < 2:
             continue
         levels = {p: ([target_index(A.plan, p, ms) for ms in values], [target_index(B.plan, p, ms) for ms in values])}
-        sentences = side_by_side(A, B, "al subir la latencia objetivo", [f"{num(ms)} ms" for ms in values], levels, "target")
+        labels = [f"{num(ms)} ms" for ms in values]
+        rows = []
+        sentences = side_by_side(A, B, "al subir la latencia objetivo", labels, levels, "target", rows)
         if sentences:
-            blocks.append({"title": f"Latencia objetivo de {PLAYER_LABEL[p]}: {' → '.join(f'{num(ms)} ms' for ms in values)}", "sentences": sentences})
+            blocks.append({"title": f"Latencia objetivo de {PLAYER_LABEL[p]}: {' → '.join(labels)}", "sentences": sentences,
+                           "table": {"levels": labels, "rows": rows}})
     return blocks
 
 
-def controls_section(A: Data, B: Data) -> list[dict]:
+def controls_section(A: Data, B: Data, table: Optional[dict] = None) -> list[dict]:
+    """table: si se pasa, recibe por protocolo las filas de la tabla de las de control."""
     sentences, differs = [], []
     for p in (p for p in PLAYERS if p in A.players and p in B.players):
         ca = [s for _, q, s in A.controls if q == p]
@@ -250,6 +294,8 @@ def controls_section(A: Data, B: Data) -> list[dict]:
             floor = {"g2g_p50_ms": 2 * 1000 / A.fps[0], "stall_ratio": 0.005}.get(key, 0.05 * abs(ma))
             beyond = abs(mb - ma) > max(noise, A.tolerance(key, 0, ma), floor)
             parts.append(f"{METRICS[key]['label']} {fmt(key, ma)} en A y {fmt(key, mb)} en B" + (" (más que la variación entre las de control)" if beyond else ""))
+            if table is not None:
+                table.setdefault(p, {"n": [len(ca), len(cb)], "rows": []})["rows"].append({"key": key, "a": ma, "b": mb, "noise": noise, "beyond": beyond})
             if beyond:
                 differs.append(f"{METRICS[key]['label']} de {PLAYER_LABEL[p]}")
         if parts:
@@ -329,13 +375,21 @@ def compute(ca: dict, ia: dict, cb: dict, ib: dict) -> dict:
                 f"{npairs} {'condición emparejada' if npairs == 1 else 'condiciones emparejadas'} por perfil de red, latencia objetivo y emisión; "
                 "cada frase dice cómo va B respecto a A."]
     sections = []
-    for title, blocks in (("Por protocolo", players_section(A, B, smap, nmap)), ("Tendencias", trends_section(A, B, smap, nmap)),
-                          ("Pruebas de control", controls_section(A, B)), ("Sin pareja", unmatched_section(A, B, smap, nmap))):
-        blocks = [b for b in blocks if b["sentences"]]
+    controls: dict = {}
+    trends = trends_section(A, B, smap, nmap)
+    for title, blocks in (("Por protocolo", players_section(A, B, smap, nmap)), ("Tendencias", trends),
+                          ("Pruebas de control", controls_section(A, B, controls)), ("Sin pareja", unmatched_section(A, B, smap, nmap))):
+        blocks = [{k: v for k, v in b.items() if k != "table"} for b in blocks if b["sentences"]]
         if blocks:
             sections.append({"title": title, "blocks": blocks})
+    summary, by_condition = player_tables(A, B, smap, nmap)
+    # Las mismas cifras en tablas, para la página: cada valor en unidades del resumen; metrics dice cómo presentarlo
+    tables = {"metrics": {k: {f: METRICS[k][f] for f in ("label", "unit", "scale", "digits")} for k in keys_for(A, B)},
+              "summary": summary, "by_condition": by_condition, "controls": controls,
+              "trends": [{"title": b["title"], **b["table"]} for b in trends if b.get("table")]}
     return {"a": {"id": ca["id"], "name": ca["name"]}, "b": {"id": cb["id"], "name": cb["name"]},
-            "conditions": conditions(A, B, ia, ib), "overview": overview, "sections": sections, "warnings": warnings(A, B, smap)}
+            "conditions": conditions(A, B, ia, ib), "overview": overview, "sections": sections, "warnings": warnings(A, B, smap),
+            "tables": tables}
 
 
 def versus(store, a: str, b: str) -> dict:
