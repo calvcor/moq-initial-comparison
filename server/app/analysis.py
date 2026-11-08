@@ -151,18 +151,19 @@ def listing(items: list[str], limit: int = 6) -> str:
 
 # --- comparación emparejada (dos protocolos o dos emisiones) ---
 
-def paired(data: Data, key: str, pairs: list[tuple[tuple, str, tuple, str]]) -> Optional[dict]:
+def paired(data: Data, key: str, pairs: list[tuple[tuple, str, tuple, str]], other: Optional[Data] = None) -> Optional[dict]:
     """pairs: (condición de X, protocolo de X, condición de Y, protocolo de Y). Cuenta en cuántas X va por debajo o por
-    encima de Y más allá de la variación entre repeticiones."""
+    encima de Y más allá de la variación entre repeticiones. other: la campaña de Y, si es otra (comparación de campañas)."""
+    ydata = other or data
     lower = higher = unclear = norep = 0
     xs, ys = [], []
     for cx, px, cy, py in pairs:
-        x, y = data.value(cx, px, key), data.value(cy, py, key)
+        x, y = data.value(cx, px, key), ydata.value(cy, py, key)
         if x is None or y is None:
             continue
         xs.append(x)
         ys.append(y)
-        noises = [n for n in (data.spread(cx, px, key), data.spread(cy, py, key)) if n is not None]
+        noises = [n for n in (data.spread(cx, px, key), ydata.spread(cy, py, key)) if n is not None]
         threshold = max([data.tolerance(key, cx[0], y)] + noises)
         if abs(x - y) <= threshold:
             unclear += 1
@@ -197,10 +198,10 @@ def paired_sentence(key: str, X: str, Y: str, r: dict) -> Optional[str]:
     return text + "."
 
 
-def compare_levels(data: Data, X: str, Y: str, pairs: list, keys: tuple) -> list[str]:
+def compare_levels(data: Data, X: str, Y: str, pairs: list, keys: tuple, other: Optional[Data] = None) -> list[str]:
     out, quiet = [], []
     for key in keys:
-        r = paired(data, key, pairs)
+        r = paired(data, key, pairs, other)
         if r is None:
             continue
         sentence = paired_sentence(key, X, Y, r)
@@ -324,6 +325,17 @@ def series_values(data: Data, player: str, key: str, levels: list, which: str) -
     return [median([data.value(by_level[level][r], player, key) for r in common]) if level in present else None for level in levels]
 
 
+def trend_tolerance(data: Data, player: str, key: str, levels: list, which: str, values: list[Optional[float]]) -> float:
+    """El umbral de una tendencia: el de la métrica o, si es mayor, la variación típica entre repeticiones de las
+    condiciones de la serie, dividida por √n porque cada punto es la mediana de n condiciones. Un cambio menor no es una
+    tendencia."""
+    ref = median([v for v in values if v is not None])
+    level_of = (lambda c: c[1]) if which == "network" else (lambda c: c[2])
+    spreads = [x for x in (data.spread(c, player, key) for c in data.cells if level_of(c) in levels and player in data.cells[c]) if x is not None]
+    per_level = max(1, len(spreads) / max(1, sum(v is not None for v in values)))
+    return max(data.tolerance(key, 0, ref), (median(spreads) or 0) / per_level ** 0.5)
+
+
 def trend_block(data: Data, title: str, verb: str, labels: list[str], levels_of: dict[str, list], which: str) -> dict:
     """labels: los nombres de los niveles en el orden de la serie (los mismos para todos los reproductores)."""
     sentences, flat = [], []
@@ -340,13 +352,7 @@ def trend_block(data: Data, title: str, verb: str, labels: list[str], levels_of:
                 continue
             ref = median([v for v in values if v is not None])
             names = [short[i] for i in range(len(levels))]
-            # El umbral, además del de la métrica, la variación típica entre repeticiones de las condiciones de la serie:
-            # un cambio menor que ella no es una tendencia
-            level_of = (lambda c: c[1]) if which == "network" else (lambda c: c[2])
-            spreads = [x for x in (data.spread(c, p, key) for c in data.cells if level_of(c) in levels and p in data.cells[c]) if x is not None]
-            # Cada punto es la mediana de varias condiciones: su variación es menor que la de una sola (≈ 1/√n)
-            per_level = max(1, len(spreads) / max(1, sum(v is not None for v in values)))
-            how = describe(values, names, max(data.tolerance(key, 0, ref), (median(spreads) or 0) / per_level ** 0.5))
+            how = describe(values, names, trend_tolerance(data, p, key, levels, which, values))
             if how is None:
                 unchanged.append(f"{PLAYER_LABEL[p]} ({fmt(key, ref)})")
             else:
