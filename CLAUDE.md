@@ -172,6 +172,10 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   escalera); cuando salga una versión nueva de `moq-cli`, medirla con el procedimiento de arriba y,
   si se confirma, desplegarla. La 0.14.12 (3-11-2026) **no lo resuelve** con la escalera: medida el 4-11-2026
   en el servidor; `main` en `ffcb7cd` sí (`../FINDINGS/moq_cli_publisher_ingest_limit.md`, fuera del repositorio).
+- `@moq/watch` retiene su búfer como frames decodificados (~280 MB a 1080p con 1,5 s): los trabajadores LXC de justbytes
+  (1 GB de RAM y 512 MB de swap) paginan al swap y el hilo principal se detiene, solo en MoQ y solo con 1080p y objetivos de
+  1,5 s o más (8-11-2026, reproducido en local con esos límites; `../FINDINGS/moq_watch_decoded_frames_memory.md`). Esas
+  pruebas de MoQ no son fiables; la solución es dar más memoria a los trabajadores, no invalidar por carga del hilo principal.
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
 - La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente del servidor se queda a ratos por detrás del tiempo real y los
