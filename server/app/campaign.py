@@ -578,7 +578,7 @@ class Campaigns:
     # Lo que una campaña gana al medir y se quita al borrar sus medidas
     MEASURED_FIELDS = ("restore", "versions", "worker_browsers", "reopened", "holds_queue", "current", "batch")
     # Con el índice de las filas y el análisis guardado, que salen de ellas (README 4.8)
-    MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl", "samples_index.json", "analysis.json")
+    MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl", "samples_index.json", "ip_index.json", "analysis.json")
 
     def clear(self, cid: str) -> dict:
         """Borra las medidas de una campaña que no está en marcha y la deja lista, como recién creada: las pruebas se
@@ -1659,59 +1659,56 @@ class Campaigns:
         campaign = self.campaigns[cid]
         runs = {r["id"]: r for r in campaign["runs"] if r["id"] in ids}
         out = {rid: {"aligned": "measure", "rows": [], "ip": []} for rid in runs}
+        # Solo los tramos de los ficheros donde están las filas de esas pruebas, según el índice (samples_index.py):
+        # leerlos enteros eran 11 s por petición con una campaña de 1,5 GB
+        keys = [samples_index.run_key(r["id"], r["started_ms"]) for r in runs.values()]
         try:
-            with open(self.path(cid, "samples.jsonl")) as f:
-                for line in f:
-                    if not line.strip():
+            for line in samples_index.read_runs(self.path(cid, "samples.jsonl"), samples_index.index(self, cid), keys):
+                row = json.loads(line)
+                run = runs.get(row.get("run_id"))
+                if run is None or row.get("run_started_ms") != run["started_ms"]:
+                    continue
+                restarted = self.restarts_each_run(campaign["plan"], run["stream"]) and run.get("source_started_ms")
+                zero = run["source_started_ms"] if restarted else run["measure_start_ms"]
+                if zero is None:
+                    continue
+                out[run["id"]].update(aligned="source" if restarted else "measure", zero_ms=zero)
+                point = {"t_s": round((row["t_server_ms"] - zero) / 1000, 1), "phase": row["phase"]}
+                # Con trabajadores independientes cada fila es de un navegador: solo lleva sus reproductores (los
+                # demás, sin clave, no cortan sus líneas en la gráfica)
+                present = (row.get("players") or "").split("|") if self.independent(campaign["plan"]) else run["players"]
+                for p in run["players"]:
+                    if p not in present:
                         continue
-                    row = json.loads(line)
-                    run = runs.get(row.get("run_id"))
-                    if run is None or row.get("run_started_ms") != run["started_ms"]:
-                        continue
-                    restarted = self.restarts_each_run(campaign["plan"], run["stream"]) and run.get("source_started_ms")
-                    zero = run["source_started_ms"] if restarted else run["measure_start_ms"]
-                    if zero is None:
-                        continue
-                    out[run["id"]].update(aligned="source" if restarted else "measure", zero_ms=zero)
-                    point = {"t_s": round((row["t_server_ms"] - zero) / 1000, 1), "phase": row["phase"]}
-                    # Con trabajadores independientes cada fila es de un navegador: solo lleva sus reproductores (los
-                    # demás, sin clave, no cortan sus líneas en la gráfica)
-                    present = (row.get("players") or "").split("|") if self.independent(campaign["plan"]) else run["players"]
-                    for p in run["players"]:
-                        if p not in present:
-                            continue
-                        for field in self.SERIES_FIELDS + self.PLAYER_SERIES_FIELDS.get(p, ()):
-                            point[f"{p}_{field}"] = row.get(f"{p}_{field}")
-                        # El búfer va en una columna distinta en cada reproductor (BUFFER_COLUMN): aquí, en ms
-                        buffer = row.get(BUFFER_COLUMN[p])
-                        point[f"{p}_buffer_ms"] = round(buffer * 1000) if isinstance(buffer, (int, float)) else None
-                        for field in self.PAGE_SERIES_FIELDS:
-                            point[f"{p}_{field}"] = row.get(field)
-                    out[run["id"]]["rows"].append(point)
+                    for field in self.SERIES_FIELDS + self.PLAYER_SERIES_FIELDS.get(p, ()):
+                        point[f"{p}_{field}"] = row.get(f"{p}_{field}")
+                    # El búfer va en una columna distinta en cada reproductor (BUFFER_COLUMN): aquí, en ms
+                    buffer = row.get(BUFFER_COLUMN[p])
+                    point[f"{p}_buffer_ms"] = round(buffer * 1000) if isinstance(buffer, (int, float)) else None
+                    for field in self.PAGE_SERIES_FIELDS:
+                        point[f"{p}_{field}"] = row.get(field)
+                out[run["id"]]["rows"].append(point)
         except OSError:
             pass
         # Tráfico IP de cada intervalo, en el mismo eje (t_s: el final del intervalo)
         try:
-            with open(self.path(cid, "ip.jsonl")) as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    sample = json.loads(line)
-                    run = runs.get(sample.get("run_id"))
-                    if run is None or sample.get("run_started_ms") != run["started_ms"]:
-                        continue
-                    restarted = self.restarts_each_run(campaign["plan"], run["stream"]) and run.get("source_started_ms")
-                    zero = run["source_started_ms"] if restarted else run["measure_start_ms"]
-                    if zero is None:
-                        continue
-                    point = {"t_s": round((sample["t_server_ms"] - zero) / 1000, 2), "phase": sample["phase"]}
-                    for p in run["players"]:
-                        for d in ("down", "up"):
-                            point[f"{p}_ip_{d}_kbps"] = sample.get(f"{p}_{d}_kbps")
-                            point[f"{p}_ip_{d}_dropped"] = sample.get(f"{p}_{d}_dropped")
-                        # Común a las tres ramas: se repite en cada una para dibujarlo junto a sus métricas
-                        point[f"{p}_source_lag_ms"] = sample.get("source_lag_ms")
-                    out[run["id"]]["ip"].append(point)
+            for line in samples_index.read_runs(self.path(cid, "ip.jsonl"), samples_index.ip_index(self, cid), keys):
+                sample = json.loads(line)
+                run = runs.get(sample.get("run_id"))
+                if run is None or sample.get("run_started_ms") != run["started_ms"]:
+                    continue
+                restarted = self.restarts_each_run(campaign["plan"], run["stream"]) and run.get("source_started_ms")
+                zero = run["source_started_ms"] if restarted else run["measure_start_ms"]
+                if zero is None:
+                    continue
+                point = {"t_s": round((sample["t_server_ms"] - zero) / 1000, 2), "phase": sample["phase"]}
+                for p in run["players"]:
+                    for d in ("down", "up"):
+                        point[f"{p}_ip_{d}_kbps"] = sample.get(f"{p}_{d}_kbps")
+                        point[f"{p}_ip_{d}_dropped"] = sample.get(f"{p}_{d}_dropped")
+                    # Común a las tres ramas: se repite en cada una para dibujarlo junto a sus métricas
+                    point[f"{p}_source_lag_ms"] = sample.get("source_lag_ms")
+                out[run["id"]]["ip"].append(point)
         except OSError:
             pass
         return out

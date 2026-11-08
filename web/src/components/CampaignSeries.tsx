@@ -401,20 +401,32 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
   const singleId = isChosen(single) ? single : (selected.find(isChosen) ?? ids[0] ?? null);
   const fetchIds = view === 'metrics' ? (singleId ? [singleId] : []) : selected;
 
+  // Mientras llegan las filas de una selección nueva, la gráfica sigue con las anteriores: se avisa, y las pruebas
+  // nuevas no tienen línea todavía. La petición anterior se aborta al cambiar la selección
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (!fetchIds.length) return setData({});
     let cancelled = false;
-    fetch(`/api/campaigns/${campaign.id}/series?runs=${fetchIds.join(',')}`)
+    const abort = new AbortController();
+    setLoading(true);
+    fetch(`/api/campaigns/${campaign.id}/series?runs=${fetchIds.join(',')}`, { signal: abort.signal })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((body) => {
         if (!cancelled) {
           setData(body);
           setError(null);
+          setLoading(false);
         }
       })
-      .catch((e) => !cancelled && setError(String(e)));
+      .catch((e) => {
+        if (!cancelled) {
+          setError(String(e));
+          setLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
+      abort.abort();
     };
   }, [campaign.id, fetchIds.join(',')]);
 
@@ -759,6 +771,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
         </ul>
       )}
       {error && <p className="text-rose-400">No se pudieron leer las series: {error}</p>}
+      {loading && <p className="text-amber-300/90">Leyendo las filas de las pruebas elegidas… (la primera vez en una campaña grande, unos segundos: se indexan sus filas)</p>}
       {view === 'metrics' ? (
         <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-1">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1">
