@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartDataset, type ChartOptions, type Plugin } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
+import { isPrinting } from '../lib/chartCopy';
 import { multiStream, streamDifferences, streamName } from '../lib/campaignStreams';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
@@ -174,7 +175,8 @@ const crosshair = (at: React.MutableRefObject<number | null>): Plugin<'line'> =>
   id: 'crosshair',
   afterDatasetsDraw(chart) {
     const x = at.current;
-    if (x === null) return;
+    // En la imagen para copiar (lib/chartCopy.ts) no va el cursor
+    if (x === null || isPrinting(chart)) return;
     const { ctx, chartArea, scales } = chart;
     const px = scales.x.getPixelForValue(x);
     if (px < chartArea.left || px > chartArea.right) return;
@@ -514,7 +516,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                 text: PLAYER_LABEL[p],
                 fillStyle: PLAYER_COLOR[p],
                 strokeStyle: PLAYER_COLOR[p],
-                fontColor: '#cbd5e1',
+                fontColor: isPrinting(chart) ? '#0f172a' : '#cbd5e1',
                 lineWidth: 2,
                 hidden: indexes.length > 0 && indexes.every((i) => !chart.isDatasetVisible(i)),
                 datasetIndex: indexes[0],
