@@ -801,7 +801,7 @@ Variables de confusión que añade el modo, al comparar con medidas de un solo n
 
 ## 5. Emulación de red
 
-El router (`router/agent.py`) reenvía los puertos del navegador con DNAT, sin terminar conexiones, y degrada ese tráfico con `tc`; su agente HTTP (`router/api.py`, el que se ejecuta) recibe los perfiles del orquestador y le devuelve los contadores y el árbol de tc. Se controla desde el panel **Emulación de Red** o con `POST /api/network`.
+El router (`router/agent.py`) reenvía los puertos del navegador con DNAT, sin terminar conexiones, y degrada ese tráfico con `tc`; su agente HTTP (`router/api.py`, el que se ejecuta) recibe los perfiles del orquestador y le devuelve los contadores y el árbol de tc. Se controla desde el panel **Emulación de Red** o con `POST /api/network`. El funcionamiento interno (árbol de tc, nombres, filtros, marcas, API del agente y contadores) está en [`router/README.md`](router/README.md).
 
 | Parámetro | Por sentido | Notas |
 | :--- | :--- | :--- |
@@ -1227,6 +1227,7 @@ moq-dash-initial-comparison/
 │   └── nginx.conf                # Entrada HTTP única (puerto 80)
 ├── router/                       # (MediaMTX no tiene carpeta: se configura por variables en docker-compose.yml)
 │   ├── Dockerfile
+│   ├── README.md                 # Funcionamiento interno del router
 │   ├── agent.py                  # Reenvío IP, árbol de tc y aplicación de los perfiles
 │   └── api.py                    # Agente HTTP (:9000): perfiles, contadores y árbol para el esquema
 ├── scripts/
