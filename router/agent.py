@@ -30,7 +30,7 @@ NGINX_IP = os.environ["NGINX_IP"]
 RELAY_IP = os.environ["RELAY_IP"]
 SFU_IP = os.environ["SFU_IP"]
 RTC_IP = os.environ["MEDIAMTX_IP"] if os.environ.get("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else os.environ["SFU_IP"]
-DASH_PORT, DASH_TLS_PORT, MOQ_PORT, CERT_PORT, RTC_PORT = 8080, 8443, 4433, 8081, 8189
+DASH_PORT, DASH_TLS_PORT, MOQ_PORT, RTC_PORT = 8080, 8443, 4433, 8189
 
 # Cada protocolo tiene su propia cola por sentido, con el mismo perfil: los dos ven un enlace idéntico
 # en vez de competir entre sí por uno compartido. Número de la cola: su banda en la qdisc raíz (1:n) y la
@@ -86,7 +86,6 @@ def setup():
         ("tcp", DASH_PORT, NGINX_IP, 80),
         ("tcp", DASH_TLS_PORT, NGINX_IP, 443),
         ("udp", MOQ_PORT, RELAY_IP, MOQ_PORT),
-        ("tcp", CERT_PORT, RELAY_IP, CERT_PORT),
         ("udp", RTC_PORT, RTC_IP, RTC_PORT),
         ("tcp", RTC_PORT, SFU_IP, RTC_PORT),
     ):
