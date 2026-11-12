@@ -36,7 +36,8 @@ DASH_PORT, DASH_TLS_PORT, MOQ_PORT, RTC_PORT = 8080, 8443, 4433, 8189
 # Cada protocolo tiene su propia cola por sentido, con el mismo perfil: los dos ven un enlace idéntico
 # en vez de competir entre sí por uno compartido. Número de la cola: su banda en la qdisc raíz (1:n) y la
 # primera cifra de los handles de debajo (prio n00:, limitador n<plaza>0: y netem n<plaza>1:).
-QUEUES = {"dash_down": 1, "moq_down": 2, "dash_up": 3, "moq_up": 4, "rtc_down": 5, "rtc_up": 6}
+# Por protocolo, bajada y subida seguidas. Hasta el 12-11-2026 eran dash_down 1, moq_down 2, dash_up 3, moq_up 4 (README, sección 5)
+QUEUES = {"dash_down": 1, "dash_up": 2, "moq_down": 3, "moq_up": 4, "rtc_down": 5, "rtc_up": 6}
 # Plazas de cada cola: 1..MAX_CLIENTS para los clientes con perfil propio y GENERAL para el resto. El cliente de la
 # plaza s lleva la marca s (iptables, en FORWARD: ahí se ve su IP en los dos sentidos, antes del MASQUERADE de subida
 # y después de deshacerlo en la bajada) y un filtro u32 por marca lo manda a su banda.
