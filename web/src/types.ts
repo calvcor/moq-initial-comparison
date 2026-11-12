@@ -79,11 +79,12 @@ export interface ServerStatus {
   processes: {
     pipeline: boolean;
   };
-  dash_url: string;
+  dash_url: string | null; // con DASH_HOST, https://DASH_HOST:8443/…; sin él, null (lib/dashUrl.ts)
+  dash_http_port?: number; // sin DASH_HOST: puerto HTTP directo de DASH en el router, solo desde páginas HTTP
   rtc_server?: RtcServer;
   rtc_ingest?: 'udp' | 'rtsp' | 'rtp'; // rtp: mediasoup; udp: MediaMTX lee el MPEG-TS por UDP; rtsp: con el FFmpeg intermedio
   rtc_path?: string; // path de MediaMTX para WHEP
-  dash_path?: 'direct' | 'proxy'; // direct: el navegador va al servidor de DASH por el router; proxy: a través del punto de entrada
+  dash_path?: 'direct' | 'proxy'; // direct: el navegador va al servidor de DASH por el router (siempre desde el 12-11-2026); proxy: a través del punto de entrada
   moq_port?: number;
   moq_host?: string | null; // dirección directa para MoQ; null = el host de la página
   rtc_signal_port?: number; // con mediasoup, puerto TCP de la señalización WebSocket (directa, por el router)
@@ -224,7 +225,7 @@ export interface SampleRow {
   ladder: string | null; // escalera codificada, p. ej. 1080p@4000|720p@2000
   rtc_server: string | null; // mediasoup o mediamtx: servidor de la rama WebRTC
   rtc_ingest: string | null; // rtp (mediasoup), udp o rtsp (MediaMTX): cómo le llega el flujo al servidor
-  dash_path: string | null; // direct o proxy: si la conexión del navegador atraviesa la red emulada
+  dash_path: string | null; // direct o proxy: si la conexión del navegador atraviesa la red emulada (proxy solo hasta el 12-11-2026)
   seg_duration: number | null;
   frag_duration: number | null;
   dash_g2g_ms: number | null;

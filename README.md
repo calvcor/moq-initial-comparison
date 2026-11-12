@@ -63,16 +63,16 @@ Fuera de `localhost` el navegador solo permite WebTransport y WebCodecs en pági
 1. En el servidor, crear un `.env` con el nombre por el que se accederá: `PUBLIC_HOST=testbed.ejemplo.org`. Se usa para el certificado autofirmado del relay.
 2. `docker compose up -d --build`.
 3. En el proxy, un único host que reenvíe `https://testbed.ejemplo.org` a `http://<servidor>:80`. No hace falta definir rutas.
-4. Los puertos **4433/udp** (MoQ), **8189/udp** (WebRTC) y **8189/tcp** (señalización de mediasoup) del servidor deben ser alcanzables directamente desde los navegadores: no pasan por el proxy.
+4. Los puertos **8443/tcp** (DASH), **4433/udp** (MoQ), **8189/udp** (WebRTC) y **8189/tcp** (señalización de mediasoup) del servidor deben ser alcanzables directamente desde los navegadores: no pasan por el proxy.
 5. Si el nombre público resuelve al proxy y no al servidor (lo habitual con un comodín DNS), añadir al `.env` la dirección directa del servidor para MoQ: `MOQ_HOST=10.0.0.5`. El relay usa un certificado autofirmado fijado por huella, así que vale una IP. La alternativa es que el proxy reenvíe el puerto 4433/udp como *stream*.
 
-6. **DASH directo (recomendado para medir).** Por defecto DASH pasa por el punto de entrada, que es un proxy: la conexión TCP del navegador termina en él y la emulación de red actúa sobre una segunda conexión interna, no sobre la del navegador. Para que DASH vaya extremo a extremo, como MoQ y WebRTC:
+6. **DASH directo (imprescindible con HTTPS).** DASH va siempre directo al router, como MoQ y WebRTC, y nunca por el punto de entrada ni por el proxy de delante: la conexión TCP del propio navegador es la que atraviesa la red emulada. Desde una página HTTPS tiene que ser por HTTPS, con un certificado para un nombre que apunte al servidor:
    - Crear un nombre DNS que apunte **directamente** al servidor (no al proxy). Con DuckDNS, un subdominio propio, p. ej. `phd-testing.duckdns.org` → `10.0.0.5`.
    - Añadir al `.env` `DASH_HOST=phd-testing.duckdns.org` y `DUCKDNS_TOKEN=<token>`. El token solo vive en ese fichero, que no se sube al repositorio.
    - El servicio `dash-cert` obtiene y renueva un certificado de Let's Encrypt por el reto DNS (con `acme.sh`, sin registrar correo), que se guarda en `certs/`, también fuera del repositorio. `nginx-dash` lo activa al aparecer y sirve DASH con TLS y HTTP/1.1 en el puerto **8443/tcp**, que el router reenvía y degrada igual que los de MoQ y WebRTC.
    - El puerto 8443/tcp del servidor debe ser alcanzable desde los navegadores.
 
-   El pie del reproductor DASH indica el camino en uso ("Directo" o "Vía proxy"), y el CSV lo registra en la columna `dash_path`. Sin `DASH_HOST`, todo sigue funcionando por el proxy.
+   Sin `DASH_HOST`, DASH solo funciona desde páginas HTTP (p. ej. `http://localhost` o `http://<IP del servidor>`): el navegador pide el manifiesto por HTTP al puerto **8080/tcp** (`DASH_HTTP_PORT`) de `MOQ_HOST` o del host de la página, que el router reenvía al nginx de DASH. En una página HTTPS sin `DASH_HOST`, el reproductor DASH muestra un error y no reproduce. El pie del reproductor indica la dirección a la que conecta ("Directo · …"). **Hasta el 12-11-2026, sin `DASH_HOST` DASH pasaba por el punto de entrada**, que es un proxy: la conexión TCP del navegador terminaba en él y la red emulada actuaba sobre una segunda conexión interna. Esas medidas tienen `dash_path=proxy` en el CSV; desde entonces es siempre `direct`. El cambio no afecta a los dos servidores, que ya tenían `DASH_HOST`.
 
 ### Despliegue sin proxy, con un certificado propio
 
@@ -130,7 +130,7 @@ La emulación de red necesita en el kernel los módulos `sch_prio`, `sch_tbf`, `
                                ▼                       ▼
                     ┌──────────────────────────────────────────────┐
                     │ Router de emulación de red (tc + netem)      │
-                    │ :8080/tcp → Nginx   ·   :4433/udp → relay    │
+                    │ :8443 y :8080/tcp → Nginx · :4433/udp → relay│
                     │ ancho de banda, retardo, jitter y pérdida    │
                     └──────────┬───────────────────────┬───────────┘
              HTTP/1.1 chunked  │                       │ WebTransport
@@ -1206,7 +1206,7 @@ El reproductor de dash.js queda accesible como `window.dashPlayer` en la consola
 | `GET /api/versions` | Versiones desplegadas de los componentes de terceros y la última publicada de cada uno |
 | `GET /api/time` | Reloj del servidor en ms, para la medida glass-to-glass |
 | `GET /api/utc` | Reloj del servidor en ISO 8601, para el `UTCTiming` del manifiesto |
-| `PUT` / `GET` / `DELETE /media/dash/{nombre}` | Origen LL-DASH; el navegador accede por el punto de entrada, a través del router y de Nginx |
+| `PUT` / `GET` / `DELETE /media/dash/{nombre}` | Origen LL-DASH; el navegador accede directamente por el router (8443 con `DASH_HOST`, 8080 sin él) y el nginx de DASH, nunca por el punto de entrada |
 
 Documentación interactiva en <http://localhost/docs>.
 

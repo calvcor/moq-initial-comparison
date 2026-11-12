@@ -6,14 +6,15 @@
 # Variables opcionales (fichero .env): HTTP_PORT (80), MOQ_PORT (4433), PUBLIC_HOST (localhost), el nombre
 # con el que el navegador accede, para el certificado autofirmado del relay, y MOQ_HOST, la dirección a la
 # que el navegador debe conectar por MoQ cuando el nombre de la página apunta a un proxy y no a este servidor.
-# DASH directo: DASH_HOST (un nombre DNS que apunte a este servidor), DUCKDNS_TOKEN (para obtener su
-# certificado) y DASH_PORT (8443). Sin ellas, DASH pasa por el punto de entrada, que es un proxy.
+# DASH va siempre directo al router, como MoQ y WebRTC, nunca por el punto de entrada. Con DASH_HOST (un nombre DNS que
+# apunte a este servidor) y DUCKDNS_TOKEN (para obtener su certificado), por HTTPS a DASH_PORT (8443); sin ellas, solo
+# desde páginas HTTP, por HTTP a DASH_HTTP_PORT (8080). En una página HTTPS sin DASH_HOST no hay DASH.
 #
 # Las versiones de los servidores de terceros van fijadas (MOQ_RELAY_VERSION, MEDIAMTX_VERSION): con
 # "latest" cambiarían solas al volver a descargar la imagen y dos medidas dejarían de ser comparables.
 # Para actualizar, cambiar aquí los dos valores por defecto de cada una y volver a desplegar.
 services:
-  # Entrada HTTP única: reparte entre dashboard, API, LL-DASH y huella del certificado
+  # Entrada HTTP única: reparte entre dashboard, API y huella del certificado (DASH no pasa por aquí)
   edge:
     image: nginx:alpine
     container_name: testbed-edge
@@ -50,6 +51,7 @@ services:
       - "8189:8189/udp"                # WebRTC (ICE, DTLS, SRTP) -> servidor WebRTC:8189 (el navegador va directo)
       - "8189:8189/tcp"                # WebRTC con mediasoup: señalización WebSocket -> sfu:8189 (el navegador va directo)
       - "${DASH_PORT:-8443}:8443/tcp"  # LL-DASH con TLS -> nginx-dash:443 (el navegador va directo, si hay DASH_HOST)
+      - "${DASH_HTTP_PORT:-8080}:8080/tcp"  # LL-DASH sin TLS -> nginx-dash:80 (el navegador va directo: sin DASH_HOST, desde páginas HTTP)
     networks:
       default:
       core:
@@ -161,6 +163,7 @@ services:
       - MOQ_HOST=${MOQ_HOST:-}
       - DASH_HOST=${DASH_HOST:-}
       - DASH_PORT=${DASH_PORT:-8443}
+      - DASH_HTTP_PORT=${DASH_HTTP_PORT:-8080}
       # Cámara RTSP como fuente alternativa al bucle (README, 4.1b); la URL puede llevar credenciales
       - CAMERA_RTSP_URL=${CAMERA_RTSP_URL:-}
       - CAMERA_FPS=${CAMERA_FPS:-}

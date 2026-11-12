@@ -163,9 +163,11 @@ El manifiesto completo, con todos sus campos explicados y ejemplos de cálculo, 
    - `-adaptation_sets "id=0,streams=v id=1,streams=a"`: todas las calidades de vídeo en un mismo AdaptationSet, para que el reproductor pueda conmutar entre ellas.
    - `-method PUT -http_persistent 1`: sube cada fichero por HTTP PUT *chunked* a medida que lo genera.
 2. **Origen.** Un servidor en memoria dentro del orquestador (`origin.py`) recibe esos PUT y sirve los GET. Si un GET llega mientras el PUT sigue abierto, reenvía los bytes según entran.
-3. **Entrega.** nginx reenvía sin búfer (`proxy_buffering off`). Hay dos caminos:
-   - **Directo** (con `DASH_HOST` configurado): el navegador conecta por HTTPS y HTTP/1.1 al puerto 8443 del servidor, que el router reenvía al nginx de DASH. La conexión TCP del propio navegador atraviesa la red emulada, como en MoQ y WebRTC.
-   - **A través del punto de entrada**: el navegador conecta al nginx de entrada (o a un proxy externo), que abre otra conexión, esa sí por el router. La red emulada actúa sobre esa segunda conexión, no sobre la del navegador.
+3. **Entrega.** nginx reenvía sin búfer (`proxy_buffering off`). El navegador conecta siempre directamente, por HTTP/1.1, al servidor a través del router, que lo reenvía al nginx de DASH, y la conexión TCP del propio navegador atraviesa la red emulada, como en MoQ y WebRTC:
+   - **Con `DASH_HOST`**: por HTTPS al puerto 8443.
+   - **Sin `DASH_HOST`**, solo desde páginas HTTP: por HTTP al puerto 8080. En una página HTTPS no hay camino y DASH no se reproduce.
+
+   Hasta el 12-11-2026, sin `DASH_HOST` el navegador conectaba al nginx de entrada (o a un proxy externo), que abría otra conexión, esa sí por el router, y la red emulada actuaba sobre esa segunda conexión. Ese camino se ha quitado.
 4. **Reproducción.** `dash.js` descarga con `fetch` leyendo el cuerpo a trozos, y va metiendo cada fragmento en el `SourceBuffer` de **MSE** (*Media Source Extensions*). A partir de ahí decodifica y pinta el elemento `<video>` del navegador. El reproductor se explica en 3.8.
 
 En esta rama se hace una petición HTTP por segmento y por componente: una de vídeo y una de audio cada 2 s. Los datos de cada petición llegan repartidos a lo largo de esos 2 s.
@@ -988,7 +990,7 @@ Diferencias entre las ramas que no son del protocolo en sí, y que conviene cont
 3. **Audio**: WebRTC no lo lleva; los otros dos sí (aunque silenciado en el reproductor).
 4. **Búfer**: cada rama tiene un valor por defecto de orden distinto. Comparar latencias es, en buena parte, comparar configuraciones de búfer.
 5. **Implementación**: se mide `dash.js`, `@moq/watch` y el WebRTC del navegador, no los protocolos en abstracto. Otras implementaciones se comportarían distinto.
-6. **Proxy**: si DASH pasa por el punto de entrada, la conexión TCP del navegador termina en el proxy y la red emulada actúa sobre una segunda conexión interna. Se evita con el camino directo (`DASH_HOST`), en el que la conexión del navegador atraviesa el router igual que en MoQ y WebRTC. El CSV registra qué camino se usó (`dash_path`).
+6. **Proxy (solo hasta el 12-11-2026)**: entonces, sin `DASH_HOST`, DASH pasaba por el punto de entrada, la conexión TCP del navegador terminaba en el proxy y la red emulada actuaba sobre una segunda conexión interna. Desde esa fecha DASH va siempre directo por el router, igual que MoQ y WebRTC. El CSV registra qué camino se usó (`dash_path`): en las medidas antiguas puede ser `proxy`.
 7. **Codificación pensada para emisión, no para WebRTC interactivo.** Las tres ramas reciben el mismo flujo: H.264 *Constrained Baseline* sin B-frames, un keyframe cada GOP (1 s por defecto) y bitrate con tope (120 % del nominal, búfer de 1 s). Es la configuración que recomiendan los servicios que reciben WebRTC desde un codificador externo (WHIP): sin B-frames y keyframe cada 1-2 s. Pero no es como codifica WebRTC en una videollamada. Allí el codificador de los navegadores (libwebrtc) usa bitrate constante ajustado en vivo por el control de congestión, un intervalo de keyframes de 3000 frames (50 s a 60 fps) y keyframes adicionales cuando el receptor los pide tras una pérdida.
 
    Aquí falta ese lazo con el codificador. MediaMTX reenvía lo que recibe de un FFmpeg que solo copia, así que nadie atiende las peticiones de keyframe del navegador (PLI/FIR) ni ajusta la tasa del codificador según la congestión. Tras una pérdida, la imagen solo se recupera en el siguiente GOP, y ante falta de ancho de banda no hay forma de bajar la tasa. Las otras dos ramas tampoco tienen ese lazo, pero no lo necesitan: DASH y MoQ adaptan eligiendo entre calidades ya codificadas.

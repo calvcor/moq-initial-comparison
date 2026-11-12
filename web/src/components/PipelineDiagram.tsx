@@ -49,9 +49,9 @@ const LANES: { id: LaneId; title: string; color: string; bar: string; stages: St
       {
         key: 'deliver',
         name: 'Entrega',
-        nodes: ['Nginx', 'Router (emulación)', 'Entrada / proxy', 'Red', 'dash.js'],
+        nodes: ['Nginx', 'Router (emulación)', 'Red', 'dash.js'],
         includes:
-          'Camino HTTP del fragmento desde el origen hasta el búfer del navegador: Nginx, router de emulación de red, punto de entrada, proxy externo si lo hay, la red y la descarga y anexado por dash.js. Si el navegador aún no había pedido el segmento, también esa espera.',
+          'Camino HTTP del fragmento desde el origen hasta el búfer del navegador: Nginx, router de emulación de red, la red y la descarga y anexado por dash.js. Si el navegador aún no había pedido el segmento, también esa espera.',
         from: 'el fragmento completo en el origen',
         to: 'el primer instante en que el búfer del <video> contiene ese frame (se comprueba cada 20 ms)',
         uncertainty: 'both',

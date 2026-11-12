@@ -17,8 +17,9 @@ import { PLAYER_IDS, INITIAL_METRICS, IpRates, buildSampleRow } from './lib/samp
 import type { PlayerId } from './lib/samples';
 import type { StreamConfig, ServerStatus, PlayerMetrics, SampleRow, NetworkProfile, VersionReport } from './types';
 import { Activity, Radio, Cpu, Network } from 'lucide-react';
+import { dashManifestUrl } from './lib/dashUrl';
 
-// Mismo origen que el dashboard: el punto de entrada (edge) reparte /api, /media/dash y el resto
+// Mismo origen que el dashboard: el punto de entrada (edge) reparte /api y el resto (DASH va directo al router: lib/dashUrl.ts)
 const API_BASE = '';
 
 const PLAYERS_KEY = 'testbed.players';
@@ -509,7 +510,7 @@ export function App() {
         <div className={`grid gap-4 ${gridCols(players)}`}>
           {players.dash && !campaignRunning && <DashPlayer
             key={`dash-${dashStreamId}`}
-            url={serverStatus?.dash_url || '/media/dash/manifest.mpd'}
+            url={dashManifestUrl(serverStatus)}
             timecodes={serverStatus?.timecodes}
             renditions={serverStatus?.config.renditions}
             isStreaming={isStreaming}

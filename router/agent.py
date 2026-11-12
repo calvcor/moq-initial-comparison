@@ -4,7 +4,7 @@ Reenvía a nivel IP (DNAT, sin terminar conexiones) los puertos que usa el naveg
 finales y degrada ese tráfico con tc en los dos sentidos:
 
     navegador -> :8443/tcp -> nginx-dash:443     (LL-DASH directo, con TLS)
-    punto de entrada -> :8080/tcp -> nginx-dash:80   (LL-DASH a través del proxy, sin DASH_HOST)
+    navegador -> :8080/tcp -> nginx-dash:80      (LL-DASH directo, sin TLS: sin DASH_HOST, desde páginas HTTP)
     navegador -> :4433/udp -> moq-relay:4433     (MoQ sobre QUIC)
     navegador -> :8189/udp -> sfu o mediamtx:8189 (WebRTC: ICE, DTLS y SRTP; el servidor lo elige RTC_SERVER)
     navegador -> :8189/tcp -> sfu:8189           (señalización WebSocket de mediasoup; va en la cola de WebRTC)
@@ -102,7 +102,9 @@ def setup():
         # Clasificación en todas las interfaces, sin depender de por cuál publique Docker los puertos.
         # Bajada = servidor -> cliente, subida = cliente -> servidor; 1:7 es el resto del tráfico, sin tocar.
         for dev in interfaces():
+            # Qdisc raíz de prioridad: una banda por cola, y la última para el resto del tráfico (priomap)
             run(f"tc qdisc replace dev {dev} root handle 1: prio bands 7 priomap 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6")
+            # Filtros u32 que miran el protocolo y el puerto de origen o destino, y la marca del cliente si la tiene.
             u32 = f"tc filter add dev {dev} parent 1: protocol ip u32"
             run(f"{u32} match ip protocol 6 0xff match ip sport {DASH_PORT} 0xffff flowid 1:{QUEUES['dash_down']}")
             run(f"{u32} match ip protocol 17 0xff match ip sport {MOQ_PORT} 0xffff flowid 1:{QUEUES['moq_down']}")
@@ -181,14 +183,17 @@ def set_clients(wanted: dict[str, dict]):
         if not re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", ip):
             raise ValueError(f"IP de cliente no válida: {ip}")
     for ip in [ip for ip in clients if ip not in wanted]:
+        # Se quita la plaza y sus reglas de FORWARD, y se deja el tráfico en la cola general, para los clientes que no tengan perfil propio
         slot = clients.pop(ip)["slot"]
         for table, rule in client_rules(ip, slot):
             run(f"iptables -t {table} -D FORWARD {rule}", check=False)
         for queue in QUEUES:
             apply_queue(queue, EMPTY, slot)
     for ip, body in wanted.items():
+        # Se actualiza el perfil del cliente (si no existía, se le asigna la plaza más baja libre y se ponen sus reglas de FORWARD)
         link = {d: {**EMPTY, **(body.get(d) or {})} for d in DIRECTIONS}
         if ip not in clients:
+            # Se le asigna la plaza más baja libre y se ponen sus reglas de FORWARD
             slot = min(set(range(1, MAX_CLIENTS + 1)) - {c["slot"] for c in clients.values()})
             for table, rule in client_rules(ip, slot):
                 run(f"iptables -t {table} -A FORWARD {rule}")

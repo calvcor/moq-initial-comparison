@@ -1,7 +1,7 @@
 #!/bin/sh
-# nginx-dash: sirve LL-DASH en el puerto 80 (camino a través del punto de entrada) y, cuando hay
-# certificado para DASH_HOST, también en el 443 con TLS: es el puerto al que el navegador conecta
-# directamente, a través del router de emulación, sin ningún proxy intermedio.
+# nginx-dash: sirve LL-DASH en el puerto 80 (sin TLS) y, cuando hay certificado para DASH_HOST, también en
+# el 443 con TLS. El navegador conecta a los dos directamente, a través del router de emulación (puertos 8080 y
+# 8443), sin ningún proxy intermedio: el 80 solo se usa sin DASH_HOST, desde páginas HTTP.
 # Comprueba el certificado cada minuto: lo activa en cuanto aparece y recarga nginx al renovarse.
 CERT="/certs/certificates/${DASH_HOST}.crt"
 KEY="/certs/certificates/${DASH_HOST}.key"

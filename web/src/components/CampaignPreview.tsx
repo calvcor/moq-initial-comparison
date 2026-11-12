@@ -7,6 +7,7 @@ import { sfuSignalUrl } from '../lib/rtcSession';
 import { gridCols } from '../lib/layout';
 import { syncClock } from '../lib/clock';
 import { PLAYER_IDS, INITIAL_METRICS } from '../lib/samples';
+import { dashManifestUrl } from '../lib/dashUrl';
 import type { CampaignAssignment, PlayerId, PlayerMetrics, PlayerPreset, ServerStatus } from '../types';
 
 // Vista previa de una prueba (README, 4.8): el servidor ya ha aplicado su red y su emisión, y aquí se montan los
@@ -100,7 +101,7 @@ export const CampaignPreview: React.FC<{ preview: Preview; onClose: () => void }
           {active.dash && (
             <DashPlayer
               key={`dash-${key}`}
-              url={status.dash_url || '/media/dash/manifest.mpd'}
+              url={dashManifestUrl(status)}
               timecodes={status.timecodes}
               renditions={status.config.renditions}
               isStreaming={isStreaming}

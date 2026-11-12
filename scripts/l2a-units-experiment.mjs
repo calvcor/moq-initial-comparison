@@ -67,7 +67,8 @@ const page = (variant) => `<!doctype html><meta charset="utf-8"><title>L2A ${var
 <script>
 (async () => {
   const status = await (await fetch('/api/status')).json();
-  const url = status.dash_url || '/media/dash/manifest.mpd';
+  // Directo al router, como en el dashboard (web/src/lib/dashUrl.ts): DASH no pasa por el punto de entrada
+  const url = status.dash_url || `http://${status.moq_host || location.hostname}:${status.dash_http_port ?? 8080}/media/dash/manifest.mpd`;
   const p = dashjs.MediaPlayer().create();
   p.updateSettings({ streaming: {
     delay: { liveDelay: 2.0 },

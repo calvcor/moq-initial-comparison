@@ -56,7 +56,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 | Relay MoQ | contenedor `moq-relay` | Solo reparte; el catálogo lo escribe el publicador |
 | WebRTC | `sfu/` (mediasoup) y `server/app/rtprelay.py`; o MediaMTX | `RTC_SERVER` en el `.env`. `mediasoup` (por defecto): FFmpeg pasa la escalera a RTP sin recodificar, el relay la junta en un socket y el SFU elige la capa (README, 3.4c). `mediamtx` (versión anterior): una sola calidad por WHEP; lee el MPEG-TS por UDP de la compuerta, y `RTC_INGEST=rtsp` vuelve al FFmpeg + RTSP (README, 3.4b) |
 | Router | `router/agent.py` | DNAT + tc/netem, una cola por protocolo y sentido, con 8 plazas por cliente (marca por IP) que solo usan las pruebas en paralelo (README, sección 5) |
-| Entrada HTTP | `edge/nginx.conf` | Único puerto HTTP (80) |
+| Entrada HTTP | `edge/nginx.conf` | Único puerto HTTP (80): página, API y huella del relay. DASH no pasa por aquí desde el 12-11-2026: va directo al router (8443 con `DASH_HOST`, 8080 sin él) |
 | Dashboard | `web/` (React + Vite) | Reproductores (cada uno se puede apagar; el CSV registra los activos en `players`), medidor, esquema de etapas, CSV |
 | Campañas | `server/app/campaign.py`, `web/src/components/Campaign*.tsx`, `scripts/campaign-worker.mjs` | Baterías desatendidas; el servidor lleva red y emisión, el navegador (la página o Chrome headless con el script) es el trabajador (README, 4.8). Con `workers` en el plan, un trabajador independiente por reproductor (`--name`), headless o en quiosco, con la ventana de la calidad más alta (README 4.8, trabajadores independientes); con `parallel` y `worker_pool`, cada prueba toma uno libre y se miden a la vez las de la misma emisión, cada trabajador con su red en su propia cola del router (por IP: dos con la misma no van a la vez); sin ellos, todo como antes. Cada prueba guarda su trabajador. Mientras corre, la API manual responde 409 |
 | Versiones | `server/app/versions.py`, `web/src/components/VersionsPanel.tsx` | Instalado frente a última publicada |
@@ -111,7 +111,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 - Es un servidor doméstico: **no dejes la emisión en marcha si el usuario la tenía detenida**
   (`POST /api/stop` para la fuente también). Sin permisos para subir prioridades (`renice` a 0 falla).
 - Tras traer `sfu/`, la primera vez hay que construir el SFU y el router (`docker compose up -d --build --no-deps sfu router`). Cambiar `RTC_SERVER` después no reconstruye nada (README, 3.4c).
-- Puertos: 80/tcp (página por NPM), 8443/tcp (DASH directo), 4433/udp (MoQ), 8189/udp (WebRTC), 8189/tcp (señalización WebSocket de mediasoup, con `wss://` y el certificado de `DASH_HOST`).
+- Puertos: 80/tcp (página por NPM), 8443/tcp (DASH directo; DASH no pasa nunca por NPM ni por el punto de entrada), 8080/tcp (DASH directo sin TLS: solo sin `DASH_HOST` y desde páginas HTTP), 4433/udp (MoQ), 8189/udp (WebRTC), 8189/tcp (señalización WebSocket de mediasoup, con `wss://` y el certificado de `DASH_HOST`).
 - `.env` del servidor (permisos 600, nunca en el repositorio): `MOQ_HOST`, `DASH_HOST`
   (`phd-testing.duckdns.org`), `DUCKDNS_TOKEN`. El certificado de DASH vive en `certs/dash/` y lo
   renueva `dash-cert` (acme.sh, sin correo). Si se borra esa carpeta, reinicia `nginx-dash`.

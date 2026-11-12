@@ -6,6 +6,7 @@ import { meters } from '../lib/qoe';
 import { PlaybackRateTracker, rateTrackers } from '../lib/playbackRate';
 import { DashTracer } from '../lib/trace';
 import { DashExplain } from './DashExplain';
+import { DASH_NEEDS_HOST } from '../lib/dashUrl';
 import type { DashAbr, PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } from '../types';
 
 // Modo de corrección de latencia de dash.js: LoL+, que además de la latencia mira el búfer y frena por debajo
@@ -14,7 +15,7 @@ import type { DashAbr, PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } 
 const CATCHUP_MODE = 'liveCatchupModeLoLP';
 
 interface DashPlayerProps {
-  url: string;
+  url: string | null; // siempre directa al router (lib/dashUrl.ts); null: no hay camino directo
   isStreaming: boolean;
   timecodes?: TimecodeLayout[];
   renditions?: Rendition[];
@@ -32,11 +33,10 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
   preset,
   onMetricsUpdate,
 }) => {
-  // El servidor da la ruta del manifiesto relativa al punto de entrada; dash.js la necesita absoluta
-  const url = new URL(manifestPath, window.location.href).href;
-  // Directo: el navegador conecta al servidor de DASH a través del router, y su propia conexión TCP es la
-  // que sufre la red emulada. Si no, pasa por el punto de entrada, que es un proxy.
-  const direct = new URL(url).host !== window.location.host;
+  // El navegador conecta siempre al servidor de DASH a través del router, y su propia conexión TCP es la que sufre la
+  // red emulada, como en MoQ y WebRTC. Sin URL (página HTTPS sin DASH_HOST) no hay camino directo y no se reproduce:
+  // desde el 12-11-2026 no se recurre al punto de entrada, que es un proxy.
+  const url = manifestPath ?? '';
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLDivElement | null>(null); // zona de vídeo, la que pasa a pantalla completa
 
@@ -170,6 +170,12 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         playerRef.current = null;
       }
       setPlayerStatus('idle');
+      return;
+    }
+
+    if (!url) {
+      setPlayerStatus('error');
+      setErrorMsg(DASH_NEEDS_HOST);
       return;
     }
 
@@ -509,12 +515,12 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         <div
           className="truncate"
           title={
-            direct
+            url
               ? 'El navegador conecta directamente al servidor de DASH a través del router de emulación: su propia conexión TCP atraviesa la red emulada, como en MoQ y WebRTC.'
-              : 'El navegador conecta al punto de entrada, que reenvía a DASH por otra conexión TCP. La red emulada actúa sobre esa segunda conexión, no sobre la del navegador. Para ir directo hay que configurar DASH_HOST en el servidor.'
+              : DASH_NEEDS_HOST
           }
         >
-          {direct ? `Directo · ${new URL(url).host}` : 'Vía proxy · /media/dash/manifest.mpd'}
+          {url ? `Directo · ${new URL(url).host}` : 'Sin camino directo (falta DASH_HOST)'}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <label

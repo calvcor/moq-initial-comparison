@@ -84,9 +84,12 @@ TSGATE = os.path.join(os.path.dirname(__file__), "tsgate.py")
 UTC_TIMING_URL = os.getenv("UTC_TIMING_URL", "/api/utc")
 CERTS_DIR = "/certs"
 
-# DASH directo: nombre DNS que apunta a este servidor y puerto TLS que el router reenvía a nginx-dash
+# DASH va siempre directo al router, como MoQ y WebRTC, nunca por el punto de entrada ni por un proxy delante de la
+# página. Con DASH_HOST (nombre DNS que apunta a este servidor), por HTTPS a DASH_PORT; sin él, solo desde páginas HTTP,
+# por HTTP a DASH_HTTP_PORT. Los dos los reenvía el router a nginx-dash.
 DASH_HOST = os.getenv("DASH_HOST", "").strip()
 DASH_PORT = int(os.getenv("DASH_PORT", "8443"))
+DASH_HTTP_PORT = int(os.getenv("DASH_HTTP_PORT", "8080"))
 
 # Cámara RTSP como fuente alternativa al bucle. La URL suele llevar usuario y contraseña: solo vive en el
 # .env y nunca sale por la API ni al CSV. CAMERA_FPS fuerza la cadencia si la cámara no la anuncia bien.
@@ -97,9 +100,9 @@ CAMERA_FPS = os.getenv("CAMERA_FPS", "").strip()
 # 238 Mbit/s), con PSNR de luma de 51,5 dB.
 REFERENCE_QP = 10
 
-def dash_url() -> str:
-    path = "/media/dash/manifest.mpd"
-    return f"https://{DASH_HOST}:{DASH_PORT}{path}" if DASH_HOST else path
+def dash_url() -> Optional[str]:
+    """URL del manifiesto con DASH_HOST; sin él, None: la arma el navegador con su host y DASH_HTTP_PORT (web/src/lib/dashUrl.ts)."""
+    return f"https://{DASH_HOST}:{DASH_PORT}/media/dash/manifest.mpd" if DASH_HOST else None
 
 # MoQ relay URL dentro de la red docker
 MOQ_RELAY_URL = os.getenv("MOQ_RELAY_URL", "https://moq-relay:4433/anon")
@@ -676,10 +679,12 @@ def get_status():
         "sources": source.states,
         "camera": camera_state,
         "restarts": restarts,
-        # Con DASH_HOST, el navegador pide DASH directamente a este servidor por el router; sin él, a
-        # través del punto de entrada, que es un proxy. MoQ va siempre directo por UDP al puerto indicado.
+        # El navegador pide DASH siempre directamente a este servidor por el router: con DASH_HOST, por HTTPS a
+        # dash_url; sin él, por HTTP a dash_http_port de moq_host o del host de la página (solo en páginas HTTP).
+        # Hasta el 12-11-2026, sin DASH_HOST iba por el punto de entrada, que es un proxy (dash_path "proxy").
         "dash_url": dash_url(),
-        "dash_path": "direct" if DASH_HOST else "proxy",
+        "dash_http_port": DASH_HTTP_PORT,
+        "dash_path": "direct",
         # Servidor de WebRTC, su ingesta y, con MediaMTX, el path que debe pedir el reproductor por WHEP
         "rtc_server": RTC_SERVER,
         "rtc_ingest": "rtp" if RTC_SERVER == "mediasoup" else RTC_INGEST,

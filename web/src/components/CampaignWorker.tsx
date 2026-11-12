@@ -6,6 +6,7 @@ import { sfuSignalUrl } from '../lib/rtcSession';
 import { gridCols } from '../lib/layout';
 import { syncClock, serverNowMs } from '../lib/clock';
 import { PLAYER_IDS, INITIAL_METRICS, IpRates, buildSampleRow } from '../lib/samples';
+import { dashManifestUrl } from '../lib/dashUrl';
 import type { CampaignAssignment, WorkerBrowser, PlayerId, PlayerMetrics, PlayerPreset, SampleRow, ServerStatus, VersionReport } from '../types';
 
 // Trabajador de las campañas (README, 4.8). El servidor decide qué prueba toca; esta pestaña monta los
@@ -381,7 +382,7 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
           {active.dash && (
             <DashPlayer
               key={`dash-${mounted.run}`}
-              url={status.dash_url || '/media/dash/manifest.mpd'}
+              url={dashManifestUrl(status)}
               timecodes={status.timecodes}
               renditions={status.config.renditions}
               isStreaming={isStreaming}

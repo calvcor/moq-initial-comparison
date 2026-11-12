@@ -1386,7 +1386,7 @@ class Campaigns:
             }
             ip = [s for s in self.ip.pop(run["id"], []) if s["phase"] == "measuring"]
             # Con pruebas en paralelo, el tráfico de cada reproductor tiene que haber ido por la cola de su trabajador:
-            # si el router lo vio llegar desde otra IP (otra ruta, un NAT, DASH por el proxy sin DASH_HOST), fue por la
+            # si el router lo vio llegar desde otra IP (otra ruta, un NAT), fue por la
             # general, con la red de otra prueba
             if run.get("client_ips") and ip and not reasons:
                 for p in run["players"]:

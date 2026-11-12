@@ -1,6 +1,6 @@
 # Puerto directo de LL-DASH: el navegador llega aquí a través del router, sin proxy intermedio, así que
 # su propia conexión TCP es la que atraviesa la red emulada (como la de MoQ y la de WebRTC).
-# Solo HTTP/1.1, como el camino a través del punto de entrada: HTTP/2 metería vídeo y audio en una
+# Solo HTTP/1.1, como el puerto 80 (sin TLS): HTTP/2 metería vídeo y audio en una
 # misma conexión TCP y cambiaría lo que se mide.
 server {
     listen 443 ssl;
