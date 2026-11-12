@@ -10,14 +10,6 @@ import type { NetworkState, RouterBand, RouterSlot, RouterTree as Tree } from '.
 const OPEN_KEY = 'router-tree-open';
 const POLL_MS = 2000;
 
-const QUEUE_LABEL: Record<string, string> = {
-  dash_down: 'LL-DASH · bajada',
-  dash_up: 'LL-DASH · subida',
-  moq_down: 'MoQ · bajada',
-  moq_up: 'MoQ · subida',
-  rtc_down: 'WebRTC · bajada',
-  rtc_up: 'WebRTC · subida',
-};
 const QUEUE_COLOR: Record<string, string> = {
   dash: 'text-blue-300 border-blue-700/60',
   moq: 'text-emerald-300 border-emerald-700/60',
@@ -32,15 +24,16 @@ function readOpen(): boolean {
   }
 }
 
-function linkText(slot: RouterSlot): string {
+// Lo aplicado en una plaza, dato a dato (se parte de línea solo entre datos)
+function linkParts(slot: RouterSlot): string[] {
   const l = slot.link;
-  if (!l) return 'sin restricciones: pasa tal cual, sin tbf ni netem';
+  if (!l) return ['sin restricciones: pasa tal cual, sin tbf ni netem'];
   const parts = [l.rate_kbit ? `${l.rate_kbit} kbit/s` : 'sin límite de caudal'];
   if (l.delay_ms || l.jitter_ms) parts.push(`retardo ${l.delay_ms} ms${l.jitter_ms ? ` ±${l.jitter_ms}` : ''}`);
   if (l.loss_pct) parts.push(`pérdida ${l.loss_pct} %`);
   if (l.rate_kbit) parts.push(`cola ${l.queue_ms} ms`);
-  parts.push(`limit ${l.limit} paq.`);
-  return parts.join(' · ');
+  parts.push(`${l.limit} paq.`); // limit de netem
+  return parts;
 }
 
 // Caudal de cada plaza entre dos lecturas: los bytes de iptables son acumulados
@@ -63,73 +56,98 @@ function useRates(tree: Tree | null | undefined): Record<string, number | null> 
   return rates;
 }
 
+// Una plaza en dos líneas: banda, de quién es y contadores; debajo, su tbf y netem con el perfil aplicado
 const Slot: React.FC<{ slot: RouterSlot; kbps: number | null | undefined }> = ({ slot, kbps }) => (
-  <li className="relative pl-4 before:absolute before:left-0 before:top-2.5 before:w-3 before:border-t before:border-slate-700">
-    <div className="flex flex-wrap items-baseline gap-x-2">
-      <span className="font-mono text-slate-200">{slot.band}</span>
-      <span className={slot.general ? 'text-slate-300' : 'text-indigo-300'}>
+  <li className="py-1 border-t border-slate-800 first:border-t-0">
+    <div className="flex items-baseline gap-x-2">
+      <span className="font-mono text-slate-200 shrink-0">{slot.band}</span>
+      <span className={`truncate ${slot.general ? 'text-slate-300' : 'text-indigo-300'}`}>
         {slot.general ? 'general' : `plaza ${slot.slot} · ${slot.client}`}
       </span>
+      <span className="ml-auto shrink-0 text-slate-500 tabular-nums" title="Caudal reenviado · descartes de netem acumulados · paquetes en cola ahora">
+        {kbps === null || kbps === undefined ? '--' : `${kbps} kbit/s`} · {slot.dropped} desc. · {slot.queued} en cola
+      </span>
+    </div>
+    <div className="text-slate-400">
       {slot.limiter && (
-        <span className="font-mono text-slate-500">
-          → tbf {slot.limiter} → netem {slot.netem}
+        <span className="font-mono text-slate-500" title={`tbf ${slot.limiter} (caudal) y, debajo, netem ${slot.netem} (retardo, pérdida y cola)`}>
+          tbf/netem {slot.limiter}/{slot.netem} ·{' '}
         </span>
       )}
-    </div>
-    <div className="text-slate-400">{linkText(slot)}</div>
-    <div className="text-slate-500">
-      {kbps === null || kbps === undefined ? '--' : `${kbps} kbit/s`} · {slot.dropped} descartes · {slot.queued} en cola
+      {linkParts(slot).map((part, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && ' · '}
+          <span className="whitespace-nowrap">{part}</span>
+        </React.Fragment>
+      ))}
     </div>
   </li>
 );
 
+// Una cola: su banda en la raíz, su prio y sus plazas ocupadas (las libres, agrupadas en una línea)
 const Band: React.FC<{ band: RouterBand; rates: Record<string, number | null>; showFree: boolean }> = ({ band, rates, showFree }) => {
-  const color = band.queue ? QUEUE_COLOR[band.queue.split('_')[0]] : 'text-slate-400 border-slate-700';
   const shown = band.slots.filter((s) => s.general || s.client || showFree);
   const free = band.slots.filter((s) => !s.general && !s.client).length;
+  const direction = band.queue?.endsWith('_down') ? 'bajada' : 'subida';
   return (
-    <li className="relative pl-5 before:absolute before:left-0 before:top-3 before:w-4 before:border-t before:border-slate-700">
-      <div className={`inline-flex flex-wrap items-baseline gap-x-2 rounded border px-2 py-1 bg-slate-900/60 ${color}`}>
-        <span className="font-mono">{band.band}</span>
-        <span>{band.queue ? QUEUE_LABEL[band.queue] : 'resto'}</span>
-        {band.handle && <span className="font-mono text-slate-400">→ prio {band.handle}, {band.slots.length} bandas</span>}
+    <div className="rounded border border-slate-800 bg-slate-950/40 px-2 py-1.5 min-w-0">
+      <div className="flex items-baseline gap-x-2">
+        <span className="font-mono text-slate-200">{band.band}</span>
+        <span className="text-slate-300">{direction}</span>
+        <span className="font-mono text-slate-500">→ prio {band.handle}</span>
+        {!showFree && free > 0 && <span className="ml-auto text-slate-600">{free} plazas libres</span>}
       </div>
-      <div className="text-slate-500 mt-0.5">{band.match}</div>
-      {band.slots.length > 0 && (
-        <ul className="mt-1 ml-2 space-y-1.5 border-l border-slate-700">
-          {shown.map((s) => (
-            <Slot key={s.band} slot={s} kbps={rates[s.band]} />
-          ))}
-          {!showFree && free > 0 && (
-            <li className="relative pl-4 text-slate-600 before:absolute before:left-0 before:top-2.5 before:w-3 before:border-t before:border-slate-700">
-              {free} plazas libres (sin clientes)
-            </li>
-          )}
-        </ul>
-      )}
-    </li>
+      <div className="text-slate-500 truncate" title={band.match}>
+        {band.match}
+      </div>
+      <ul className="mt-1">
+        {shown.map((s) => (
+          <Slot key={s.band} slot={s} kbps={rates[s.band]} />
+        ))}
+      </ul>
+    </div>
   );
 };
 
+const PROTOCOLS: { key: string; label: string }[] = [
+  { key: 'dash', label: 'LL-DASH' },
+  { key: 'moq', label: 'MoQ' },
+  { key: 'rtc', label: 'WebRTC' },
+];
+
+// La raíz arriba y, debajo, una columna por protocolo con sus dos colas (bajada y subida)
 const TreeView: React.FC<{ tree: Tree }> = ({ tree }) => {
   const rates = useRates(tree);
   const [showFree, setShowFree] = useState(false);
+  const rest = tree.bands.find((b) => !b.queue);
   return (
-    <div className="text-[11px] leading-relaxed">
-      <label className="flex items-center gap-1.5 text-slate-400 mb-2 cursor-pointer select-none w-fit">
-        <input type="checkbox" checked={showFree} onChange={(e) => setShowFree(e.target.checked)} />
-        Mostrar las plazas libres
-      </label>
-      <div className="inline-flex flex-wrap items-baseline gap-x-2 rounded border border-slate-600 px-2 py-1 bg-slate-900/60 text-slate-200">
-        <span className="font-mono">{tree.root}</span>
-        <span>raíz · prio, {tree.bands.length} bandas</span>
-        <span className="text-slate-500">en {tree.interfaces.join(', ')}</span>
+    <div className="text-[11px] leading-snug">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="rounded border border-slate-600 px-2 py-1 bg-slate-900/60 text-slate-200">
+          <span className="font-mono">{tree.root}</span> raíz · prio, {tree.bands.length} bandas <span className="text-slate-500">en {tree.interfaces.join(', ')}</span>
+        </div>
+        {rest && (
+          <div className="rounded border border-slate-800 px-2 py-1 text-slate-400">
+            <span className="font-mono text-slate-300">{rest.band}</span> resto: {rest.match}
+          </div>
+        )}
+        <label className="ml-auto flex items-center gap-1.5 text-slate-400 cursor-pointer select-none">
+          <input type="checkbox" checked={showFree} onChange={(e) => setShowFree(e.target.checked)} />
+          Mostrar las plazas libres
+        </label>
       </div>
-      <ul className="mt-1 ml-2 space-y-2 border-l border-slate-700">
-        {tree.bands.map((b) => (
-          <Band key={b.band} band={b} rates={rates} showFree={showFree} />
+      <div className="mt-2 grid gap-2 grid-cols-1 lg:grid-cols-3">
+        {PROTOCOLS.map((p) => (
+          <div key={p.key} className={`rounded-lg border-t-2 ${QUEUE_COLOR[p.key]} bg-slate-900/40 p-2 space-y-2 min-w-0`}>
+            <div className="font-medium">{p.label}</div>
+            {tree.bands
+              .filter((b) => b.queue?.startsWith(p.key + '_'))
+              .map((b) => (
+                <Band key={b.band} band={b} rates={rates} showFree={showFree} />
+              ))}
+          </div>
         ))}
-      </ul>
+      </div>
       <p className="text-slate-500 mt-2">
         Caudal y paquetes: lo reenviado (iptables), antes de la emulación. Descartes: pérdida aleatoria de netem y cola llena, acumulados desde que se montó cada netem.
       </p>
