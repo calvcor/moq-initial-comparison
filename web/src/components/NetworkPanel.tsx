@@ -138,7 +138,7 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, is
         <span title="Bytes IP reenviados por el router (cabeceras TCP/UDP/IP y retransmisiones incluidas), medidos antes de aplicar la emulación. Misma capa para los tres protocolos.">
           Tráfico IP en el router · DASH ↓ {kbps(ipRates.dash_down)} ↑ {kbps(ipRates.dash_up)} · MoQ ↓ {kbps(ipRates.moq_down)} ↑ {kbps(ipRates.moq_up)} · WebRTC ↓ {kbps(ipRates.rtc_down)} ↑ {kbps(ipRates.rtc_up)}
         </span>
-        <span title="Paquetes descartados por la emulación desde que arrancó el router (pérdida aleatoria más desbordamiento de la cola) y paquetes retenidos ahora mismo en la cola de bajada. Cada protocolo tiene su propia cola con el mismo perfil.">
+        <span title="Paquetes descartados por la emulación desde el último cambio de red (en las campañas, desde que empezó la prueba): pérdida aleatoria más desbordamiento de la cola, y paquetes retenidos ahora mismo en la cola de bajada. Cada protocolo tiene su propia cola con el mismo perfil.">
           Descartes ↓/↑ · DASH {stats?.dash_down.dropped ?? '--'}/{stats?.dash_up.dropped ?? '--'} · MoQ {stats?.moq_down.dropped ?? '--'}/
           {stats?.moq_up.dropped ?? '--'} · WebRTC {stats?.rtc_down?.dropped ?? '--'}/{stats?.rtc_up?.dropped ?? '--'} · en cola ↓ DASH{' '}
           {stats?.dash_down.queued ?? '--'} · MoQ {stats?.moq_down.queued ?? '--'} · WebRTC {stats?.rtc_down?.queued ?? '--'} paq.

@@ -134,6 +134,7 @@ Los dos `POST` devuelven el estado, como `GET /`, o `400` con `{"error": "…"}`
 **`POST /`** solo toca la plaza general:
 
 - No cambia las plazas de los clientes, sus marcas ni la estructura del árbol.
+- Pone a cero los descartes de la plaza general (ver Contadores).
 - Un sentido que falta en el cuerpo cuenta como vacío: `{"down": {…}}` deja la subida sin restricciones.
 - Dentro de un perfil, los campos que faltan toman su valor por defecto.
 
@@ -143,8 +144,9 @@ Los dos `POST` devuelven el estado, como `GET /`, o `400` con `{"error": "…"}`
 - A las nuevas les da la plaza libre más baja y pone sus reglas.
 - A todas les aplica su perfil en las 6 colas.
 - `{}` quita a todos.
+- Pone a cero los descartes de las plazas 1 a 8.
 
-**Dejarlo todo limpio**, como al arrancar: `POST /clients {}` y `POST / {"down": {}, "up": {}}`. Los contadores de iptables solo vuelven a cero al reiniciar el contenedor.
+**Dejarlo todo limpio**, como al arrancar: `POST /clients {}` y `POST / {"down": {}, "up": {}}`. Los contadores de iptables solo vuelven a cero al reiniciar el contenedor; los descartes, con cada `POST`.
 
 ### Estado
 
@@ -170,7 +172,8 @@ Los dos `POST` devuelven el estado, como `GET /`, o `400` con `{"error": "…"}`
   - Cada cliente con plaza tiene además las suyas, con el comentario `<cola>@<IP>`.
   - La general del árbol es la diferencia entre las dos.
   - Son acumulados desde que arrancó el router: el caudal lo calcula quien los lee, entre dos lecturas.
-- **Descartes y paquetes en cola:** `drops` y `qlen` de cada `netem` (`tc -s -j qdisc show`), sumados en todas las interfaces. No se suman los del `tbf`, que vuelve a contar los mismos. Incluyen la pérdida aleatoria y la cola llena. Se reinician cuando el `netem` se borra y se vuelve a crear (un perfil sin restricciones entre medias); al cambiar el perfil (`change`) se conservan.
+- **Descartes y paquetes en cola:** `drops` y `qlen` de cada `netem` (`tc -s -j qdisc show`), sumados en todas las interfaces. No se suman los del `tbf`, que vuelve a contar los mismos. Incluyen la pérdida aleatoria y la cola llena. `qlen` es lo que hay en la cola ahora.
+- **Los descartes se cuentan desde el último perfil aplicado a la plaza** (desde el 12-11-2026; antes, desde que se montó cada `netem`). Tras cada `POST /`, `api.py` guarda el contador de los `netem` de la plaza general de las seis colas (`reset_drops`), y tras cada `POST /clients`, los de las plazas 1 a 8. Al leer, lo resta (`since_reset`). Así vuelven a cero al cambiar la red en el dashboard y, en una campaña, al empezar cada prueba, que aplica siempre las dos. No se toca tc: borrar y volver a crear el `netem` vaciaría la cola y tiraría lo que hubiera dentro. Si el contador del kernel está por debajo de la base (el `netem` se volvió a crear), se cuenta desde cero. Los paquetes y bytes de iptables siguen acumulados.
 
 ## Sin emulación
 

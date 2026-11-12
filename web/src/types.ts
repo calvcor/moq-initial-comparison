@@ -68,7 +68,7 @@ export interface RouterSlot {
   link: (LinkProfile & { limit: number }) | null; // perfil aplicado y limit de netem en paquetes
   packets: number; // reenviados (iptables, antes de la emulación)
   bytes: number;
-  dropped: number; // descartes de netem: pérdida aleatoria y cola llena
+  dropped: number; // descartes de netem (pérdida aleatoria y cola llena) desde el último perfil aplicado a la plaza
   queued: number; // paquetes en la cola de netem ahora
 }
 

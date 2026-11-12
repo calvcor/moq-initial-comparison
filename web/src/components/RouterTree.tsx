@@ -149,7 +149,7 @@ const TreeView: React.FC<{ tree: Tree }> = ({ tree }) => {
         ))}
       </div>
       <p className="text-slate-500 mt-2">
-        Caudal y paquetes: lo reenviado (iptables), antes de la emulación. Descartes: pérdida aleatoria de netem y cola llena, acumulados desde que se montó cada netem.
+        Caudal y paquetes: lo reenviado (iptables), antes de la emulación. Descartes: pérdida aleatoria de netem y cola llena, desde el último perfil aplicado (cambio de red o, en una campaña, inicio de la prueba).
       </p>
     </div>
   );

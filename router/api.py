@@ -23,6 +23,31 @@ def netem_counters() -> dict:
     return netems
 
 
+# Descartes de cada netem (por handle) cuando se aplicó el último perfil de su plaza: se cuentan desde ahí, sin tocar tc
+# (borrar y volver a crear el netem vaciaría la cola). POST / reinicia los de la plaza general de las seis colas, y POST
+# /clients los de las plazas de los clientes: en una campaña, al empezar cada prueba; en el dashboard, al cambiar la red.
+# Desde el 12-11-2026; antes, acumulados desde que se montó cada netem.
+drop_base: dict[str, int] = {}
+
+
+def reset_drops(slots) -> None:
+    netems = netem_counters()
+    for queue in router.QUEUES:
+        for slot in slots:
+            netem = router.handles(queue, slot)[2] + ":"
+            drop_base[netem] = netems.get(netem, (0, 0))[0]
+
+
+def since_reset(netems: dict) -> dict:
+    """Los contadores de netem_counters con los descartes desde el último reinicio. Si el del kernel está por debajo de la
+    base (el netem se volvió a crear después), cuenta desde cero."""
+    out = {}
+    for netem, (dropped, queued) in netems.items():
+        base = drop_base.get(netem, 0)
+        out[netem] = [dropped - base if dropped >= base else dropped, queued]
+    return out
+
+
 def stats(netems: dict) -> dict:
     """Contadores por cola (todo el tráfico, como siempre) y, en "clients", los de cada cliente con plaza."""
     out = {queue: {"packets": 0, "bytes": 0} for queue in router.QUEUES}
@@ -112,7 +137,7 @@ class Agent(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def state(self) -> dict:
-        netems = netem_counters()
+        netems = since_reset(netem_counters())
         st = stats(netems)
         return {
             "profile": router.profile,
@@ -134,8 +159,10 @@ class Agent(BaseHTTPRequestHandler):
             if self.path.rstrip("/") == "/clients":
                 # Los clientes con perfil propio, todos de una vez (un {} los quita)
                 router.set_clients(body)
+                reset_drops(range(1, router.MAX_CLIENTS + 1))
             else:
                 router.set_profile(body)
+                reset_drops([router.GENERAL])
             self.reply(200, self.state())
         except Exception as e:
             self.reply(400, {"error": str(e)})
