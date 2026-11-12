@@ -11,7 +11,8 @@ import agent as router
 
 
 def netem_counters() -> dict:
-    """Por handle de netem ("211:"), [descartes, paquetes en cola], sumados en todas las interfaces."""
+    """Handle de netem -> [descartes, paquetes en cola ahora], sumados en todas las interfaces, p. ej. {"391:": [27, 3]}.
+    Descartes acumulados por el kernel; since_reset los cuenta desde el último perfil."""
     netems = {}
     for dev in router.interfaces():
         for qdisc in json.loads(router.run(f"tc -s -j qdisc show dev {dev}")):
@@ -27,10 +28,12 @@ def netem_counters() -> dict:
 # (borrar y volver a crear el netem vaciaría la cola). POST / reinicia los de la plaza general de las seis colas, y POST
 # /clients los de las plazas de los clientes: en una campaña, al empezar cada prueba; en el dashboard, al cambiar la red.
 # Desde el 12-11-2026; antes, acumulados desde que se montó cada netem.
+# Handle de netem -> descartes del kernel en ese momento, p. ej. {"391:": 27}
 drop_base: dict[str, int] = {}
 
 
 def reset_drops(slots) -> None:
+    """slots: las plazas (números) cuyos descartes vuelven a cero en las seis colas."""
     netems = netem_counters()
     for queue in router.QUEUES:
         for slot in slots:
@@ -39,7 +42,7 @@ def reset_drops(slots) -> None:
 
 
 def since_reset(netems: dict) -> dict:
-    """Los contadores de netem_counters con los descartes desde el último reinicio. Si el del kernel está por debajo de la
+    """Los contadores de netem_counters, con la misma forma, con los descartes desde el último reinicio. Si el del kernel está por debajo de la
     base (el netem se volvió a crear después), cuenta desde cero."""
     out = {}
     for netem, (dropped, queued) in netems.items():
@@ -49,7 +52,12 @@ def since_reset(netems: dict) -> dict:
 
 
 def stats(netems: dict) -> dict:
-    """Contadores por cola (todo el tráfico, como siempre) y, en "clients", los de cada cliente con plaza."""
+    """Contadores por cola (todo el tráfico, como siempre) y, en "clients", los de cada cliente con plaza. netems: la
+    salida de since_reset. Devuelve:
+        {"<cola>": {"packets": int, "bytes": int, "dropped": int, "queued": int}, ...   una por cola de QUEUES
+         "clients": {"<IP>": {"<cola>": {"packets", "bytes", "dropped", "queued"}, ...}, ...}}
+    packets y bytes: reenviados (iptables, acumulados desde que arrancó el router); dropped: desde el último perfil;
+    queued: en la cola ahora."""
     out = {queue: {"packets": 0, "bytes": 0} for queue in router.QUEUES}
     per_client = {ip: {queue: {"packets": 0, "bytes": 0} for queue in router.QUEUES} for ip in router.clients}
     # Bytes IP reenviados por protocolo y sentido (cabeceras y retransmisiones incluidas), antes de la emulación
@@ -89,7 +97,16 @@ def describe(queue: str) -> str:
 def tree(st: dict, netems: dict) -> dict:
     """El árbol de tc tal como lo ha montado el agente (el mismo en cada interfaz), con los contadores de cada plaza: raíz
     1:, una banda por cola y, dentro de cada una, su prio con las plazas de los clientes y la general. Para el esquema de
-    la página (README, sección 5); los bytes son los de iptables, antes de la emulación."""
+    la página (README, sección 5); los bytes son los de iptables, antes de la emulación. st: la salida de stats; netems,
+    la de since_reset. Devuelve:
+        {"root": "1:", "interfaces": ["eth0", ...],
+         "bands": [{"band": "1:3", "queue": "moq_down", "handle": "300:", "match": "udp origen :4433",
+                    "slots": [{"slot": 9, "band": "300:9", "general": bool, "client": IP | None,
+                               "limiter": "390:" | None, "netem": "391:" | None,   None: pasa sin restricciones
+                               "link": perfil de enlace + "limit" | None,         como en applied (agent.py)
+                               "packets", "bytes", "dropped", "queued"}, ...]},   9 plazas
+                   ...,
+                   {"band": "1:7", "queue": None, "handle": None, "match": "el resto ...", "slots": []}]}"""
     slots = {c["slot"]: ip for ip, c in router.clients.items()}
     bands = []
     for queue, n in router.QUEUES.items():
@@ -129,6 +146,7 @@ def tree(st: dict, netems: dict) -> dict:
 
 class Agent(BaseHTTPRequestHandler):
     def reply(self, status: int, body: dict):
+        """Responde con body en JSON: el estado o, si algo falla, {"error": "..."}."""
         data = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -137,6 +155,8 @@ class Agent(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def state(self) -> dict:
+        """Lo que devuelven GET / y los POST: {"profile": perfil de red de la general, "clients": IP -> perfil de red,
+        "stats": la salida de stats, "tree": la de tree (None sin emulación), "emulation_error": str | None}."""
         netems = since_reset(netem_counters())
         st = stats(netems)
         return {

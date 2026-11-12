@@ -32,6 +32,7 @@ RELAY_IP = os.environ["RELAY_IP"]
 RTC_IP = os.environ["MEDIAMTX_IP"] if os.environ.get("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else os.environ["SFU_IP"]
 DASH_PORT, DASH_TLS_PORT, MOQ_PORT, RTC_PORT = 8080, 8443, 4433, 8189
 
+# Colas: nombre ("<protocolo>_<sentido>") -> número (1-6).
 # Cada protocolo tiene su propia cola por sentido, con el mismo perfil: los dos ven un enlace idéntico
 # en vez de competir entre sí por uno compartido. Número de la cola: su banda en la qdisc raíz (1:n) y la
 # primera cifra de los handles de debajo (prio n00:, limitador n<plaza>0: y netem n<plaza>1:).
@@ -55,19 +56,30 @@ FILTERS = [
     ("rtc_down", "tcp", None, "sport", RTC_PORT),
     ("rtc_up", "tcp", RTC_IP, "dport", RTC_PORT),
 ]
+# Protocolo -> número del campo protocol de la cabecera IP (para el match de u32)
 PROTO_NUMBER = {"tcp": 6, "udp": 17}
 MAX_CLIENTS = 8
 GENERAL = MAX_CLIENTS + 1
 DIRECTIONS = ("down", "up")
+# Perfil de un enlace (un sentido de una plaza), con sus valores por defecto, que dejan pasar sin restricciones:
+#   {"rate_kbit": int | None,  caudal en kbit/s; None = sin límite
+#    "delay_ms": float,        retardo
+#    "jitter_ms": float,       variación del retardo (±)
+#    "loss_pct": float,        pérdida aleatoria, en %
+#    "queue_ms": int}          cola del cuello de botella; solo cuenta con rate_kbit
+# Perfil de red: un perfil de enlace por sentido, {"down": perfil de enlace, "up": perfil de enlace}.
 EMPTY = {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 300}
 MTU_BITS = 1500 * 8
 
+# Perfil de red de la plaza general (el último POST /): {"down": perfil de enlace, "up": perfil de enlace}
 profile = {name: dict(EMPTY) for name in DIRECTIONS}
-# Por (cola, plaza): si tiene limitador y netem puestos
+# (cola, plaza) -> si tiene limitador y netem puestos, p. ej. {("moq_down", 9): True}. Decide entre "tc qdisc add" y "change"
 shaped: dict[tuple[str, int], bool] = {}
-# Por (cola, plaza) con limitador y netem: el perfil aplicado y el limit de netem en paquetes, para el árbol (tree)
+# (cola, plaza) -> perfil de enlace aplicado más "limit" (el de netem, en paquetes), solo las que tienen limitador y
+# netem, p. ej. {("moq_down", 9): {"rate_kbit": 3000, "delay_ms": 20, ..., "queue_ms": 300, "limit": 80}}. Para el árbol (tree)
 applied: dict[tuple[str, int], dict] = {}
-# Clientes con perfil propio: IP -> {"slot": plaza, "profile": {"down": ..., "up": ...}}
+# Clientes con plaza propia: IP -> {"slot": plaza (1-MAX_CLIENTS), "profile": perfil de red}, p. ej.
+# {"10.0.0.5": {"slot": 1, "profile": {"down": {"rate_kbit": 2000, ...}, "up": {"rate_kbit": None, ...}}}}
 clients: dict[str, dict] = {}
 # None si la emulación funciona; si no, el motivo (p. ej. faltan módulos sch_* en el kernel del anfitrión)
 emulation_error = None
@@ -84,7 +96,8 @@ def interfaces() -> list[str]:
     return sorted(dev for dev in os.listdir("/sys/class/net") if dev.startswith("eth"))
 
 
-# Reglas de FORWARD que cuentan el tráfico de cada cola: del servidor (bajada) o hacia él (subida)
+# Reglas de FORWARD que cuentan el tráfico de cada cola: del servidor (bajada) o hacia él (subida). Lista de (cola,
+# condiciones de iptables); la cola va en el comentario de la regla, que es como stats (api.py) sabe qué cuenta cada una
 COUNTED = [
     ("dash_down", f"-s {NGINX_IP} -p tcp --sport 80"),
     ("dash_up", f"-d {NGINX_IP} -p tcp --dport 80"),
@@ -111,6 +124,7 @@ def setup():
         run(f"iptables -t nat -A PREROUTING -p {proto} --dport {port} -j DNAT --to-destination {dest_ip}:{dest_port}")
     run("iptables -t nat -A POSTROUTING -m conntrack --ctstate DNAT -j MASQUERADE")
     for name, rule in COUNTED:
+        # Contadores por cola y sentido, con comentario para identificarlos en iptables-save
         run(f"iptables -A FORWARD {rule} -m comment --comment {name}")
 
     # La emulación necesita en el kernel sch_prio, sch_tbf, sch_netem y cls_u32. Si faltan (p. ej. en un
@@ -147,6 +161,7 @@ def handles(queue: str, slot: int) -> tuple[str, str, str]:
 
 
 def apply_queue(queue: str, link: dict, slot: int = GENERAL):
+    """Aplica un perfil de enlace (link, completo: con todos los campos de EMPTY) a una plaza de una cola."""
     parent, limiter, netem = handles(queue, slot)
     active = bool(link["rate_kbit"] or link["delay_ms"] or link["jitter_ms"] or link["loss_pct"])
     for dev in interfaces():
@@ -179,8 +194,8 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
 
 
 def client_rules(ip: str, slot: int) -> list[tuple[str, str]]:
-    """Reglas de iptables de un cliente con plaza (tabla, regla de FORWARD): su marca, en los dos sentidos, y sus
-    contadores por cola."""
+    """Reglas de iptables de un cliente con plaza: su marca, en los dos sentidos, y sus contadores por cola. Lista de
+    (tabla, regla de FORWARD), p. ej. ("mangle", "-s 10.0.0.5/32 -j MARK --set-mark 1")."""
     rules = [("mangle", f"-s {ip}/32 -j MARK --set-mark {slot}"), ("mangle", f"-d {ip}/32 -j MARK --set-mark {slot}")]
     for name, rule in COUNTED:
         side = "-d" if name.endswith("_down") else "-s"
@@ -189,7 +204,8 @@ def client_rules(ip: str, slot: int) -> list[tuple[str, str]]:
 
 
 def set_clients(wanted: dict[str, dict]):
-    """Deja exactamente esos clientes con perfil propio (IP -> {"down", "up"}); los demás vuelven a la cola general."""
+    """Deja exactamente esos clientes con perfil propio; los demás vuelven a la cola general. wanted: IP -> perfil de red,
+    cada sentido y cada campo opcionales (lo que falta toma el valor de EMPTY), p. ej. {"10.0.0.5": {"down": {"rate_kbit": 2000}}}."""
     if len(wanted) > MAX_CLIENTS:
         raise ValueError(f"Como mucho {MAX_CLIENTS} clientes con perfil propio")
     for ip in wanted:
@@ -217,7 +233,8 @@ def set_clients(wanted: dict[str, dict]):
 
 
 def set_profile(body: dict):
-    """Perfil de la plaza general de cada cola ({"down": ..., "up": ...}): el de las pruebas que no tienen plaza propia."""
+    """Perfil de la plaza general de cada cola: el de las pruebas que no tienen plaza propia. body: perfil de red, cada
+    sentido y cada campo opcionales (lo que falta toma el valor de EMPTY), p. ej. {"down": {"rate_kbit": 3000, "delay_ms": 20}}."""
     for direction in DIRECTIONS:
         link = {**EMPTY, **(body.get(direction) or {})}
         for queue in QUEUES:
