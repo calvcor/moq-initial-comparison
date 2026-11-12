@@ -7,7 +7,7 @@ finales y degrada ese tráfico con tc en los dos sentidos:
     navegador -> :8080/tcp -> nginx-dash:80      (LL-DASH directo, sin TLS: sin DASH_HOST, desde páginas HTTP)
     navegador -> :4433/udp -> moq-relay:4433     (MoQ sobre QUIC)
     navegador -> :8189/udp -> sfu o mediamtx:8189 (WebRTC: ICE, DTLS y SRTP; el servidor lo elige RTC_SERVER)
-    navegador -> :8189/tcp -> sfu:8189           (señalización WebSocket de mediasoup; va en la cola de WebRTC)
+    navegador -> :8189/tcp -> sfu o mediamtx:8189 (señalización WebSocket de mediasoup; va en la cola de WebRTC)
 
 La ingesta (orquestador -> nginx / relay) va por la red interna sin pasar por aquí, así que la emulación
 solo afecta al tramo servidor-cliente y lo hace igual para las dos ramas.
@@ -28,7 +28,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 NGINX_IP = os.environ["NGINX_IP"]
 RELAY_IP = os.environ["RELAY_IP"]
-SFU_IP = os.environ["SFU_IP"]
+# Servidor de WebRTC (RTC_SERVER): el SFU de mediasoup o MediaMTX. Recibe el 8189 en UDP (ICE, DTLS y SRTP) y en TCP (la
+# señalización WebSocket, que solo usa mediasoup: MediaMTX negocia por WHEP a través del punto de entrada)
 RTC_IP = os.environ["MEDIAMTX_IP"] if os.environ.get("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else os.environ["SFU_IP"]
 DASH_PORT, DASH_TLS_PORT, MOQ_PORT, RTC_PORT = 8080, 8443, 4433, 8189
 
@@ -75,8 +76,8 @@ COUNTED = [
     ("moq_up", f"-d {RELAY_IP} -p udp --dport {MOQ_PORT}"),
     ("rtc_down", f"-s {RTC_IP} -p udp --sport {RTC_PORT}"),
     ("rtc_up", f"-d {RTC_IP} -p udp --dport {RTC_PORT}"),
-    ("rtc_down", f"-s {SFU_IP} -p tcp --sport {RTC_PORT}"),
-    ("rtc_up", f"-d {SFU_IP} -p tcp --dport {RTC_PORT}"),
+    ("rtc_down", f"-s {RTC_IP} -p tcp --sport {RTC_PORT}"),
+    ("rtc_up", f"-d {RTC_IP} -p tcp --dport {RTC_PORT}"),
 ]
 
 
@@ -87,7 +88,7 @@ def setup():
         ("tcp", DASH_TLS_PORT, NGINX_IP, 443),
         ("udp", MOQ_PORT, RELAY_IP, MOQ_PORT),
         ("udp", RTC_PORT, RTC_IP, RTC_PORT),
-        ("tcp", RTC_PORT, SFU_IP, RTC_PORT),
+        ("tcp", RTC_PORT, RTC_IP, RTC_PORT),
     ):
         run(f"iptables -t nat -A PREROUTING -p {proto} --dport {port} -j DNAT --to-destination {dest_ip}:{dest_port}")
     run("iptables -t nat -A POSTROUTING -m conntrack --ctstate DNAT -j MASQUERADE")
@@ -114,7 +115,7 @@ def setup():
             run(f"{u32} match ip protocol 17 0xff match ip sport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_down']}")
             run(f"{u32} match ip protocol 17 0xff match ip dst {RTC_IP}/32 match ip dport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_up']}")
             run(f"{u32} match ip protocol 6 0xff match ip sport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_down']}")
-            run(f"{u32} match ip protocol 6 0xff match ip dst {SFU_IP}/32 match ip dport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_up']}")
+            run(f"{u32} match ip protocol 6 0xff match ip dst {RTC_IP}/32 match ip dport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_up']}")
             # Dentro de cada cola, una banda por plaza: la marca del cliente elige la suya; sin marca, la general
             # (la última: priomap la manda ahí cuando ningún filtro coincide)
             for n in QUEUES.values():
