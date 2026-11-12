@@ -12,6 +12,7 @@ import { CampaignAnalysis } from './CampaignAnalysis';
 import { CampaignVersus } from './CampaignVersus';
 import { multiStream, streamName, streamText } from '../lib/campaignStreams';
 import type { Campaign, CampaignPlan, CampaignQueue, CampaignRun, PlayerId, ServerStatus } from '../types';
+import { RouterTreePanel } from './RouterTree';
 
 // Página de campañas de medida (/campaign; README, 4.8): editor, monitor y, en la misma pestaña o en otra
 // (/campaign?worker=1), el trabajador que monta los reproductores. Con el trabajador activo el monitor se
@@ -607,6 +608,9 @@ const Monitor: React.FC<{
           )}
         </div>
       )}
+      {/* Árbol de tc del router durante la prueba: con pruebas en paralelo, la plaza de cada trabajador con su red. No con
+          el trabajador en esta pestaña (lean): leerlo y pintarlo cada 2 s cargaría la página que mide */}
+      {campaign.state === 'running' && !lean && <RouterTreePanel poll />}
       {campaign.state !== 'running' && plan.worker_pool && (
         <p className="text-slate-400">
           Pruebas en paralelo con los trabajadores libres de:{' '}

@@ -6,6 +6,7 @@ import { sfuSignalUrl } from './lib/rtcSession';
 import { MetricsDashboard } from './components/MetricsDashboard';
 import { ControlPanel } from './components/ControlPanel';
 import { NetworkPanel } from './components/NetworkPanel';
+import { RouterTreePanel } from './components/RouterTree';
 import { PipelineDiagram } from './components/PipelineDiagram';
 import { VersionsPanel } from './components/VersionsPanel';
 import type { FrameTime } from './lib/glass';
@@ -457,6 +458,9 @@ export function App() {
 
         {/* Emulación de red, igual para las tres ramas */}
         <NetworkPanel network={serverStatus?.network} ipRates={ipRates()} isLoading={isLoading} onApply={handleApplyNetwork} />
+
+        {/* Árbol de tc del router, con lo aplicado en cada cola y plaza (plegado por defecto) */}
+        <RouterTreePanel network={serverStatus?.network} />
 
         {/* Reproductores activos: se pueden probar por separado o comparar de dos en dos */}
         <div className="flex items-center gap-2 text-xs">

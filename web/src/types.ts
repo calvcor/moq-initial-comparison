@@ -57,9 +57,41 @@ export interface NetworkProfile {
 // Por protocolo y sentido: tráfico IP reenviado y lo que ha descartado o retiene su cola de emulación
 type Counter = { packets: number; bytes: number; dropped: number; queued: number };
 
+// Una plaza de una cola en el árbol de tc del router: la de un cliente (pruebas en paralelo) o la general
+export interface RouterSlot {
+  slot: number; // 1..8 clientes; 9 la general
+  band: string; // banda en el prio de la cola, p. ej. "200:9"
+  general: boolean;
+  client: string | null; // IP del cliente con esa plaza
+  limiter: string | null; // handle del tbf ("290:"); null sin restricciones: la banda deja pasar tal cual
+  netem: string | null; // handle del netem ("291:")
+  link: (LinkProfile & { limit: number }) | null; // perfil aplicado y limit de netem en paquetes
+  packets: number; // reenviados (iptables, antes de la emulación)
+  bytes: number;
+  dropped: number; // descartes de netem: pérdida aleatoria y cola llena
+  queued: number; // paquetes en la cola de netem ahora
+}
+
+// Una banda de la raíz 1: (una cola por protocolo y sentido, o el resto del tráfico)
+export interface RouterBand {
+  band: string; // "1:2"
+  queue: string | null; // moq_down…; null en la banda del resto
+  handle: string | null; // prio de la cola, "200:"
+  match: string; // qué manda ahí la raíz
+  slots: RouterSlot[];
+}
+
+export interface RouterTree {
+  root: string;
+  interfaces: string[];
+  bands: RouterBand[];
+}
+
 export interface NetworkState {
   profile: NetworkProfile;
   emulation_error?: string | null; // motivo por el que el servidor no puede emular la red, si es el caso
+  clients?: Record<string, NetworkProfile>; // clientes con plaza propia: pruebas en paralelo
+  tree?: RouterTree | null; // árbol de tc del router (README, sección 5)
   stats: {
     dash_down: Counter;
     dash_up: Counter;

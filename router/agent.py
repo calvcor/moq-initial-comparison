@@ -40,6 +40,22 @@ QUEUES = {"dash_down": 1, "moq_down": 2, "dash_up": 3, "moq_up": 4, "rtc_down": 
 # Plazas de cada cola: 1..MAX_CLIENTS para los clientes con perfil propio y GENERAL para el resto. El cliente de la
 # plaza s lleva la marca s (iptables, en FORWARD: ahí se ve su IP en los dos sentidos, antes del MASQUERADE de subida
 # y después de deshacerlo en la bajada) y un filtro u32 por marca lo manda a su banda.
+# Filtros u32 de la raíz: (cola, protocolo, IP de destino o None, campo del puerto, puerto). En la subida se mira el
+# destino ya traducido por el DNAT (contenedor y puerto interno); en la bajada, el puerto de origen público, ya restaurado.
+# Generan los comandos de tc (setup) y la descripción del árbol (tree).
+FILTERS = [
+    ("dash_down", "tcp", None, "sport", DASH_PORT),
+    ("dash_down", "tcp", None, "sport", DASH_TLS_PORT),
+    ("dash_up", "tcp", NGINX_IP, "dport", 80),
+    ("dash_up", "tcp", NGINX_IP, "dport", 443),
+    ("moq_down", "udp", None, "sport", MOQ_PORT),
+    ("moq_up", "udp", RELAY_IP, "dport", MOQ_PORT),
+    ("rtc_down", "udp", None, "sport", RTC_PORT),
+    ("rtc_up", "udp", RTC_IP, "dport", RTC_PORT),
+    ("rtc_down", "tcp", None, "sport", RTC_PORT),
+    ("rtc_up", "tcp", RTC_IP, "dport", RTC_PORT),
+]
+PROTO_NUMBER = {"tcp": 6, "udp": 17}
 MAX_CLIENTS = 8
 GENERAL = MAX_CLIENTS + 1
 DIRECTIONS = ("down", "up")
@@ -49,6 +65,8 @@ MTU_BITS = 1500 * 8
 profile = {name: dict(EMPTY) for name in DIRECTIONS}
 # Por (cola, plaza): si tiene limitador y netem puestos
 shaped: dict[tuple[str, int], bool] = {}
+# Por (cola, plaza) con limitador y netem: el perfil aplicado y el limit de netem en paquetes, para el árbol (tree)
+applied: dict[tuple[str, int], dict] = {}
 # Clientes con perfil propio: IP -> {"slot": plaza, "profile": {"down": ..., "up": ...}}
 clients: dict[str, dict] = {}
 # None si la emulación funciona; si no, el motivo (p. ej. faltan módulos sch_* en el kernel del anfitrión)
@@ -106,16 +124,9 @@ def setup():
             run(f"tc qdisc replace dev {dev} root handle 1: prio bands 7 priomap 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6")
             # Filtros u32 que miran el protocolo y el puerto de origen o destino, y la marca del cliente si la tiene.
             u32 = f"tc filter add dev {dev} parent 1: protocol ip u32"
-            run(f"{u32} match ip protocol 6 0xff match ip sport {DASH_PORT} 0xffff flowid 1:{QUEUES['dash_down']}")
-            run(f"{u32} match ip protocol 17 0xff match ip sport {MOQ_PORT} 0xffff flowid 1:{QUEUES['moq_down']}")
-            run(f"{u32} match ip protocol 6 0xff match ip dst {NGINX_IP}/32 match ip dport 80 0xffff flowid 1:{QUEUES['dash_up']}")
-            run(f"{u32} match ip protocol 6 0xff match ip sport {DASH_TLS_PORT} 0xffff flowid 1:{QUEUES['dash_down']}")
-            run(f"{u32} match ip protocol 6 0xff match ip dst {NGINX_IP}/32 match ip dport 443 0xffff flowid 1:{QUEUES['dash_up']}")
-            run(f"{u32} match ip protocol 17 0xff match ip dst {RELAY_IP}/32 match ip dport {MOQ_PORT} 0xffff flowid 1:{QUEUES['moq_up']}")
-            run(f"{u32} match ip protocol 17 0xff match ip sport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_down']}")
-            run(f"{u32} match ip protocol 17 0xff match ip dst {RTC_IP}/32 match ip dport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_up']}")
-            run(f"{u32} match ip protocol 6 0xff match ip sport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_down']}")
-            run(f"{u32} match ip protocol 6 0xff match ip dst {RTC_IP}/32 match ip dport {RTC_PORT} 0xffff flowid 1:{QUEUES['rtc_up']}")
+            for queue, proto, dst, field, port in FILTERS:
+                ip = f"match ip dst {dst}/32 " if dst else ""
+                run(f"{u32} match ip protocol {PROTO_NUMBER[proto]} 0xff {ip}match ip {field} {port} 0xffff flowid 1:{QUEUES[queue]}")
             # Dentro de cada cola, una banda por plaza: la marca del cliente elige la suya; sin marca, la general
             # (la última: priomap la manda ahí cuando ningún filtro coincide)
             for n in QUEUES.values():
@@ -142,6 +153,7 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
         if not active:
             # Sin restricciones se retira todo: paso directo real, no un limitador muy alto
             run(f"tc qdisc del dev {dev} parent {parent} handle {limiter}:", check=False)
+            applied.pop((queue, slot), None)
             continue
 
         # Limitador delante con ráfaga de un paquete: además de fijar el ancho de banda, trocea los
@@ -162,6 +174,7 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
         if link["loss_pct"]:
             spec += f" loss {link['loss_pct']}%"
         run(f"tc qdisc {verb} dev {dev} parent {limiter}:1 handle {netem}: netem {spec}")
+        applied[queue, slot] = {**link, "limit": min(limit, 100000)}
     shaped[queue, slot] = active
 
 
@@ -203,7 +216,20 @@ def set_clients(wanted: dict[str, dict]):
             apply_queue(queue, link[queue.rsplit("_", 1)[1]], clients[ip]["slot"])
 
 
-def stats() -> dict:
+def netem_counters() -> dict:
+    """Por handle de netem ("211:"), [descartes, paquetes en cola], sumados en todas las interfaces."""
+    netems = {}
+    for dev in interfaces():
+        for qdisc in json.loads(run(f"tc -s -j qdisc show dev {dev}")):
+            # Solo netem: el limitador padre vuelve a contar los mismos descartes
+            if qdisc.get("kind") == "netem":
+                acc = netems.setdefault(qdisc.get("handle"), [0, 0])
+                acc[0] += qdisc.get("drops", 0)
+                acc[1] += qdisc.get("qlen", 0)
+    return netems
+
+
+def stats(netems: dict) -> dict:
     """Contadores por cola (todo el tráfico, como siempre) y, en "clients", los de cada cliente con plaza."""
     out = {queue: {"packets": 0, "bytes": 0} for queue in QUEUES}
     per_client = {ip: {queue: {"packets": 0, "bytes": 0} for queue in QUEUES} for ip in clients}
@@ -213,21 +239,13 @@ def stats() -> dict:
             packets, size = line[1 : line.index("]")].split(":")
             name = line.split("--comment")[1].split()[0].strip('"')
             queue, _, ip = name.partition("@")
-            # DASH tiene dos reglas por sentido (camino directo y a través del proxy): se suman
+            # DASH tiene dos reglas por sentido (HTTP y HTTPS) y WebRTC otras dos (UDP y TCP): se suman
             entry = (per_client.get(ip) or {}).get(queue) if ip else out.get(queue)
             if entry is not None:
                 entry["packets"] += int(packets)
                 entry["bytes"] += int(size)
     # Descartes de la emulación por cola y plaza: pérdida aleatoria de netem y desbordamiento de la cola
     slots = {c["slot"]: ip for ip, c in clients.items()}
-    netems = {}
-    for dev in interfaces():
-        for qdisc in json.loads(run(f"tc -s -j qdisc show dev {dev}")):
-            # Solo netem: el limitador padre vuelve a contar los mismos descartes
-            if qdisc.get("kind") == "netem":
-                acc = netems.setdefault(qdisc.get("handle"), [0, 0])
-                acc[0] += qdisc.get("drops", 0)
-                acc[1] += qdisc.get("qlen", 0)
     for queue in QUEUES:
         out[queue].update(dropped=0, queued=0)
         for slot in range(1, GENERAL + 1):
@@ -240,6 +258,56 @@ def stats() -> dict:
     return out
 
 
+def describe(queue: str) -> str:
+    """Qué tráfico manda la raíz a esta cola, leído de FILTERS."""
+    parts = []
+    for q, proto, dst, field, port in FILTERS:
+        if q == queue:
+            parts.append(f"{proto} {'origen' if field == 'sport' else 'destino'} {f'{dst}:' if dst else ':'}{port}")
+    return " · ".join(parts)
+
+
+def tree(st: dict, netems: dict) -> dict:
+    """El árbol de tc tal como lo ha montado el agente (el mismo en cada interfaz), con los contadores de cada plaza: raíz
+    1:, una banda por cola y, dentro de cada una, su prio con las plazas de los clientes y la general. Para el esquema de
+    la página (README, sección 5); los bytes son los de iptables, antes de la emulación."""
+    slots = {c["slot"]: ip for ip, c in clients.items()}
+    bands = []
+    for queue, n in QUEUES.items():
+        children = []
+        for slot in range(1, GENERAL + 1):
+            band, limiter, netem = handles(queue, slot)
+            ip = slots.get(slot)
+            if slot == GENERAL:
+                # La general se lleva lo que no es de ningún cliente con plaza
+                packets = st[queue]["packets"] - sum(c[queue]["packets"] for c in st["clients"].values())
+                size = st[queue]["bytes"] - sum(c[queue]["bytes"] for c in st["clients"].values())
+            elif ip:
+                packets, size = st["clients"][ip][queue]["packets"], st["clients"][ip][queue]["bytes"]
+            else:
+                packets = size = 0
+            dropped, queued = netems.get(netem + ":", (0, 0))
+            link = applied.get((queue, slot))
+            children.append({
+                "slot": slot,
+                "band": band,
+                "general": slot == GENERAL,
+                "client": ip,
+                # Sin restricciones no hay limitador ni netem: la banda deja pasar tal cual
+                "limiter": f"{limiter}:" if link else None,
+                "netem": f"{netem}:" if link else None,
+                "link": link,
+                "packets": packets,
+                "bytes": size,
+                "dropped": dropped,
+                "queued": queued,
+            })
+        bands.append({"band": f"1:{n}", "queue": queue, "handle": f"{n}00:", "match": describe(queue), "slots": children})
+    bands.sort(key=lambda b: b["band"])
+    bands.append({"band": f"1:{len(QUEUES) + 1}", "queue": None, "handle": None, "match": "el resto del tráfico, sin emulación", "slots": []})
+    return {"root": "1:", "interfaces": interfaces(), "bands": bands}
+
+
 class Agent(BaseHTTPRequestHandler):
     def reply(self, status: int, body: dict):
         data = json.dumps(body).encode()
@@ -250,7 +318,16 @@ class Agent(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def state(self) -> dict:
-        return {"profile": profile, "clients": {ip: c["profile"] for ip, c in clients.items()}, "stats": stats(), "emulation_error": emulation_error}
+        netems = netem_counters()
+        st = stats(netems)
+        return {
+            "profile": profile,
+            "clients": {ip: c["profile"] for ip, c in clients.items()},
+            "stats": st,
+            # Sin emulación (faltan módulos del kernel) no hay árbol de tc que mostrar
+            "tree": None if emulation_error else tree(st, netems),
+            "emulation_error": emulation_error,
+        }
 
     def do_GET(self):
         self.reply(200, self.state())

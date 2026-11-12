@@ -660,6 +660,15 @@ def source_lag_now() -> Optional[float]:
     now = time.time() * 1000
     return trace.frame_log.source_lag(now - 2000, now)
 
+@app.get("/api/router")
+def get_router():
+    """Estado del router de emulación (perfil, clientes con plaza, contadores y árbol de tc), sin el resto de /api/status:
+    lo lee el esquema del router de la página de campañas (README, sección 5)."""
+    state = router_call()
+    if state is None:
+        raise HTTPException(status_code=503, detail="El router de red no responde")
+    return state
+
 @app.get("/api/status")
 def get_status():
     return {
