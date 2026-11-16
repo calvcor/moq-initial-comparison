@@ -176,6 +176,10 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   (1 GB de RAM y 512 MB de swap) paginan al swap y el hilo principal se detiene, solo en MoQ y solo con 1080p y objetivos de
   1,5 s o más (8-11-2026, reproducido en local con esos límites; `../FINDINGS/moq_watch_decoded_frames_memory.md`). Esas
   pruebas de MoQ no son fiables; la solución es dar más memoria a los trabajadores, no invalidar por carga del hilo principal.
+- La estimación de MoQ (`moq_bw_estimate_kbps`, la que usa `@moq/watch` para elegir) es `cwnd/RTT` de BBRv3 en el relay publicado
+  (0.17.9 a 0.17.16): ~2 veces el enlace con retardo realista y decenas o cientos de veces con `delay_ms: 0` y el enlace holgado,
+  así que elige 1080p donde no cabe. Viene del relay, no de cómo lo usamos; `main` de moq-dev ya usa la estimación de BBR
+  (`../FINDINGS/moq_relay_probe_cwnd_overestimate.md`). Declara el retardo base de la red en cada comparación.
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
 - La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente del servidor se queda a ratos por detrás del tiempo real y los
