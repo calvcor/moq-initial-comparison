@@ -88,6 +88,14 @@ UNRESTRICTED = {
 # el calentamiento y la medida, con su propio reloj, y guarda lo exacto de cada intervalo en ip.jsonl
 IP_KEYS = tuple(f"{p}_{d}" for p in PLAYERS for d in ("down", "up"))
 IP_PERIOD_S = 1
+# Columnas de las filas del navegador leídas de los contadores globales del router (/api/status): son de la cola entera
+# de cada protocolo. Con pruebas en paralelo (cada trabajador en su propia cola, client_ips) suman las pruebas que iban a
+# la vez y no son de ninguna: al exportar quedan vacías, y lo de la prueba está en ip.csv (16-11-2026)
+ROUTER_GLOBAL_COLUMNS = tuple(f"{p}_ip_{d}_kbps" for p in PLAYERS for d in ("down", "up")) + tuple(
+    f"{p}_{d}_dropped" for p in PLAYERS for d in ("down", "up"))
+# Los campos del resumen que salen de esas columnas: con pruebas en paralelo quedan vacíos. Los exactos de la prueba son
+# ip_down_kbps, ip_down_kbps_p95 e ip_down_dropped (summarize_ip, de ip.jsonl)
+SUMMARY_GLOBAL_FIELDS = ("ip_down_kbps_mean", "down_dropped")
 # Retraso de la fuente a partir del cual un segundo cuenta como "fuente retrasada" en el resumen: 3 frames a 60 fps
 SOURCE_LATE_MS = 50
 
@@ -1395,6 +1403,9 @@ class Campaigns:
             source = summarize_source(ip)
             for p in run["players"]:
                 run["summary"]["players"][p].update(summarize_ip(p, ip), **source, **summarize_main(of(p, rows), plan["measure_s"]))
+                if run.get("client_ips"):
+                    # De los contadores globales: con pruebas en paralelo suman las de la tanda (ROUTER_GLOBAL_COLUMNS)
+                    run["summary"]["players"][p].update(dict.fromkeys(SUMMARY_GLOBAL_FIELDS))
             # Del montaje a la primera fila con latencia medida, con la resolución de una fila por segundo
             for p in run["players"]:
                 mounted = (run.get("mounted_by") or {}).get(p) or run["mounted_ms"]
@@ -1535,6 +1546,22 @@ class Campaigns:
         for direction in ("down", "up"):
             for key, value in network["profile"][direction].items():
                 out[f"net_{direction}_{key}"] = value
+        return out
+
+    def sample_columns(self, campaign: dict, run: dict, row: dict, browser: bool) -> dict:
+        """Una fila de samples.jsonl (browser) o ip.jsonl para el CSV: las columnas de la condición delante de las de la fila.
+
+        El perfil de red (net_*) es siempre el de la prueba: el navegador anota el de la cola general del router, que con
+        pruebas en paralelo no es el suyo. Y con pruebas en paralelo, el tráfico y los descartes que el navegador leyó de
+        los contadores globales quedan vacíos (ROUTER_GLOBAL_COLUMNS)."""
+        columns = self.run_columns(campaign, run)
+        out = {**columns, **row,
+               # La fila entra en el resumen de una prueba válida (no de un intento interrumpido)
+               "in_summary": row["phase"] == "measuring" and run["state"] == "done"
+               and row.get("run_started_ms") == run["started_ms"]}
+        out.update({k: v for k, v in columns.items() if k.startswith("net_")})
+        if browser and run.get("client_ips"):
+            out.update(dict.fromkeys(k for k in ROUTER_GLOBAL_COLUMNS if k in row))
         return out
 
     def player_workers(self, campaign: dict, run: dict) -> dict[str, str]:
@@ -1730,15 +1757,16 @@ class Campaigns:
                 run = runs.get(row.get("run_id"))
                 if run and run["state"] == "replaced" and row.get("state") == "done":
                     row.update(state="replaced", replaced_by=run.get("replaced_by"))
+                # También en los resúmenes escritos antes del 16-11-2026
+                if run and run.get("client_ips"):
+                    row.update(dict.fromkeys(f for f in SUMMARY_GLOBAL_FIELDS if f in row))
         if name in ("samples.jsonl", "ip.jsonl"):
             # Las columnas de la condición, delante de las del dashboard
             campaign = self.campaigns[cid]
             runs = {r["id"]: r for r in campaign["runs"]}
-            rows = [{**self.run_columns(campaign, runs[r["run_id"]]), **r,
-                     # La fila entra en el resumen de una prueba válida (no de un intento interrumpido)
-                     "in_summary": r["phase"] == "measuring" and runs[r["run_id"]]["state"] == "done"
-                     and r.get("run_started_ms") == runs[r["run_id"]]["started_ms"]}
-                    if r["run_id"] in runs else r for r in rows]
+            # En ip.jsonl, <protocolo>_down_dropped es el de la cola de la prueba: no se toca
+            browser = name == "samples.jsonl"
+            rows = [self.sample_columns(campaign, runs[r["run_id"]], r, browser) if r["run_id"] in runs else r for r in rows]
         keys = list(dict.fromkeys(k for row in rows for k in row))
         out = io.StringIO()
         writer = csv.DictWriter(out, fieldnames=keys, extrasaction="ignore")
