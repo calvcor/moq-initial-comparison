@@ -34,9 +34,6 @@ VIDEOS = {
         "width": 1920,
         "height": 1080,
     },
-    # El MKV de la página de descargas (mango.blender.org) ya no está en sus espejos: el de Italia no resuelve
-    # y los demás dan 404 (comprobado el 3-11-2026). Este es el MOV 1080p de la web de Blender, el mismo
-    # vídeo (H.264 1920x800 a 24 fps, MP3 estéreo a 44,1 kHz, 734 s).
     "tos": {
         "label": "Tears of Steel",
         "url": os.getenv(

@@ -114,6 +114,8 @@ COUNTED = [
 
 def setup():
     # Reenvío de los puertos del cliente a los servidores finales, con contadores por protocolo y sentido
+    # Se especifican reglas de NAT de subida, pero no de bajada: el MASQUERADE de subida hace que la bajada vuelva al cliente correcto
+    # En la bajada, las reglas no hacen DNAT, pero sí cuentan el tráfico de cada cola (FORWARD) y lo marcan para que vaya a la banda de su cola
     for proto, port, dest_ip, dest_port in (
         ("tcp", DASH_PORT, NGINX_IP, 80),
         ("tcp", DASH_TLS_PORT, NGINX_IP, 443),
@@ -125,6 +127,7 @@ def setup():
     run("iptables -t nat -A POSTROUTING -m conntrack --ctstate DNAT -j MASQUERADE")
     for name, rule in COUNTED:
         # Contadores por cola y sentido, con comentario para identificarlos en iptables-save
+        # Solo se usarán para medir el tráfico en colas de clientes comunes (dashboard y campañas sin pruebas en paralelo)
         run(f"iptables -A FORWARD {rule} -m comment --comment {name}")
 
     # La emulación necesita en el kernel sch_prio, sch_tbf, sch_netem y cls_u32. Si faltan (p. ej. en un
@@ -162,13 +165,16 @@ def handles(queue: str, slot: int) -> tuple[str, str, str]:
 
 def apply_queue(queue: str, link: dict, slot: int = GENERAL):
     """Aplica un perfil de enlace (link, completo: con todos los campos de EMPTY) a una plaza de una cola."""
+    # "queue" es la cola (dash_down, dash_up, moq_down, moq_up, rtc_down o rtc_up)
+    # "link" es el perfil de enlace a aplicar (rate_kbit, delay_ms, jitter_ms, loss_pct y queue_ms)
+    # "slot" es la plaza (1..MAX_CLIENTS para clientes con perfil propio, GENERAL para el resto)
     parent, limiter, netem = handles(queue, slot)
     active = bool(link["rate_kbit"] or link["delay_ms"] or link["jitter_ms"] or link["loss_pct"])
     for dev in interfaces():
         if not active:
             # Sin restricciones se retira todo: paso directo real, no un limitador muy alto
             run(f"tc qdisc del dev {dev} parent {parent} handle {limiter}:", check=False)
-            applied.pop((queue, slot), None)
+            applied.pop((queue, slot), None) # None sirve para que no falle si no existía, p. ej. al arrancar
             continue
 
         # Limitador delante con ráfaga de un paquete: además de fijar el ancho de banda, trocea los
@@ -215,7 +221,7 @@ def set_clients(wanted: dict[str, dict]):
         # Se quita la plaza y sus reglas de FORWARD, y se deja el tráfico en la cola general, para los clientes que no tengan perfil propio
         slot = clients.pop(ip)["slot"]
         for table, rule in client_rules(ip, slot):
-            run(f"iptables -t {table} -D FORWARD {rule}", check=False)
+            run(f"iptables -t {table} -D FORWARD {rule}", check=False) # Borrar las reglas (-D) del cliente que se va
         for queue in QUEUES:
             apply_queue(queue, EMPTY, slot)
     for ip, body in wanted.items():
@@ -225,7 +231,7 @@ def set_clients(wanted: dict[str, dict]):
             # Se le asigna la plaza más baja libre y se ponen sus reglas de FORWARD
             slot = min(set(range(1, MAX_CLIENTS + 1)) - {c["slot"] for c in clients.values()})
             for table, rule in client_rules(ip, slot):
-                run(f"iptables -t {table} -A FORWARD {rule}")
+                run(f"iptables -t {table} -A FORWARD {rule}") # Añadir las reglas (-A) del cliente que se queda
             clients[ip] = {"slot": slot, "profile": link}
         clients[ip]["profile"] = link
         for queue in QUEUES:

@@ -116,8 +116,9 @@ processes = {
 }
 master_start_time: float = time.time()
 
-# Ciclo de vida: las órdenes de la API y el supervisor no deben pisarse
+# Ciclo de vida: las órdenes de la API y el supervisor no deben pisarse. Por ejemplo, si la API pide reiniciar la fuente mientras el supervisor la relanza, se puede quedar un proceso huérfano que emite en paralelo con el nuevo. El supervisor solo actúa si no hay órdenes de la API.
 lifecycle = threading.RLock()
+# Evita que el supervisor relance la fuente si la API la ha detenido a mano.
 desired_running = False
 # Identificador de cada emisión. Cambia cada vez que arranca su empaquetador, lo provoque quien lo provoque:
 # así cualquier dashboard abierto sabe que debe reconectar ese reproductor.
@@ -136,7 +137,7 @@ class Rendition(BaseModel):
 
     @property
     def width(self) -> int:
-        return round(self.height * 16 / 9 / 2) * 2
+        return round(self.height * 16 / 9 / 2) * 2 # Calcula el ancho 16:9 y lo redondea a par
 
 def default_ladder() -> list[Rendition]:
     return [Rendition(height=1080, bitrate_kbps=4000), Rendition(height=720, bitrate_kbps=2000), Rendition(height=360, bitrate_kbps=700)]
@@ -162,16 +163,6 @@ class StreamConfig(BaseModel):
     frag_duration: float = Field(0.1, ge=0)
     # Escalera de calidades que se codifica en vivo, de mayor a menor. Una sola entrada = sin adaptación.
     renditions: list[Rendition] = Field(default_factory=default_ladder, min_length=1, max_length=5)
-
-    @model_validator(mode="before")
-    @classmethod
-    def accept_single_bitrate(cls, data):
-        # Compatibilidad con la API anterior: {"bitrate_kbps": N} equivale a una única calidad 1080p
-        if isinstance(data, dict) and "bitrate_kbps" in data:
-            data = dict(data)
-            bitrate = data.pop("bitrate_kbps")
-            data.setdefault("renditions", [{"height": 1080, "bitrate_kbps": bitrate}])
-        return data
 
     @model_validator(mode="after")
     def sort_ladder(self):
@@ -887,7 +878,7 @@ def trace_frames(query: TraceQuery):
     ticks = 90000 // current_config.fps
 
     def follow(branch: str, stream: int, stamp: float):
-        frame = log.frame_for_stamp(stream, stamp)
+        frame = log.frame_for_stamp(stream, stamp) # Número de frame y marca exacta de tiempo quemada en él, según el log de FFmpeg.
         base = log.pts_base.get(stream)
         if frame is None or base is None:
             return None, None, None, None
@@ -899,7 +890,7 @@ def trace_frames(query: TraceQuery):
             return exact_stamp, None, None, pts
         return exact_stamp, times[0], times[1], pts
 
-    dash, moq = [], []
+    dash, moq, rtc = [], [], []
     for stamp in query.dash_stamps_ms:
         exact_stamp, encoded, forwarded, pts = follow("dash", query.dash_stream, stamp)
         packaged = None
@@ -912,15 +903,14 @@ def trace_frames(query: TraceQuery):
     for stamp in query.moq_stamps_ms:
         exact_stamp, encoded, forwarded, _ = follow("moq", query.moq_stream, stamp)
         moq.append({"stamp_ms": exact_stamp, "encoded_ms": ms(encoded), "forwarded_ms": ms(forwarded)})
-    rtc = []
     for stamp in query.rtc_stamps_ms:
         exact_stamp, encoded, forwarded, _ = follow("rtc", query.rtc_stream, stamp)
         rtc.append({"stamp_ms": exact_stamp, "encoded_ms": ms(encoded), "forwarded_ms": ms(forwarded)})
     return {"dash": dash, "moq": moq, "rtc": rtc}
 
 def start_all(restart_master: bool):
-    """Arranca los dos empaquetadores y, si hace falta, la fuente."""
-    # Detener los empaquetadores antes de tocar la fuente, para que no mezclen dos emisiones
+    """Arranca los tres empaquetadores y, si hace falta, la fuente."""
+    # Detener los empaquetadores antes de tocar la fuente, para que no mezclen emisiones
     for name in PACKAGERS:
         kill_proc(processes.get(name))
     if restart_master:

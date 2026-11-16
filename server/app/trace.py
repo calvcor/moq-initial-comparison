@@ -1,7 +1,7 @@
 """Registro de por dónde pasa cada frame y a qué hora, para desglosar la latencia por etapas.
 
 Un frame se identifica por la marca de tiempo que lleva quemada, que es lo único que el dashboard puede
-leer igual en los dos reproductores. Aquí se guarda:
+leer igual en los tres reproductores. Aquí se guarda:
 
 - De la fuente: qué número de frame y de qué calidad recibió cada marca (lo escribe FFmpeg en su log).
 - De cada compuerta (tsgate.py): a qué hora terminó de llegarle cada frame de vídeo, por PTS, y a qué
@@ -30,7 +30,7 @@ class FrameLog:
         self.lock = threading.Lock()
         self.frames = {"dash": {}, "moq": {}, "rtc": {}}     # rama -> stream -> ([pts...], [(llegada, reenvío)...])
         self.first_pts = {"dash": {}, "moq": {}, "rtc": {}}  # rama -> stream -> PTS del primer frame que dejó pasar la compuerta
-        self.stamps = {}    # stream -> ([marca ms...], [número de frame...])
+        self.stamps = {}    # stream -> ([marca ms...], [número de frame...]). Se borra lo más antiguo para no crecer indefinidamente, KEEP + 10 s de margen
         self.pts_base = {}  # stream -> PTS del frame 0 de la fuente actual
         # Retraso de la fuente: la marca quemada (hora de pared) menos lo que le toca por su número de frame
         self.frame_ms = 1000 / 60
@@ -53,6 +53,7 @@ class FrameLog:
             offset = stamp_ms - number * self.frame_ms
             if stream not in self.lag_base or offset < self.lag_base[stream]:
                 self.lag_base[stream] = offset
+            # Acortar la lista para no crecer indefinidamente: KEEP + 10 s de margen
             if len(marks) > KEEP + 600:
                 del marks[:600], numbers[:600]
 
@@ -61,6 +62,7 @@ class FrameLog:
         with self.lock:
             marks, numbers = self.stamps.get(stream, ([], []))
             i = bisect.bisect_left(marks, stamp_ms)
+            # Si la marca no coincide exactamente, se devuelve el frame más cercano, siempre que esté a 4 ms o menos
             best = min((j for j in (i - 1, i) if 0 <= j < len(marks)), key=lambda j: abs(marks[j] - stamp_ms), default=None)
             # El timecode quemado va en ms enteros y puede diferir 1 ms de la marca registrada
             if best is not None and abs(marks[best] - stamp_ms) <= 4:
@@ -137,6 +139,7 @@ frame_log = FrameLog()
 
 
 def listen():
+    """Escucha las horas de llegada y reenvío de cada frame que envían las compuertas, y las añade a frame_log."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", TRACE_PORT))
