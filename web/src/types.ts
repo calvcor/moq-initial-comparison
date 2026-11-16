@@ -328,7 +328,8 @@ export interface SampleRow {
   moq_probe_cuts: number | null; // de ellos, cortados (acumulado)
   // Desglose de la latencia por etapas (ms); la suma de las de cada rama es su glass-to-glass
   dash_stage_encode_ms: number | null;
-  dash_stage_package_ms: number | null;
+  dash_stage_ingest_ms: number | null; // desde el 16-11-2026; antes iba dentro de dash_stage_package_ms
+  dash_stage_package_ms: number | null; // desde el 16-11-2026, sin la entrada (dash_stage_ingest_ms)
   dash_stage_deliver_ms: number | null;
   dash_stage_player_ms: number | null;
   moq_stage_encode_ms: number | null;

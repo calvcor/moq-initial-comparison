@@ -1001,7 +1001,7 @@ Diferencias entre las ramas que no son del protocolo en sí, y que conviene cont
 
    Fuentes: el estándar solo fija los códecs (RFC 7742); el comportamiento de libwebrtc sale de su código (`libvpx_vp8_encoder.cc`, `h264_encoder_impl.cc` y los valores por defecto de `video_encoder.cc`); las recomendaciones de ingesta, de guías de Gcore, Alibaba Cloud, VDO.Ninja y nanocosmos. Las unidades del búfer de libvpx (milisegundos) son una lectura de su configuración, no un comentario del código.
 
-8. **La lectura del MPEG-TS cuesta distinto en cada rama y cae en etapas distintas.** Desde la llegada del último paquete de un frame hasta que sale empaquetado: MediaMTX 17 ms (1 frame), el publicador de MoQ 34 ms (2 frames, con el relay incluido) y FFmpeg 50,5 ms (3 frames), medido en local el 29-10-2026 a 60 fps (C.4). El frame inherente al formato lo pagan las tres; los demás son de cada implementación. Además, en DASH ese tiempo cae en la etapa "Empaquetado CMAF", y en MoQ y WebRTC queda escondido en "Publicación y transporte", así que las etapas de entrada no son comparables entre ramas: la de DASH incluye la lectura y las otras dos no. La latencia total sí es comparable. Se valoró añadir puntos de medida a la salida del publicador y de MediaMTX para equipararlas, y se descartó: habría que mantener un suscriptor y un lector permanentes en el servidor.
+8. **La lectura del MPEG-TS cuesta distinto en cada rama y cae en etapas distintas.** Desde la llegada del último paquete de un frame hasta que sale empaquetado: MediaMTX 17 ms (1 frame), el publicador de MoQ 34 ms (2 frames, con el relay incluido) y FFmpeg 50,5 ms (3 frames), medido en local el 29-10-2026 a 60 fps (C.4). El frame inherente al formato lo pagan las tres; los demás son de cada implementación. Además, en DASH ese tiempo cae en la etapa "Empaquetado CMAF", y en MoQ y WebRTC queda escondido en "Publicación y transporte". Hasta el 16-11-2026 DASH no tenía etapa de entrada propia (iba dentro del empaquetado, con la lectura) y no se podía comparar con las de las otras dos; desde entonces la entrada al empaquetador mide lo mismo en las tres ramas (lo que el frame espera en la compuerta) y sí es comparable. Las etapas siguientes no lo son: la lectura cae en una u otra según la rama. La latencia total sí es comparable. Se valoró añadir puntos de medida a la salida del publicador y de MediaMTX para equipararlas, y se descartó: habría que mantener un suscriptor y un lector permanentes en el servidor.
 
 ---
 
@@ -2467,7 +2467,8 @@ La hora de salida del codificador la pone el propio sistema operativo en el inst
 | Etapa | Entre qué puntos | Qué contiene |
 | :--- | :--- | :--- |
 | Codificación | Quemado → salida del codificador | Escalado, codificación x264 y multiplexado MPEG-TS. |
-| Empaquetado CMAF | Salida del codificador → fragmento completo | Paso por la compuerta, FFmpeg y la espera a que se cierre el fragmento. |
+| Entrada al empaquetador | Salida del codificador → entrega | Lo que el frame espera en la compuerta a que FFmpeg lo acepte. Normalmente 0 ms. Desde el 16-11-2026; antes iba dentro del empaquetado. |
+| Empaquetado CMAF | Entrega → fragmento completo | Lectura del MPEG-TS en FFmpeg y la espera a que se cierre el fragmento y llegue al origen. |
 | Entrega | Fragmento completo → llegada | Origen, nginx, router de emulación, red y lectura en `dash.js`. |
 | Búfer y pintado | Llegada → pintado | Espera en el búfer, decodificación y pintado. |
 
@@ -2547,7 +2548,7 @@ Todo va al CSV que exporta el panel, una fila por segundo:
 | Columnas | Contenido |
 | :--- | :--- |
 | `dash_g2g_ms`, `moq_g2g_ms`, `rtc_g2g_ms` | Latencia *glass-to-glass*. |
-| `dash_stage_encode_ms`, `_package_ms`, `_deliver_ms`, `_player_ms` | Etapas de DASH. |
+| `dash_stage_encode_ms`, `_ingest_ms`, `_package_ms`, `_deliver_ms`, `_player_ms` | Etapas de DASH. `_ingest_ms` existe desde el 16-11-2026; antes, `_package_ms` incluía la entrada. |
 | `moq_stage_encode_ms`, `_ingest_ms`, `_transport_ms`, `_player_ms` | Etapas de MoQ. |
 | `rtc_stage_encode_ms`, `_ingest_ms`, `_transport_ms`, `_player_ms` | Etapas de WebRTC. |
 | `dash_buffer_s`, `moq_jitter_buffer_s`, `rtc_jitter_buffer_s` | Las cifras de búfer de las tarjetas. |

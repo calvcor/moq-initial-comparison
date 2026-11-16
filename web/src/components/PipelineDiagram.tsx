@@ -37,12 +37,22 @@ const LANES: { id: LaneId; title: string; color: string; bar: string; stages: St
     stages: [
       ENCODE,
       {
+        key: 'ingest',
+        name: 'Entrada al empaquetador',
+        nodes: ['tsgate'],
+        includes:
+          'Tiempo que el frame, ya codificado, espera a que el FFmpeg que empaqueta lo acepte. tsgate le entrega los datos por una tubería y se bloquea si FFmpeg no la vacía; si esta etapa crece, el empaquetador no da abasto.',
+        from: 'la llegada del frame al socket de tsgate',
+        to: 'el instante en que tsgate lo lee y lo escribe hacia FFmpeg',
+        uncertainty: 'server',
+      },
+      {
         key: 'package',
         name: 'Empaquetado CMAF',
-        nodes: ['tsgate', 'FFmpeg dash', 'Origen'],
+        nodes: ['FFmpeg dash', 'Origen'],
         includes:
-          'Espera a que se complete el fragmento CMAF que contiene el frame (hasta la duración de fragmento configurada), más el paso por FFmpeg y la escritura en el origen.',
-        from: 'la llegada del frame al socket de tsgate',
+          'Lectura del MPEG-TS en FFmpeg (retiene unos 2 frames: PROTOCOLOS, 6.4), espera a que se complete el fragmento CMAF que contiene el frame (hasta la duración de fragmento configurada) y su escritura en el origen.',
+        from: 'la entrega del frame a FFmpeg',
         to: 'el instante en que su fragmento queda completo en el origen',
         uncertainty: 'server',
       },

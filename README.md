@@ -530,14 +530,14 @@ El panel **Recorrido de un frame** reparte la latencia glass-to-glass entre las 
 | :--- | :--- |
 | Marca de origen | FFmpeg, al quemar el timecode, escribe en su log la marca exacta, el número de frame y la calidad (`print()` en la expresión del filtro). El orquestador lo lee y puede identificar después cualquier frame por su timecode |
 | Salida del codificador | `tsgate.py`: hora a la que el kernel recibe el último paquete del frame (`SO_TIMESTAMPNS`) |
-| Entrega al empaquetador | `tsgate.py`: hora a la que lee ese paquete y lo escribe hacia FFmpeg o `moq import`. Se retrasa si el empaquetador no vacía la tubería |
+| Entrega al empaquetador | `tsgate.py`: hora a la que lee ese paquete y lo escribe hacia el empaquetador de su rama (FFmpeg en DASH y con mediasoup, `moq import` en MoQ). Se retrasa si el empaquetador no vacía la tubería |
 | Fragmento completo (DASH) | `origin.py` sigue las cajas `moof`/`mdat` según llegan y anota cuándo se completa cada fragmento |
 | Llegada al reproductor | DASH: primer instante en que `video.buffered` contiene el frame (cada 20 ms). MoQ: cuando `@moq/watch` lo lee de la conexión, antes de decodificar |
 | Pintado | El mismo lector de timecode del medidor glass-to-glass |
 
 Cada etapa es la diferencia entre dos puntos consecutivos:
 
-- **LL-DASH:** codificación → empaquetado CMAF → entrega → búfer y pintado.
+- **LL-DASH:** codificación → entrada al empaquetador → empaquetado CMAF → entrega → búfer y pintado. Hasta el 16-11-2026 la entrada iba dentro del empaquetado (una sola etapa de la llegada a `tsgate.py` al fragmento completo); en el CSV, `dash_stage_package_ms` anterior a esa fecha equivale a la suma de `dash_stage_ingest_ms` y `dash_stage_package_ms` de después.
 - **MoQ:** codificación → entrada al publicador → publicación y transporte → búfer de jitter y pintado.
 - **WebRTC:** codificación → entrada al empaquetador → publicación y transporte → búfer de jitter y pintado. La llegada al reproductor la da el propio navegador con cada frame (`receiveTime`), con unos pocos ms de imprecisión.
 
@@ -547,9 +547,9 @@ Lo que hay que saber para interpretarlo:
 - **La resolución es la de los puntos de medida, no la de cada caja del esquema.** Dentro de una etapa no se sabe cómo se reparte el tiempo; en MoQ, publicador, relay y red van juntos porque el relay es un binario de terceros.
 - **Incertidumbre:** las etapas con las dos horas en el servidor son exactas al milisegundo; las que cruzan al navegador añaden el error de sincronización de relojes (se muestra) y, en DASH, los 20 ms del sondeo del búfer.
 - **El PTS del frame 0** se obtiene arrancando las compuertas antes que la fuente. Si una medida no cuadra (codificación fuera de 0-1 s) se descarta en vez de mostrarse.
-- **El empaquetado de DASH no baja de unos 50 ms a 60 fps**, ni con fragmentos de 1 frame (medido el 29-10-2026: mediana de 51 ms en el servidor y 50,4 ms en local). Son 3 frames: FFmpeg retiene cada frame 2 frames al leer el MPEG-TS (33,5 ms, medido aislado) y uno más al escribir el fragmento y enviarlo. No influyen el audio ni el intercalado. Es un coste de FFmpeg y del formato intermedio, no del protocolo (PROTOCOLOS, C.4). Las otras ramas leen el mismo MPEG-TS con menos retención (MediaMTX 1 frame, el publicador de MoQ unos 2), y ese tiempo cae en su etapa "Publicación y transporte", no en la de entrada: las etapas de entrada no son comparables entre ramas (PROTOCOLOS, 6.4, variable 8).
+- **El empaquetado de DASH no baja de unos 50 ms a 60 fps**, ni con fragmentos de 1 frame (medido el 29-10-2026, con la entrada aún dentro: mediana de 51 ms en el servidor y 50,4 ms en local). Son 3 frames: FFmpeg retiene cada frame 2 frames al leer el MPEG-TS (33,5 ms, medido aislado) y uno más al escribir el fragmento y enviarlo. No influyen el audio ni el intercalado. Es un coste de FFmpeg y del formato intermedio, no del protocolo (PROTOCOLOS, C.4). Las otras ramas leen el mismo MPEG-TS con menos retención (MediaMTX 1 frame, el publicador de MoQ unos 2), y ese tiempo cae en su etapa "Publicación y transporte". Desde el 16-11-2026 la entrada al empaquetador de las tres ramas mide lo mismo (lo que el frame espera en `tsgate.py`) y es comparable entre ellas; la lectura del MPEG-TS cae en "Empaquetado CMAF" en DASH y en "Publicación y transporte" en las otras dos (PROTOCOLOS, 6.4, variable 8).
 
-Los puntos animados recorren cada carril a velocidad real: tardan en cada etapa lo medido. Las etapas van también al CSV (`dash_stage_*_ms`, `moq_stage_*_ms`).
+Los puntos animados recorren cada carril a velocidad real: tardan en cada etapa lo medido. Las etapas van también al CSV (`dash_stage_*_ms`, `moq_stage_*_ms`, `rtc_stage_*_ms`).
 
 Primera observación con este panel (Chrome headless, red sin restricción): en MoQ, de ~470 ms, unos 400 ms se pasan en el búfer del reproductor (medido con `buffer` a 150 ms; desde que se usa el valor por defecto de la librería, 0, son unos 200 de ~300 ms) y solo 15-40 ms en publicador, relay y red; en DASH, de ~3,06 s, unos 2,8 s son búfer.
 

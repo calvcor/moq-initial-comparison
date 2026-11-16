@@ -107,7 +107,8 @@ export class DashTracer {
           if (!server || server.encoded_ms === null || server.packaged_ms === null || arrivedMs === null) return;
           rows.push({
             encode: server.encoded_ms - server.stamp_ms,
-            package: server.packaged_ms - server.encoded_ms,
+            ingest: server.forwarded_ms - server.encoded_ms,
+            package: server.packaged_ms - server.forwarded_ms,
             deliver: arrivedMs - server.packaged_ms,
             player: sample.paintedMs - arrivedMs,
           });
