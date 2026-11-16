@@ -105,7 +105,7 @@ Un perfil por sentido, con los campos de `EMPTY`:
 | :--- | :--- | :--- |
 | `rate_kbit` | `null` | Caudal del `tbf`; `null` = sin límite (el `tbf` se pone a 1 Gbit/s si hay otras restricciones) |
 | `delay_ms` | 0 | Retardo de `netem` |
-| `jitter_ms` | 0 | Variación del retardo, uniforme y con correlación del 25 %. Desordena los paquetes (README principal, sección 5) |
+| `jitter_ms` | 0 | Variación del retardo (±), con correlación del 25 % entre paquetes seguidos, fija: cada valor mezcla un 75 % de azar nuevo con un 25 % del anterior. El reparto no es uniforme sino más concentrado hacia el centro (desviación típica de ~77 % de la uniforme; deducido de `get_crandom` en `sch_netem.c`). Desordena los paquetes (README principal, sección 5) |
 | `loss_pct` | 0 | Pérdida aleatoria por paquete |
 | `queue_ms` | 300 | Cola del cuello de botella; solo cuenta con `rate_kbit` |
 

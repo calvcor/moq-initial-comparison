@@ -807,7 +807,7 @@ El router (`router/agent.py`) reenvía los puertos del navegador con DNAT, sin t
 | :--- | :--- | :--- |
 | Ancho de banda (kbit/s) | Sí | Vacío = sin límite |
 | Retardo (ms) | Sí | El RTT es la suma de bajada y subida |
-| Jitter (ms) | Sí | No puede superar el retardo. **Desordena los paquetes, y mucho** (ver abajo) |
+| Jitter (ms) | Sí | No puede superar el retardo. Correlación del 25 % entre paquetes seguidos, fija. **Desordena los paquetes, y mucho** (ver abajo) |
 | Pérdida (%) | Sí | Aleatoria e independiente por paquete |
 | Cola (ms) | Sí | Búfer del cuello de botella; solo actúa con ancho de banda limitado. Por defecto 300 ms, la de RFC 8867 (antes del 3-11-2026, 100 ms) |
 
@@ -829,7 +829,7 @@ Limitaciones:
 - **Cola por defecto de 300 ms desde el 3-11-2026** (antes, 100 ms), en el panel, en la API, en el barrido de las campañas y al restaurar la red. Es la de RFC 8867, la que usan las pruebas de control de congestión de IETF RMCAT. Con 100 ms, las keyframes que WebRTC reenvía de golpe la desbordaban: a 8 Mbit/s, MediaMTX perdía el 12,5 % de los paquetes y mediasoup el 3,4 %, frente al 0,26 % de MoQ y el 0,03 % de DASH (`../FINDINGS/mediasoup_link_underestimation.md`, fuera del repositorio). Las medidas anteriores con límite de caudal se hicieron con 100 ms salvo que digan otra cosa; el CSV registra la cola en `net_down_queue_ms` y `net_up_queue_ms`. Los perfiles Móvil y Enlace saturado siguen con su propia cola de 200 ms.
 - **La tabla siguiente es anterior a la escalera de calidades**: se midió con una única calidad y sin tope de tasa en la fuente.
 
-**El jitter de netem desordena los paquetes, y eso hunde a MoQ (medido el 21-10-2026, en local).** netem da a cada paquete un retardo aleatorio propio (uniforme en ±jitter, correlación 25 %) y los entrega por orden de salida, así que dos paquetes que salen juntos pueden llegar con hasta 2×jitter de diferencia y en orden inverso. Con un flujo de prueba numerado por la cola de bajada de MoQ (ráfagas de 6 paquetes cada 16,7 ms):
+**El jitter de netem desordena los paquetes, y eso hunde a MoQ (medido el 21-10-2026, en local).** netem da a cada paquete un retardo aleatorio propio dentro de ±jitter, con correlación del 25 % (fija en el router; es el valor del ejemplo clásico de netem, no se eligió midiendo): cada valor aleatorio mezcla un 75 % de azar nuevo con un 25 % del anterior, así que el reparto no es uniforme sino más concentrado hacia el centro, con una desviación típica de ~77 % de la uniforme (deducido del código del kernel, `get_crandom` en `sch_netem.c`; corregido el 16-11-2026, antes aquí decía «uniforme») y los entrega por orden de salida, así que dos paquetes que salen juntos pueden llegar con hasta 2×jitter de diferencia y en orden inverso. Con un flujo de prueba numerado por la cola de bajada de MoQ (ráfagas de 6 paquetes cada 16,7 ms):
 
 | Perfil | Llegan fuera de orden | Adelantados por 3 o más posteriores |
 | :--- | :--- | :--- |
