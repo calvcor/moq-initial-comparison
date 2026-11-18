@@ -10,18 +10,34 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import agent as router
 
 
-def netem_counters() -> dict:
-    """Handle de netem -> [descartes, paquetes en cola ahora], sumados en todas las interfaces, p. ej. {"391:": [27, 3]}.
-    Descartes acumulados por el kernel; since_reset los cuenta desde el último perfil."""
-    netems = {}
+# Cabecera Ethernet: tc cuenta los bytes con ella e iptables sin ella (medido: 142 bytes por paquete IP de 128)
+ETH_HEADER = 14
+
+
+def qdisc_counters() -> tuple[dict, dict]:
+    """Contadores de tc, sumados en todas las interfaces, en una sola lectura (un tc por interfaz):
+    - netems: handle de netem -> [descartes, paquetes en cola ahora], p. ej. {"391:": [27, 3]}. Descartes acumulados por
+      el kernel; since_reset los cuenta desde el último perfil.
+    - salidas: banda de plaza -> [bytes IP, paquetes] que han salido de ella, p. ej. {"300:9": [8662, 61]}: lo que deja
+      pasar la qdisc que cuelga de la banda, el tbf o, sin restricciones, la pfifo que pone el kernel (invisible, por eso
+      "invisible"). Acumulados desde que se montó esa qdisc; sin la cabecera Ethernet, como los de iptables (desde el
+      18-11-2026)."""
+    netems, outputs = {}, {}
+    bands = {router.handles(queue, slot)[0] for queue in router.QUEUES for slot in range(1, router.GENERAL + 1)}
     for dev in router.interfaces():
-        for qdisc in json.loads(router.run(f"tc -s -j qdisc show dev {dev}")):
-            # Solo netem: el limitador padre vuelve a contar los mismos descartes
+        for qdisc in json.loads(router.run(f"tc -s -j qdisc show dev {dev} invisible")):
+            # Descartes, solo de netem: el limitador padre vuelve a contar los mismos
             if qdisc.get("kind") == "netem":
                 acc = netems.setdefault(qdisc.get("handle"), [0, 0])
                 acc[0] += qdisc.get("drops", 0)
                 acc[1] += qdisc.get("qlen", 0)
-    return netems
+            # Salida: la qdisc colgada directamente de una banda de plaza ("300:9"), no la prio de la cola ("1:3")
+            parent = qdisc.get("parent")
+            if parent in bands:
+                acc = outputs.setdefault(parent, [0, 0])
+                acc[0] += qdisc.get("bytes", 0) - ETH_HEADER * qdisc.get("packets", 0)
+                acc[1] += qdisc.get("packets", 0)
+    return netems, outputs
 
 
 # Descartes de cada netem (por handle) cuando se aplicó el último perfil de su plaza: se cuentan desde ahí, sin tocar tc
@@ -34,7 +50,7 @@ drop_base: dict[str, int] = {}
 
 def reset_drops(slots) -> None:
     """slots: las plazas (números) cuyos descartes vuelven a cero en las seis colas."""
-    netems = netem_counters()
+    netems, _ = qdisc_counters()
     for queue in router.QUEUES:
         for slot in slots:
             netem = router.handles(queue, slot)[2] + ":"
@@ -42,7 +58,7 @@ def reset_drops(slots) -> None:
 
 
 def since_reset(netems: dict) -> dict:
-    """Los contadores de netem_counters, con la misma forma, con los descartes desde el último reinicio. Si el del kernel está por debajo de la
+    """Los netems de qdisc_counters, con la misma forma, con los descartes desde el último reinicio. Si el del kernel está por debajo de la
     base (el netem se volvió a crear después), cuenta desde cero."""
     out = {}
     for netem, (dropped, queued) in netems.items():
@@ -94,17 +110,19 @@ def describe(queue: str) -> str:
     return " · ".join(parts)
 
 
-def tree(st: dict, netems: dict) -> dict:
+def tree(st: dict, netems: dict, outputs: dict) -> dict:
     """El árbol de tc tal como lo ha montado el agente (el mismo en cada interfaz), con los contadores de cada plaza: raíz
     1:, una banda por cola y, dentro de cada una, su prio con las plazas de los clientes y la general. Para el esquema de
-    la página (README, sección 5); los bytes son los de iptables, antes de la emulación. st: la salida de stats; netems,
-    la de since_reset. Devuelve:
+    la página (README, sección 5). packets y bytes son los de iptables, lo que entra en la plaza (antes de la emulación);
+    out_packets y out_bytes, los de tc, lo que sale (None si no hay qdisc en la banda). st: la salida de stats; netems,
+    la de since_reset; outputs, las salidas de qdisc_counters. Devuelve:
         {"root": "1:", "interfaces": ["eth0", ...],
          "bands": [{"band": "1:3", "queue": "moq_down", "handle": "300:", "match": "udp origen :4433",
                     "slots": [{"slot": 9, "band": "300:9", "general": bool, "client": IP | None,
                                "limiter": "390:" | None, "netem": "391:" | None,   None: pasa sin restricciones
                                "link": perfil de enlace + "limit" | None,         como en applied (agent.py)
-                               "packets", "bytes", "dropped", "queued"}, ...]},   9 plazas
+                               "packets", "bytes", "out_packets", "out_bytes",
+                               "dropped", "queued"}, ...]},                        9 plazas
                    ...,
                    {"band": "1:7", "queue": None, "handle": None, "match": "el resto ...", "slots": []}]}"""
     slots = {c["slot"]: ip for ip, c in router.clients.items()}
@@ -123,6 +141,7 @@ def tree(st: dict, netems: dict) -> dict:
             else:
                 packets = size = 0
             dropped, queued = netems.get(netem + ":", (0, 0))
+            out_bytes, out_packets = outputs.get(band, (None, None))
             link = router.applied.get((queue, slot))
             children.append({
                 "slot": slot,
@@ -135,6 +154,9 @@ def tree(st: dict, netems: dict) -> dict:
                 "link": link,
                 "packets": packets,
                 "bytes": size,
+                # Lo que sale de la plaza (tc): con límite de caudal, como mucho ese caudal; el resto se descarta o espera
+                "out_packets": out_packets,
+                "out_bytes": out_bytes,
                 "dropped": dropped,
                 "queued": queued,
             })
@@ -157,14 +179,15 @@ class Agent(BaseHTTPRequestHandler):
     def state(self) -> dict:
         """Lo que devuelven GET / y los POST: {"profile": perfil de red de la general, "clients": IP -> perfil de red,
         "stats": la salida de stats, "tree": la de tree (None sin emulación), "emulation_error": str | None}."""
-        netems = since_reset(netem_counters())
+        netems, outputs = qdisc_counters()
+        netems = since_reset(netems)
         st = stats(netems)
         return {
             "profile": router.profile,
             "clients": {ip: c["profile"] for ip, c in router.clients.items()},
             "stats": st,
             # Sin emulación (faltan módulos del kernel) no hay árbol de tc que mostrar
-            "tree": None if router.emulation_error else tree(st, netems),
+            "tree": None if router.emulation_error else tree(st, netems, outputs),
             "emulation_error": router.emulation_error,
         }
 

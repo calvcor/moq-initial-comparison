@@ -66,8 +66,10 @@ export interface RouterSlot {
   limiter: string | null; // handle del tbf ("290:"); null sin restricciones: la banda deja pasar tal cual
   netem: string | null; // handle del netem ("291:")
   link: (LinkProfile & { limit: number }) | null; // perfil aplicado y limit de netem en paquetes
-  packets: number; // reenviados (iptables, antes de la emulación)
+  packets: number; // los que entran en la plaza (iptables, antes de la emulación)
   bytes: number;
+  out_packets?: number | null; // los que salen (tc: el tbf o, sin restricciones, la pfifo de la banda); null sin qdisc
+  out_bytes?: number | null; // bytes IP, sin la cabecera Ethernet, como los de iptables. Desde el 18-11-2026
   dropped: number; // descartes de netem (pérdida aleatoria y cola llena) desde el último perfil aplicado a la plaza
   queued: number; // paquetes en la cola de netem ahora
 }

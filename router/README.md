@@ -9,7 +9,7 @@ La ingesta (orquestador → Nginx, relay o SFU) va por la red interna y no pasa 
 | Fichero | Contenido |
 | :--- | :--- |
 | `agent.py` | Reenvío (DNAT y MASQUERADE), árbol de tc, plazas de los clientes y aplicación de los perfiles: `setup`, `handles`, `apply_queue`, `client_rules`, `set_clients` y `set_profile`. Guarda el estado (`profile`, `clients`, `applied`, `shaped`, `emulation_error`) |
-| `api.py` | Agente HTTP (`:9000`) y lectura de contadores: `netem_counters`, `stats`, `describe`, `tree` y la clase `Agent`. Es el que se ejecuta (`CMD` del `Dockerfile`): llama a `setup()` y arranca el servidor. Usa `agent.py` como `router.<nombre>`, para leer siempre el estado actual |
+| `api.py` | Agente HTTP (`:9000`) y lectura de contadores: `qdisc_counters`, `stats`, `describe`, `tree` y la clase `Agent`. Es el que se ejecuta (`CMD` del `Dockerfile`): llama a `setup()` y arranca el servidor. Usa `agent.py` como `router.<nombre>`, para leer siempre el estado actual |
 | `Dockerfile` | Alpine con Python, `iproute2-tc` e `iptables` |
 
 Hasta el 12-11-2026 todo estaba en `agent.py`; la separación no cambió el funcionamiento.
@@ -163,7 +163,7 @@ Los dos `POST` devuelven el estado, como `GET /`, o `400` con `{"error": "…"}`
 }
 ```
 
-`tree` describe el árbol para el esquema del dashboard (panel **Esquema del router (tc)**): cada banda de la raíz con su cola, su `prio`, qué tráfico manda ahí la raíz (`match`, sacado de `FILTERS`) y sus 9 plazas. Para cada plaza da su banda, si es la general o de qué cliente es, los handles de su `tbf` y su `netem` (`null` si pasa sin restricciones), el perfil aplicado con su `limit` y sus contadores. Al final va `1:7`, el resto.
+`tree` describe el árbol para el esquema del dashboard (panel **Esquema del router (tc)**): cada banda de la raíz con su cola, su `prio`, qué tráfico manda ahí la raíz (`match`, sacado de `FILTERS`) y sus 9 plazas. Para cada plaza da su banda, si es la general o de qué cliente es, los handles de su `tbf` y su `netem` (`null` si pasa sin restricciones), el perfil aplicado con su `limit` y sus contadores: lo que entra (`packets`, `bytes`, de iptables), lo que sale (`out_packets`, `out_bytes`, de tc), los descartes y la cola. Al final va `1:7`, el resto.
 
 ## Contadores
 
@@ -172,6 +172,8 @@ Los dos `POST` devuelven el estado, como `GET /`, o `400` con `{"error": "…"}`
   - Cada cliente con plaza tiene además las suyas, con el comentario `<cola>@<IP>`.
   - La general del árbol es la diferencia entre las dos.
   - Son acumulados desde que arrancó el router: el caudal lo calcula quien los lee, entre dos lecturas.
+- **Lo que sale de cada plaza** (desde el 18-11-2026): bytes y paquetes enviados por la qdisc colgada de la banda de la plaza, el `tbf` o, sin restricciones, la `pfifo` que pone el kernel al quitarlo. Esa `pfifo` es invisible: por eso se lee con `tc -s -j qdisc show dev <interfaz> invisible`. tc cuenta los bytes con la cabecera Ethernet; se restan 14 por paquete para que estén en la misma capa que los de iptables (medido: 142 bytes en tc por paquete IP de 128). Son acumulados desde que se montó esa qdisc: si se vuelve a crear, ese intervalo sale vacío en el esquema. Con límite de caudal, sale como mucho ese caudal; lo que entra de más se descarta o espera en la cola.
+- **Superpaquetes en TCP (DASH).** iptables cuenta antes de la emulación y ve los superpaquetes GSO tal como llegan de Nginx; tc, después de que el `tbf` los trocee (y la `pfifo` los cuenta por segmentos). Medido en local el 18-11-2026, descargando segmentos de DASH por la plaza general: entraron 1071 paquetes de 5923 bytes de media y salieron 4367 de 1492, unos 4 segmentos por superpaquete. Así que en DASH los paquetes de iptables son unas 4 veces menos que los reales, y los bytes que salen superan a los que entran en un 2,7 %: cada segmento lleva sus propias cabeceras IP y TCP. En las ramas UDP no se ha medido.
 - **Descartes y paquetes en cola:** `drops` y `qlen` de cada `netem` (`tc -s -j qdisc show`), sumados en todas las interfaces. No se suman los del `tbf`, que vuelve a contar los mismos. Incluyen la pérdida aleatoria y la cola llena. `qlen` es lo que hay en la cola ahora.
 - **Los descartes se cuentan desde el último perfil aplicado a la plaza** (desde el 12-11-2026; antes, desde que se montó cada `netem`). Tras cada `POST /`, `api.py` guarda el contador de los `netem` de la plaza general de las seis colas (`reset_drops`), y tras cada `POST /clients`, los de las plazas 1 a 8. Al leer, lo resta (`since_reset`). Así vuelven a cero al cambiar la red en el dashboard y, en una campaña, al empezar cada prueba, que aplica siempre las dos. No se toca tc: borrar y volver a crear el `netem` vaciaría la cola y tiraría lo que hubiera dentro. Si el contador del kernel está por debajo de la base (el `netem` se volvió a crear), se cuenta desde cero. Los paquetes y bytes de iptables siguen acumulados.
 

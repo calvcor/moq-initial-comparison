@@ -36,7 +36,10 @@ function linkParts(slot: RouterSlot): string[] {
   return parts;
 }
 
-// Caudal de cada plaza entre dos lecturas: los bytes de iptables son acumulados
+// Caudal de cada plaza entre dos lecturas, lo que entra (clave: la banda, "300:9") y lo que sale ("300:9>"): los bytes
+// de iptables y de tc son acumulados. Si un contador baja (qdisc vuelta a crear), ese intervalo queda vacío
+const outKey = (band: string) => `${band}>`;
+
 function useRates(tree: Tree | null | undefined): Record<string, number | null> {
   const prev = useRef<{ t: number; bytes: Record<string, number> } | null>(null);
   const [rates, setRates] = useState<Record<string, number | null>>({});
@@ -44,7 +47,11 @@ function useRates(tree: Tree | null | undefined): Record<string, number | null> 
     if (!tree) return;
     const now = performance.now();
     const bytes: Record<string, number> = {};
-    for (const b of tree.bands) for (const s of b.slots) bytes[s.band] = s.bytes;
+    for (const b of tree.bands)
+      for (const s of b.slots) {
+        bytes[s.band] = s.bytes;
+        if (typeof s.out_bytes === 'number') bytes[outKey(s.band)] = s.out_bytes;
+      }
     const p = prev.current;
     if (p && now > p.t) {
       const next: Record<string, number | null> = {};
@@ -56,16 +63,21 @@ function useRates(tree: Tree | null | undefined): Record<string, number | null> 
   return rates;
 }
 
+const kbit = (v: number | null | undefined) => (v === null || v === undefined ? '--' : String(v));
+
 // Una plaza en dos líneas: banda, de quién es y contadores; debajo, su tbf y netem con el perfil aplicado
-const Slot: React.FC<{ slot: RouterSlot; kbps: number | null | undefined }> = ({ slot, kbps }) => (
+const Slot: React.FC<{ slot: RouterSlot; kbpsIn: number | null | undefined; kbpsOut: number | null | undefined }> = ({ slot, kbpsIn, kbpsOut }) => (
   <li className="py-1 border-t border-slate-800 first:border-t-0">
     <div className="flex items-baseline gap-x-2">
       <span className="font-mono text-slate-200 shrink-0">{slot.band}</span>
       <span className={`truncate ${slot.general ? 'text-slate-300' : 'text-indigo-300'}`}>
         {slot.general ? 'general' : `plaza ${slot.slot} · ${slot.client}`}
       </span>
-      <span className="ml-auto shrink-0 text-slate-500 tabular-nums" title="Caudal reenviado · descartes de netem acumulados · paquetes en cola ahora">
-        {kbps === null || kbps === undefined ? '--' : `${kbps} kbit/s`} · {slot.dropped} desc. · {slot.queued} en cola
+      <span
+        className="ml-auto shrink-0 text-slate-500 tabular-nums"
+        title="Entra: lo que el servidor (o el cliente, en la subida) mete en la plaza, contado por iptables antes de la emulación. Sale: lo que deja pasar la plaza, contado por tc. Con límite de caudal, sale como mucho ese caudal; la diferencia se descarta o espera en la cola. Descartes de netem desde el último perfil aplicado y paquetes en cola ahora."
+      >
+        entra {kbit(kbpsIn)} · sale {kbit(kbpsOut)} kbit/s · {slot.dropped} desc. · {slot.queued} en cola
       </span>
     </div>
     <div className="text-slate-400">
@@ -102,7 +114,7 @@ const Band: React.FC<{ band: RouterBand; rates: Record<string, number | null>; s
       </div>
       <ul className="mt-1">
         {shown.map((s) => (
-          <Slot key={s.band} slot={s} kbps={rates[s.band]} />
+          <Slot key={s.band} slot={s} kbpsIn={rates[s.band]} kbpsOut={rates[outKey(s.band)]} />
         ))}
       </ul>
     </div>
@@ -149,7 +161,7 @@ const TreeView: React.FC<{ tree: Tree }> = ({ tree }) => {
         ))}
       </div>
       <p className="text-slate-500 mt-2">
-        Caudal y paquetes: lo reenviado (iptables), antes de la emulación. Descartes: pérdida aleatoria de netem y cola llena, desde el último perfil aplicado (cambio de red o, en una campaña, inicio de la prueba).
+        Entra: lo que llega a cada plaza (iptables, antes de la emulación); sale: lo que deja pasar (tc), en la misma capa (bytes IP). Descartes: pérdida aleatoria de netem y cola llena, desde el último perfil aplicado (cambio de red o, en una campaña, inicio de la prueba).
       </p>
     </div>
   );
