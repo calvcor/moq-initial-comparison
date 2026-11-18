@@ -31,7 +31,9 @@ def run_version(cmd: list[str], pattern: str):
 # Lo instalado en el servidor. El relay y MediaMTX corren en otros contenedores: su versión es la etiqueta
 # de imagen fijada en docker-compose.yml, que llega aquí como variable de entorno.
 installed = {
-    "moq_relay": os.getenv("MOQ_RELAY_VERSION") or None,
+    # Compilado desde un commit (MOQ_RELAY_FROM=git, relay/Dockerfile), como moq-cli: git@<commit>
+    "moq_relay": (f"git@{os.getenv('MOQ_RELAY_COMMIT', '')[:7]}" if os.getenv("MOQ_RELAY_FROM") == "git" else None)
+    or os.getenv("MOQ_RELAY_VERSION") or None,
     # Compilado desde un commit (MOQ_CLI_FROM=git en el Dockerfile), su --version no lo identifica: git@<commit>
     "moq_cli": (open("/usr/local/share/moq-cli-build").read().strip() if os.path.exists("/usr/local/share/moq-cli-build") else "")
     or run_version(["moq", "--version"], r"moq (\S+)"),

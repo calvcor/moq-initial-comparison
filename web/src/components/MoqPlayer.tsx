@@ -7,6 +7,7 @@ import { GlassMeter, RateWindow, DEFAULT_TIMECODE, WATCHDOG_MS, WATCHDOG_GRACE_M
 import { meters } from '../lib/qoe';
 import { MoqBufferMeter, MoqTracer } from '../lib/trace';
 import { MoqProbeAbr } from '../lib/moqProbe';
+import { decodedFrame, delayValue, isViewersApi, paintedFrame, playerProps, toMs } from '../lib/moqApi';
 import { MoqExplain } from './MoqExplain';
 import type { MoqAbr, MoqSwitching, PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } from '../types';
 
@@ -61,9 +62,8 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
   // 0 = auto: no se fija nada y @moq/watch dimensiona el búfer con el RTT que le comunica el relay
   const [targetLatencyMs, setTargetLatencyMs] = useState<number>(preset?.targetMs ?? 0);
   const [resolvedDelayMs, setResolvedDelayMs] = useState<number | null>(null);
-  // Milisegundos como el tipo de la librería. Vale para la versión publicada (Net.Time.Milli) y para la de main,
-  // donde Milli pasó a @moq/clock: en las dos es un número con otro nombre de tipo.
-  const toDelay = (ms: number): Watch.Delay => (ms > 0 ? (ms as Extract<Watch.Delay, number>) : 'auto');
+  // El retardo en el formato de la versión instalada: milisegundos (bc64b9c) o un Duration (c19c723); lib/moqApi.ts
+  const toDelay = (ms: number) => delayValue(playerRef.current, ms);
   const playerRef = useRef<Watch.Player | null>(null);
   const connectionRef = useRef<Net.Connection | null>(null);
   const delaySignalRef = useRef<Signal<any> | null>(null);
@@ -105,9 +105,14 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
       localStorage.setItem(ABR_KEY, value);
     } catch (_) {}
   };
+  // El experimento de sondeo usa la API de pistas de bc64b9c (prioridad y maxDelay); con la de c19c723 en adelante
+  // (lib/moqApi.ts) no arranca, y decide la librería: el panel y el CSV anotan entonces 'watch', la que decide de verdad
+  const [abrSupported, setAbrSupported] = useState<boolean | null>(null);
+  const abrSupportedRef = useRef<boolean | null>(null);
+  const effectiveAbr: MoqAbr = abrSupported === false ? 'watch' : abr;
   useEffect(() => {
-    onMetricsUpdate({ moqAbr: abr });
-  }, [abr]);
+    onMetricsUpdate({ moqAbr: effectiveAbr });
+  }, [effectiveAbr]);
 
   const handleLatencyChange = (newMs: number) => {
     setTargetLatencyMs(newMs);
@@ -147,7 +152,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
     // suyo en cuanto dibuja el siguiente.
     const grab = () => {
       try {
-        return playerRef.current?.renderer.out.frame.peek()?.clone() ?? null;
+        return paintedFrame(playerRef.current)?.clone() ?? null;
       } catch (_) {
         return null;
       }
@@ -238,6 +243,8 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
             : undefined,
         });
         connectionRef.current = connection;
+        abrSupportedRef.current = !isViewersApi(connection);
+        setAbrSupported(abrSupportedRef.current);
         // @moq/net solo abre el canal PROBE con el relay mientras alguien observa connection.probe, y @moq/watch deja de
         // observarlo cuando se le pide una calidad por nombre (el sondeo o una calidad fijada a mano): sin esto, en esos
         // casos no llegaría ninguna estimación al panel ni al CSV. Observarla solo mantiene abierto ese canal, por el que
@@ -245,30 +252,33 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         stopProbeWatch = connection.probe.subscribe(() => {});
 
         // 3. Instanciar el reproductor oficial @moq/watch con jitter buffer y control reactivo
-        const delaySignal = new Signal<Watch.Delay>(toDelay(targetLatencyMs));
+        // El retardo empieza en 'auto' y se fija en cuanto existe el reproductor: en c19c723 es un Duration, cuya
+        // clase se toma del propio reproductor (lib/moqApi.ts)
+        const delaySignal = new Signal<any>('auto');
         delaySignalRef.current = delaySignal;
 
         const targetSignal = new Signal<Watch.Video.Target | undefined>(undefined);
-        const player = new Watch.Player({
-          origin: connection.origin,
-          probe: connection.probe,
-          name: Net.Path.from('live.hang'),
-          // Esperar al anuncio de la emisión antes de suscribirse: justo tras un reinicio del publicador
-          // todavía no existe y una suscripción a ciegas se rechaza sin reintento.
-          announced: true,
-          // Por defecto @moq/watch deja de descargar el vídeo cuando el canvas sale de la vista (al hacer
-          // scroll hasta las métricas, por ejemplo). Aquí debe seguir, como hacen los otros dos reproductores,
-          // o la medida se interrumpe cada vez que se mira otra parte de la página.
-          visible: 'always',
-          canvas: canvasRef.current || undefined,
-          muted: mutedSignalRef.current,
-          // `buffer` se deja en su valor por defecto (0): tolera media adelantada sin recolocarse hacia el
-          // directo, y con un valor mayor la latencia real queda por encima de la que marca el slider.
-          delay: delaySignal,
-          target: targetSignal,
-          // Solo la entiende la versión con el parche; la de npm ignora la propiedad
-          ...({ switching: switchingSignalRef.current } as object),
-        });
+        // Las opciones cambian de forma entre versiones (lib/moqApi.ts); las dos se conectan como <moq-watch>.
+        // - Esperar al anuncio de la emisión antes de suscribirse (announced, o follow en c19c723): justo tras un
+        //   reinicio del publicador todavía no existe y una suscripción a ciegas se rechaza sin reintento.
+        // - visible: 'always'. Por defecto @moq/watch deja de descargar el vídeo cuando el canvas sale de la vista (al
+        //   hacer scroll hasta las métricas, por ejemplo). Aquí debe seguir, como hacen los otros dos reproductores, o
+        //   la medida se interrumpe cada vez que se mira otra parte de la página.
+        // - `buffer` (lookahead en c19c723) se deja en su valor por defecto (0): tolera media adelantada sin
+        //   recolocarse hacia el directo, y con un valor mayor la latencia real queda por encima de la del slider.
+        // - switching: solo la entiende bc64b9c con el parche de web/patches; las demás ignoran la propiedad.
+        const player = new Watch.Player(
+          playerProps(connection, {
+            origin: connection.origin,
+            name: Net.Path.from('live.hang'),
+            canvas: canvasRef.current || undefined,
+            muted: mutedSignalRef.current,
+            delay: delaySignal,
+            target: targetSignal,
+            switching: switchingSignalRef.current,
+          }),
+        );
+        delaySignal.set(delayValue(player, targetLatencyMs));
         setSwitchingSupported('switching' in (player.in as object));
         playerRef.current = player;
         // Acceso desde la consola del navegador para depurar
@@ -278,7 +288,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         tracer = new MoqTracer(
           player,
           meter,
-          () => (ladderRef.current ?? []).findIndex((r) => r.height === player.renderer.out.frame.peek()?.displayHeight),
+          () => (ladderRef.current ?? []).findIndex((r) => r.height === paintedFrame(player)?.displayHeight),
           (stages) => onMetricsUpdate({ stages }),
         );
 
@@ -292,8 +302,8 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         metricsInterval = setInterval(() => {
           if (isAborted || !playerRef.current) return;
           try {
-            const syncDelay = player.sync.out.delay.peek();
-            if (typeof syncDelay === 'number') setResolvedDelayMs(Math.round(syncDelay));
+            const syncDelay = toMs(player.sync.out.delay.peek());
+            if (syncDelay !== undefined) setResolvedDelayMs(Math.round(syncDelay));
             const held = bufferMeter?.take() ?? null;
             const videoStats = player.video.out.stats.peek();
             if (videoStats) rate.push(videoStats.bytesReceived);
@@ -317,7 +327,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
             // estima el relay y marcas "stalled" del catálogo). Solo al fijar una a mano se pide por nombre.
             const available = player.video.source.out.available.peek();
             // El controlador del experimento vive mientras esté elegido y la calidad esté en automático
-            const variant = abrRef.current === 'watch' ? null : abrRef.current;
+            const variant = abrRef.current === 'watch' || abrSupportedRef.current === false ? null : abrRef.current;
             const probing = variant !== null && qualityRef.current === 'auto';
             // Al cambiar de variante se empieza de cero, con su propio controlador
             if (probeAbrRef.current && (!probing || probeAbrRef.current.variant !== variant)) {
@@ -366,7 +376,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
               restarts: restartsRef.current,
               // Altura del frame que de verdad se está pintando y, aparte, la rendition seleccionada: la
               // librería cambia sin corte y mientras dura el cambio (que puede no completarse) no coinciden
-              renditionHeight: player.video.out.frame.peek()?.displayHeight ?? rendition?.codedHeight ?? null,
+              renditionHeight: decodedFrame(player)?.displayHeight ?? rendition?.codedHeight ?? null,
               selectedHeight: rendition?.codedHeight ?? null,
               renditionKbps: rendition?.bitrate ? Math.round(rendition.bitrate / 1000) : null,
               qualitySwitches: switchesRef.current,
@@ -506,13 +516,13 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         >
           <span>ABR:</span>
           <select
-            value={abr}
+            value={effectiveAbr}
             onChange={(e) => handleAbrChange(e.target.value as MoqAbr)}
             className="bg-slate-900 border border-slate-700 text-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-emerald-500"
           >
             <option value="watch">Librería</option>
-            <option value="probe">Sondeo</option>
-            <option value="probe2">Sondeo v2</option>
+            <option value="probe" disabled={abrSupported === false}>Sondeo{abrSupported === false ? ' (no con esta versión)' : ''}</option>
+            <option value="probe2" disabled={abrSupported === false}>Sondeo v2{abrSupported === false ? ' (no con esta versión)' : ''}</option>
           </select>
         </label>
         <label
@@ -558,7 +568,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
       </div>
       {showExplain && (
         <div className="px-4 py-3 bg-slate-950/80 border-t border-slate-800/60 text-[11px] leading-relaxed text-slate-400">
-          <MoqExplain abr={abr} switching={switching} quality={quality} switchingSupported={switchingSupported} />
+          <MoqExplain abr={effectiveAbr} switching={switching} quality={quality} switchingSupported={switchingSupported} />
         </div>
       )}
     </div>

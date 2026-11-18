@@ -18,6 +18,7 @@
 // va al día, cabe, sin necesidad de medir la capacidad) y no dobla la espera si el sondeo se corta en su arranque.
 import type * as Watch from '@moq/watch';
 import { serverNowMs } from './clock';
+import { decodedFrame } from './moqApi';
 
 /** Cómo terminó un sondeo: subió a la calidad sondeada (up), terminó pero no cabía (stay), se cortó porque la actual
  * perdió ritmo (cut) o se cerró el controlador a mitad (abort). */
@@ -216,7 +217,7 @@ export class MoqProbeAbr {
     if (now < this.#settleUntil) return;
     if (now < this.#settleMax) {
       const available = this.#player.video.source.out.available.peek() as Record<string, any>;
-      const painted = this.#player.video.out.frame.peek()?.displayHeight;
+      const painted = decodedFrame(this.#player)?.displayHeight;
       if (painted !== available?.[current.name]?.codedHeight) return;
       // Relevo hecho: se empieza a medir la calidad nueva desde aquí
       this.#settleMax = 0;

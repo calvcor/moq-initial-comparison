@@ -43,18 +43,21 @@ RUN ARCH=$(uname -m) && \
 # moq-cli compilado desde un commit, con MOQ_CLI_FROM=git. Perfil release con LTO thin: el LTO completo del
 # proyecto no cupo en los 7,7 GB de la máquina virtual de Docker de un Mac (21-10-2026). Solo el transporte
 # QUIC, que es el que usa el testbed hacia el relay; las demás funcionalidades por defecto (WebRTC, almacenes
-# en la nube, NVIDIA...) no se usan.
+# en la nube, NVIDIA...) no se usan. En commits posteriores (p. ej. c19c723, 18-11-2026) el transporte QUIC ya no es
+# una feature, sino que va siempre: con MOQ_CLI_FEATURES=auto se pide la feature quic solo si el commit la define.
 # Las cachés de Cargo persisten entre construcciones: cambiar de commit reutiliza las dependencias compiladas.
 # El binario se identifica como git@<commit> en el panel de versiones y en el CSV (ver versions.py).
 FROM rust:1.98.1-bookworm AS moqcli-git
 ARG MOQ_CLI_COMMIT=bc64b9c52561209322dcb8dec9992bf867f499f7
-ARG MOQ_CLI_FEATURES=quic
+ARG MOQ_CLI_FEATURES=auto
 RUN apt-get update && apt-get install -y --no-install-recommends cmake clang \
     && rm -rf /var/lib/apt/lists/*
 RUN mkdir /src && curl -fsSL "https://codeload.github.com/moq-dev/moq/tar.gz/${MOQ_CLI_COMMIT}" | tar -xz -C /src --strip-components=1
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/target \
-    cd /src && CARGO_TARGET_DIR=/target CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
-    cargo build --release --locked -p moq-cli --no-default-features --features "${MOQ_CLI_FEATURES}" && \
+    cd /src && features="${MOQ_CLI_FEATURES}" && \
+    if [ "$features" = auto ]; then features=$(grep -qE '^quic *=' rs/moq-cli/Cargo.toml && echo quic || true); fi && \
+    CARGO_TARGET_DIR=/target CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+    cargo build --release --locked -p moq-cli --no-default-features ${features:+--features "$features"} && \
     install -m 755 /target/release/moq /usr/local/bin/moq && \
     mkdir -p /usr/local/share && printf 'git@%.7s' "${MOQ_CLI_COMMIT}" > /usr/local/share/moq-cli-build
 

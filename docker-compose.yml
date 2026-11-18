@@ -58,9 +58,17 @@ services:
         ipv4_address: 172.30.50.2
     restart: unless-stopped
 
-  # 1. MoQ Relay Oficial (Docker Hub moqdev/moq-relay), con la versión fijada
+  # 1. MoQ Relay: la imagen oficial publicada (moqdev/moq-relay, versión fijada) o, con MOQ_RELAY_FROM=git,
+  # compilado desde MOQ_RELAY_COMMIT (relay/Dockerfile; desde el 18-11-2026). Los valores por defecto repiten los
+  # de relay/Dockerfile.
   moq-relay:
-    image: moqdev/moq-relay:${MOQ_RELAY_VERSION:-0.17.9}
+    build:
+      context: ./relay
+      args:
+        MOQ_RELAY_FROM: ${MOQ_RELAY_FROM:-release}
+        MOQ_RELAY_VERSION: ${MOQ_RELAY_VERSION:-0.17.9}
+        MOQ_RELAY_COMMIT: ${MOQ_RELAY_COMMIT:-c19c723d90c6e8df60c9a656cc2a4d92ee358295}
+    image: testbed-moq-relay
     container_name: testbed-moq-relay
     command: >
       --listen 0.0.0.0:4433
@@ -172,6 +180,9 @@ services:
       - RTC_INGEST=${RTC_INGEST:-udp}  # solo con MediaMTX. udp: directo; rtsp: con el FFmpeg intermedio (versión anterior)
       # Solo para mostrarlas en el dashboard: deben coincidir con las etiquetas de imagen de arriba
       - MOQ_RELAY_VERSION=${MOQ_RELAY_VERSION:-0.17.9}
+      # Con el relay compilado (MOQ_RELAY_FROM=git), el panel y el CSV lo muestran como git@<commit>
+      - MOQ_RELAY_FROM=${MOQ_RELAY_FROM:-release}
+      - MOQ_RELAY_COMMIT=${MOQ_RELAY_COMMIT:-c19c723d90c6e8df60c9a656cc2a4d92ee358295}
       - MEDIAMTX_VERSION=${MEDIAMTX_VERSION:-1.21.3}
       - MEDIASOUP_VERSION=3.32.1  # debe coincidir con sfu/package.json
     networks:
@@ -199,6 +210,8 @@ services:
       args:
         MOQ_WATCH_FROM: ${MOQ_WATCH_FROM:-release}
         MOQ_WATCH_COMMIT: ${MOQ_WATCH_COMMIT:-bc64b9c52561209322dcb8dec9992bf867f499f7}
+        MOQ_WATCH_PATCHES: ${MOQ_WATCH_PATCHES:-1}  # 0: sin los parches de web/patches/ (otro commit)
+        MOQ_WATCH_BUN: ${MOQ_WATCH_BUN:-1.3.5}  # bun para compilar moq: 1.4.4 con commits desde c19c723
     container_name: testbed-web
     depends_on:
       - orchestrator

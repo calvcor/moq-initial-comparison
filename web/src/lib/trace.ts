@@ -8,6 +8,7 @@
 import { serverNowMs } from './clock';
 import { DEFAULT_TIMECODE, grabFromVideo, type GlassMeter } from './glass';
 import type { StageBreakdown } from '../types';
+import { paintedFrame, subscribeMs } from './moqApi';
 
 const SAMPLE_EVERY_MS = 200; // un frame de cada ~12
 const REPORT_EVERY_MS = 1000;
@@ -173,7 +174,6 @@ export class RtcTracer {
   }
 }
 
-type TimestampSignal = { subscribe(fn: (ms: number | undefined) => void): () => void };
 
 // Tiempo que cada frame pasa retenido en el reproductor de @moq/watch: desde que lo lee de la red hasta que
 // lo entrega para pintarlo. Es el equivalente a jitterBufferDelay / jitterBufferEmittedCount de WebRTC, con
@@ -184,15 +184,16 @@ export class MoqBufferMeter {
   #count = 0;
   #disposes: (() => void)[];
 
-  constructor(player: { sync: { out: { timestamp: TimestampSignal } }; video: { out: { timestamp: TimestampSignal } } }) {
+  // Marcas de tiempo en ms (bc64b9c) o Duration (c19c723): subscribeMs las entrega en ms (lib/moqApi.ts)
+  constructor(player: { sync: { out: { timestamp: unknown } }; video: { out: { timestamp: unknown } } }) {
     this.#disposes = [
-      player.sync.out.timestamp.subscribe((ms) => {
+      subscribeMs(player.sync.out.timestamp, (ms) => {
         if (ms === undefined) return;
         this.#arrivals.set(ms, performance.now());
         // Los frames que nunca se entregan (saltados, o avisos agrupados) no deben acumularse
         if (this.#arrivals.size > 600) this.#arrivals.delete(this.#arrivals.keys().next().value!);
       }),
-      player.video.out.timestamp.subscribe((ms) => {
+      subscribeMs(player.video.out.timestamp, (ms) => {
         const arrived = ms === undefined ? undefined : this.#arrivals.get(ms);
         if (ms === undefined || arrived === undefined) return;
         this.#arrivals.delete(ms);
@@ -216,9 +217,9 @@ export class MoqBufferMeter {
 }
 
 // Lo que se necesita del reproductor de @moq/watch, sin atarse a sus tipos internos
+// El reproductor de @moq/watch en cualquiera de sus versiones (lib/moqApi.ts)
 interface MoqPlayerLike {
-  sync: { out: { timestamp: { subscribe(fn: (ms: number | undefined) => void): () => void } } };
-  renderer: { out: { frame: { peek(): VideoFrame | undefined } } };
+  sync: { out: { timestamp: unknown } };
 }
 
 export class MoqTracer {
@@ -232,7 +233,7 @@ export class MoqTracer {
 
   constructor(player: MoqPlayerLike, meter: GlassMeter, getStream: () => number, onResult: (breakdown: StageBreakdown | null) => void) {
     // Llegada al reproductor: @moq/watch anota cada frame al leerlo de la red, antes de decodificarlo
-    this.#unsubscribe = player.sync.out.timestamp.subscribe((ms) => {
+    this.#unsubscribe = subscribeMs(player.sync.out.timestamp, (ms) => {
       if (ms === undefined) return;
       const now = performance.now();
       this.#arrivals.push({ t: now, ms });
@@ -250,7 +251,7 @@ export class MoqTracer {
       // El frame que el reproductor acaba de dibujar: de él salen a la vez su timecode y su marca de tiempo
       let frame: VideoFrame | undefined;
       try {
-        frame = player.renderer.out.frame.peek()?.clone();
+        frame = paintedFrame(player)?.clone();
       } catch (_) {
         return;
       }
