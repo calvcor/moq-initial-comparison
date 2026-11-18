@@ -53,7 +53,7 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
 | Compuertas | `server/app/tsgate.py` | Arrancan en un IDR, vigilan continuidad y anotan horas por PTS |
 | Origen LL-DASH | `server/app/origin.py` | En memoria; recalibra `availabilityStartTime` y reescribe `UTCTiming` al origen de la página |
 | Publicador MoQ | `moq import ts` (moq-cli) en el orquestador | El **publicador**; no confundir con el relay |
-| Relay MoQ | contenedor `moq-relay` | Solo reparte; el catálogo lo escribe el publicador |
+| Relay MoQ | contenedor `moq-relay`, `relay/Dockerfile` | Solo reparte; el catálogo lo escribe el publicador. Imagen publicada o, con `MOQ_RELAY_FROM=git`, compilado desde `MOQ_RELAY_COMMIT` |
 | WebRTC | `sfu/` (mediasoup) y `server/app/rtprelay.py`; o MediaMTX | `RTC_SERVER` en el `.env`. `mediasoup` (por defecto): FFmpeg pasa la escalera a RTP sin recodificar, el relay la junta en un socket y el SFU elige la capa (README, 3.4c). `mediamtx` (versión anterior): una sola calidad por WHEP; lee el MPEG-TS por UDP de la compuerta, y `RTC_INGEST=rtsp` vuelve al FFmpeg + RTSP (README, 3.4b) |
 | Router | `router/agent.py` (reenvío, tc y perfiles) y `router/api.py` (agente HTTP, contadores) | DNAT + tc/netem, una cola por protocolo y sentido, con 8 plazas por cliente (marca por IP) que solo usan las pruebas en paralelo (README, sección 5) |
 | Entrada HTTP | `edge/nginx.conf` | Único puerto HTTP (80): página, API y huella del relay. DASH no pasa por aquí desde el 12-11-2026: va directo al router (8443 con `DASH_HOST`, 8080 sin él) |
@@ -138,6 +138,13 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   5-11-2026 volvió a `main` con las versiones de antes, las mismas que el segundo servidor (`/root/antes-ultimas/`
   guarda los dos `.env` y las imágenes). Al probar un commit nuevo de moq-cli, mira también que arranque
   (`restarts.moq` en `GET /api/status`): `ffcb7cd` rechazaba las variables `MOQ_*` del orquestador.
+- **Desde el 18-11-2026 justbytes usa relay, moq-cli y `@moq/watch` compilados desde el mismo commit de `main`, `c19c723`**
+  (su `.env`: `MOQ_RELAY_FROM=git`, los tres `*_COMMIT`, `MOQ_WATCH_BUN=1.4.4`, `MOQ_WATCH_PATCHES=0`; el `.env` anterior y
+  las imágenes, en `/root/antes-main/` y con la etiqueta `antes-main`). phd-testing sigue igual. La API del reproductor
+  cambia y `web/src/lib/moqApi.ts` traduce entre las dos versiones: cualquier cambio en `MoqPlayer.tsx` debe compilar con
+  las dos (en local, la publicada de npm; para `c19c723`, construir la web con esos argumentos). Con `c19c723` no hay
+  parche `switching` ni experimento de sondeo (README, 4.4b, 6.1 y 6.3). Un commit nuevo de moq puede romper otra vez la
+  construcción (lockfile, paquetes, opciones): pruébalo antes en un directorio aparte del servidor.
 - La medida: `POST /api/trace` con marcas cada 4 ms de los últimos 20 s devuelve, por frame, la llegada
   a la compuerta (`encoded_ms`) y la entrega al empaquetador (`forwarded_ms`). Si los huecos en la
   entrega crecen y en la llegada no, el empaquetador no está leyendo su entrada.
