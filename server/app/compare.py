@@ -416,6 +416,10 @@ def warnings(A: dict, B: dict, rows: list[dict]) -> list[str]:
             out.append(f"{name} es anterior al 9-10-2026: el lector de timecode de entonces degradaba MoQ y esas medidas están invalidadas.")
         elif day and day < STALL_FIX:
             out.append(f"{name} es anterior al 28-10-2026: su tiempo parado no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas) y no se compara con el posterior.")
+        # Porcentaje de descartes de DASH sobre los paquetes de iptables (resúmenes anteriores al 18-11-2026): cuenta cada
+        # superpaquete GSO de TCP como uno y sale entre 2 y 4 veces el real
+        if x["player"] == "dash" and x["s"].get("ip_down_drop_pct") is not None and x["s"].get("ip_down_drop_base") != "tc":
+            out.append(f"{name} tiene el porcentaje de descartes de DASH calculado sobre los paquetes de iptables (anterior al 18-11-2026): cuenta cada superpaquete TCP como uno y sale entre 2 y 4 veces el real.")
         if x["stream"].get("source") == "camera":
             out.append(f"{name} es con la cámara: el contenido no se repite y la latencia no incluye el tramo cámara → servidor.")
         lag = x["s"].get("source_lag_max_ms")

@@ -67,13 +67,15 @@ def since_reset(netems: dict) -> dict:
     return out
 
 
-def stats(netems: dict) -> dict:
+def stats(netems: dict, outputs: dict) -> dict:
     """Contadores por cola (todo el tráfico, como siempre) y, en "clients", los de cada cliente con plaza. netems: la
-    salida de since_reset. Devuelve:
-        {"<cola>": {"packets": int, "bytes": int, "dropped": int, "queued": int}, ...   una por cola de QUEUES
-         "clients": {"<IP>": {"<cola>": {"packets", "bytes", "dropped", "queued"}, ...}, ...}}
-    packets y bytes: reenviados (iptables, acumulados desde que arrancó el router); dropped: desde el último perfil;
-    queued: en la cola ahora."""
+    salida de since_reset; outputs, las salidas de qdisc_counters. Devuelve:
+        {"<cola>": {"packets": int, "bytes": int, "out_packets": int, "dropped": int, "queued": int}, ...   una por cola
+         "clients": {"<IP>": {"<cola>": {"packets", "bytes", "out_packets", "dropped", "queued"}, ...}, ...}}
+    packets y bytes: reenviados (iptables, acumulados desde que arrancó el router), antes de la emulación: un superpaquete
+    GSO cuenta como uno. out_packets: los que han salido de las plazas (tc, acumulados desde que se montó cada qdisc), ya
+    troceados, como los que descarta netem (desde el 18-11-2026). dropped: desde el último perfil; queued: en la cola
+    ahora."""
     out = {queue: {"packets": 0, "bytes": 0} for queue in router.QUEUES}
     per_client = {ip: {queue: {"packets": 0, "bytes": 0} for queue in router.QUEUES} for ip in router.clients}
     # Bytes IP reenviados por protocolo y sentido (cabeceras y retransmisiones incluidas), antes de la emulación
@@ -90,13 +92,16 @@ def stats(netems: dict) -> dict:
     # Descartes de la emulación por cola y plaza: pérdida aleatoria de netem y desbordamiento de la cola
     slots = {c["slot"]: ip for ip, c in router.clients.items()}
     for queue in router.QUEUES:
-        out[queue].update(dropped=0, queued=0)
+        out[queue].update(out_packets=0, dropped=0, queued=0)
         for slot in range(1, router.GENERAL + 1):
-            dropped, backlog = netems.get(router.handles(queue, slot)[2] + ":", (0, 0))
+            band, _, netem = router.handles(queue, slot)
+            dropped, backlog = netems.get(netem + ":", (0, 0))
+            sent = outputs.get(band, (0, 0))[1]
+            out[queue]["out_packets"] += sent
             out[queue]["dropped"] += dropped
             out[queue]["queued"] += backlog
             if slot in slots:
-                per_client[slots[slot]][queue].update(dropped=dropped, queued=backlog)
+                per_client[slots[slot]][queue].update(out_packets=sent, dropped=dropped, queued=backlog)
     out["clients"] = per_client
     return out
 
@@ -181,7 +186,7 @@ class Agent(BaseHTTPRequestHandler):
         "stats": la salida de stats, "tree": la de tree (None sin emulación), "emulation_error": str | None}."""
         netems, outputs = qdisc_counters()
         netems = since_reset(netems)
-        st = stats(netems)
+        st = stats(netems, outputs)
         return {
             "profile": router.profile,
             "clients": {ip: c["profile"] for ip, c in router.clients.items()},

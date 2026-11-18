@@ -199,9 +199,18 @@ def summarize_ip(player: str, samples: list[dict]) -> dict:
         # de descartes, anteriores al 3-11-2026, quedan fuera: vacío)
         counted = [s for s in samples if s.get(f"{player}_{d}_dropped") is not None and s.get(f"{player}_{d}_packets") is not None]
         dropped = sum(s[f"{player}_{d}_dropped"] for s in counted)
-        packets = sum(s[f"{player}_{d}_packets"] for s in counted)
         out[f"ip_{d}_dropped"] = dropped if counted else None
-        out[f"ip_{d}_drop_pct"] = rounded(100 * dropped / packets, 3) if counted and packets else None
+        # El porcentaje, sobre los paquetes que entraron en la cola según tc, ya troceados como los descartes (desde el
+        # 18-11-2026). Las lecturas anteriores no los tienen: sobre los de iptables, que en DASH cuentan cada superpaquete
+        # GSO como uno y dan entre 2 y 4 veces el porcentaje real. ip_<sentido>_drop_base dice cuál se usó
+        if any(f"{player}_{d}_tc_packets" in s for s in samples):
+            base, key = "tc", f"{player}_{d}_tc_packets"
+        else:
+            base, key = "iptables", f"{player}_{d}_packets"
+        within = [s for s in samples if s.get(f"{player}_{d}_dropped") is not None and s.get(key) is not None]
+        packets = sum(s[key] for s in within)
+        out[f"ip_{d}_drop_pct"] = rounded(100 * sum(s[f"{player}_{d}_dropped"] for s in within) / packets, 3) if within and packets else None
+        out[f"ip_{d}_drop_base"] = base if within and packets else None
     return out
 
 
@@ -1643,10 +1652,17 @@ class Campaigns:
                         # Paquetes que entran en la cola (iptables cuenta antes de la emulación) y los que esta descarta,
                         # por desbordamiento o por la pérdida aleatoria del perfil (desde el 3-11-2026). Mismo criterio
                         # ante un contador reiniciado: el router los pone a cero al cambiar la red
-                        for counter in ("packets", "dropped"):
+                        for counter in ("packets", "dropped", "out_packets"):
                             a = (old.get(q) or {}).get(counter)
                             b = (new.get(q) or {}).get(counter)
                             sample[f"{q}_{counter}"] = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
+                        # Paquetes que entraron en la cola según tc (desde el 18-11-2026): los que salieron, los que se
+                        # descartaron y lo que creció la cola. Ya troceados, como los descartes: iptables cuenta un
+                        # superpaquete GSO de TCP como uno, y en DASH el porcentaje de descartes salía entre 2 y 4 veces el real
+                        out_n, dropped_n = sample.pop(f"{q}_out_packets"), sample[f"{q}_dropped"]
+                        qa, qb = (old.get(q) or {}).get("queued"), (new.get(q) or {}).get("queued")
+                        sample[f"{q}_tc_packets"] = (out_n + dropped_n + qb - qa
+                                                     if None not in (out_n, dropped_n) and isinstance(qa, int) and isinstance(qb, int) else None)
                     # Cuánto fue la fuente por detrás del tiempo real en el intervalo: común a las tres ramas
                     try:
                         sample["source_lag_ms"] = self.read_source_lag(last["t"], t)
