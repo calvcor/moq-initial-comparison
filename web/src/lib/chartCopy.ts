@@ -39,8 +39,9 @@ function clone<T>(value: T): T {
   return value;
 }
 
-/** La imagen de la gráfica en colores para papel (PNG en data URL), dibujada en una copia aparte. */
-function paperImage(chart: Chart): string {
+/** La gráfica en colores para papel, dibujada en una copia aparte, en un canvas suelto; `pixelRatio` es la densidad de
+ * píxeles (por defecto, la de la pantalla). También la usa la captura de bloques (`capture.ts`). */
+export function paperCanvas(chart: Chart, pixelRatio = chart.currentDevicePixelRatio): HTMLCanvasElement {
   const config = chart.config as unknown as { type: string; data: any; options: any; plugins: any[] };
   const options = clone(config.options ?? {});
   options.color = INK;
@@ -54,7 +55,7 @@ function paperImage(chart: Chart): string {
   options.plugins.legend = { ...options.plugins.legend, labels: { ...options.plugins.legend?.labels, color: INK } };
   for (const key of ['title', 'subtitle']) if (options.plugins[key]) options.plugins[key] = { ...options.plugins[key], color: INK };
   options.plugins.tooltip = { ...options.plugins.tooltip, enabled: false };
-  Object.assign(options, { animation: false, responsive: false, maintainAspectRatio: false, events: [], devicePixelRatio: chart.currentDevicePixelRatio });
+  Object.assign(options, { animation: false, responsive: false, maintainAspectRatio: false, events: [], devicePixelRatio: pixelRatio });
   // Los mismos datos, con los protocolos o pruebas ocultos desde la leyenda también ocultos
   const data = clone(config.data);
   data.datasets?.forEach((d: any, i: number) => (d.hidden = !chart.isDatasetVisible(i)));
@@ -64,11 +65,19 @@ function paperImage(chart: Chart): string {
   canvas.height = chart.height;
   const copy = new Chart(canvas, { type: config.type as any, data, options, plugins: config.plugins, platform: BasicPlatform } as any);
   try {
-    return copy.toBase64Image('image/png', 1);
+    // Se copian los píxeles: al destruir la copia, Chart.js borra su canvas
+    const out = document.createElement('canvas');
+    out.width = canvas.width;
+    out.height = canvas.height;
+    out.getContext('2d')!.drawImage(canvas, 0, 0);
+    return out;
   } finally {
     copy.destroy();
   }
 }
+
+/** La imagen de la gráfica en colores para papel (PNG en data URL). */
+const paperImage = (chart: Chart) => paperCanvas(chart).toDataURL('image/png');
 
 let overlay: HTMLImageElement | null = null;
 const removeOverlay = () => {

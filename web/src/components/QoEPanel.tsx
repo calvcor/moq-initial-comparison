@@ -8,6 +8,7 @@ import { Line } from 'react-chartjs-2';
 import { Award, Download, Info, Play } from 'lucide-react';
 import { runQoETest, type PlayerId } from '../lib/qoe';
 import { lang, t } from '../lib/i18n';
+import { CaptureButtons } from './CaptureButtons';
 
 interface QoETerms {
   quality: number;
@@ -453,8 +454,9 @@ export const QoEPanel: React.FC<{
       )}
 
       {Object.keys(steps).length > 0 && (
-        <div>
-          <div className="flex justify-end mb-2">
+        <div data-capture="chart">
+          <div className="flex justify-end items-center gap-2 mb-2">
+            <CaptureButtons target="chart" name={`qoe-${chart}`} />
             <div className="flex space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
               {(
                 [

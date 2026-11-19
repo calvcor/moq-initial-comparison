@@ -16,6 +16,7 @@ import { getClockSync } from '../lib/clock';
 import type { PlayerMetrics, RtcServer, SampleRow } from '../types';
 import type { FrameTime } from '../lib/glass';
 import { lang, t } from '../lib/i18n';
+import { CaptureButtons } from './CaptureButtons';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -755,7 +756,7 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
       </div>
 
       {/* Gráfica de evolución en tiempo real con selector de métrica */}
-      <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-xl">
+      <div data-capture="chart" className="bg-slate-900/90 border border-slate-800 p-4 rounded-xl">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-semibold text-slate-300">
             {metricTab === 'latency'
@@ -766,6 +767,8 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
                   ? t('Tiempo en pantalla de cada frame, últimos 10 s (ms)', 'Time on screen of each frame, last 10 s (ms)')
                   : t('Carga del hilo principal de esta página', "Load on this page's main thread")}
           </h4>
+          <div className="flex items-center gap-2" data-capture-skip="">
+          <CaptureButtons target="chart" name={`metrics-${metricTab}`} />
           <div className="flex space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
             <button
               onClick={() => setMetricTab('latency')}
@@ -808,6 +811,7 @@ export const MetricsDashboard: React.FC<MetricsDashboardProps> = ({
             >
               {t('Hilo principal', 'Main thread')}
             </button>
+          </div>
           </div>
         </div>
 

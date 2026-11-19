@@ -13,6 +13,7 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
+import { CAPTURE_CORNER, CaptureButtons } from './CaptureButtons';
 import { CampaignSeries } from './CampaignSeries';
 import { multiStream, streamDifferences, streamName, streamText } from '../lib/campaignStreams';
 import { t } from '../lib/i18n';
@@ -188,8 +189,9 @@ function datasets(
   return out;
 }
 
-const Panel: React.FC<{ title: string; hint?: string; children: React.ReactNode }> = ({ title, hint, children }) => (
-  <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
+const Panel: React.FC<{ title: string; hint?: string; name: string; children: React.ReactNode }> = ({ title, hint, name, children }) => (
+  <div data-capture="chart" className="relative group/cap bg-slate-950/60 border border-slate-800 rounded-lg p-3">
+    <CaptureButtons target="chart" name={name} className={CAPTURE_CORNER + ' m-2'} />
     <h4 className="text-xs font-medium text-slate-300 mb-2" title={hint}>
       {title}
     </h4>
@@ -301,9 +303,13 @@ export const CampaignResults: React.FC<{
         </span>
       </div>
 
+      <div data-capture="block" className="space-y-3">
+      <div className="flex items-center justify-end -mb-1">
+        <CaptureButtons target="block" name={`${campaign.id}-${metricKey}`} label />
+      </div>
       {/* Con las emisiones en el eje, la clave: lo que cambia entre ellas (la descripción entera, en el título) */}
       {xAxis === 'stream' && (
-        <ul className="text-slate-400" title={streamsHint}>
+        <ul data-capture-keep="" className="text-slate-400" title={streamsHint}>
           {streamDifferences(plan).map((d, i) => (
             <li key={i}>
               <span className="text-slate-300">{streamName(i)}:</span> {d || t('igual que las demás', 'same as the others')}
@@ -319,14 +325,14 @@ export const CampaignResults: React.FC<{
           const line = targetLine(facet.t);
           const { st } = facet;
           return (
-            <Panel key={`${st}:${facet.t}:${facet.n}`} title={facetTitle(facet)} hint={st === null ? streamsHint : multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
+            <Panel key={`${st}:${facet.t}:${facet.n}`} name={`${campaign.id}-${metricKey}-${facetTitle(facet)}`} title={facetTitle(facet)} hint={st === null ? streamsHint : multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
               <Line data={{ labels: categories, datasets: line ? [...ds, line] : ds }} options={options} />
             </Panel>
           );
         })}
         {/* Con las emisiones en el eje, las de control también, juntas: la misma red sin restricción en cada emisión */}
         {xAxis === 'stream' && controls.length > 0 && (
-          <Panel key="control:streams" title={t('Pruebas de control (sin restricción), por emisión', 'Control runs (unrestricted), by stream')} hint={streamsHint}>
+          <Panel key="control:streams" name={`${campaign.id}-${metricKey}-control`} title={t('Pruebas de control (sin restricción), por emisión', 'Control runs (unrestricted), by stream')} hint={streamsHint}>
             <Line data={{ labels: categories, datasets: datasets(controls, players, xOf, categories, metric) }} options={options} />
           </Panel>
         )}
@@ -334,7 +340,7 @@ export const CampaignResults: React.FC<{
           const own = controls.filter((r) => r.stream === st);
           if (!own.length) return null;
           return (
-            <Panel key={`control:${st}`} title={streamPrefix(st) + t('Pruebas de control (sin restricción), en orden de ejecución: deriva del sistema', 'Control runs (unrestricted), in execution order: system drift')} hint={multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
+            <Panel key={`control:${st}`} name={`${campaign.id}-${metricKey}-control-${st}`} title={streamPrefix(st) + t('Pruebas de control (sin restricción), en orden de ejecución: deriva del sistema', 'Control runs (unrestricted), in execution order: system drift')} hint={multiStream(plan) ? streamText(plan.streams[st]) : undefined}>
               <Line
                 data={{
                   labels: own.map((r) => r.id),
@@ -345,6 +351,7 @@ export const CampaignResults: React.FC<{
             </Panel>
           );
         })}
+      </div>
       </div>
 
       <CampaignSeries campaign={campaign} runs={[...tests, ...controls]} focus={seriesFocus ?? null} />

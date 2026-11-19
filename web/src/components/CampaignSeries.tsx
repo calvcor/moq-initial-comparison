@@ -3,6 +3,7 @@ import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Lege
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
 import { isPrinting } from '../lib/chartCopy';
+import { CAPTURE_CORNER, CaptureButtons } from './CaptureButtons';
 import { multiStream, streamDifferences, streamName } from '../lib/campaignStreams';
 import { t } from '../lib/i18n';
 
@@ -822,8 +823,8 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
         </p>
       )}
       {view === 'metrics' ? (
-        <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-1">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1">
+        <div data-capture="block" className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-1">
+          <div data-capture-keep="" className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1">
             <h4 className="text-xs font-medium text-slate-300">
               <span className="font-mono">{singleId}</span>
               {singleRun && <span className="text-slate-500 font-normal"> · {conditionLabel(conditionOf(singleRun))} · rep. {singleRun.rep + 1}</span>}
@@ -840,16 +841,18 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
               </button>
             ))}
             {shade && stripOverlay && players.length > 1 && <span className="text-slate-500 text-[11px]">{t('arriba de cada franja, un carril de parones por protocolo, en este orden', 'at the top of each strip, one stall lane per protocol, in this order')}</span>}
+            <CaptureButtons target="block" name={singleId ?? 'series'} label className="ml-auto" />
           </div>
           {!metricKeys.length && <p className="text-slate-500">{t('Elige al menos una métrica.', 'Choose at least one metric.')}</p>}
           {Object.entries(METRICS)
             .filter(([k]) => metricKeys.includes(k))
             .map(([k, m]) => (
-              <div key={k}>
-                <div className="text-[11px] text-slate-400">{m.label}</div>
-                {k === 'probe' && probeLegend}
+              <div key={k} {...(stripOverlay ? { 'data-capture': 'chart', className: 'relative group/cap' } : {})}>
+                <div data-capture-keep="" className="text-[11px] text-slate-400">{m.label}</div>
+                {k === 'probe' && <div data-capture-keep="">{probeLegend}</div>}
                 {stripOverlay ? (
                   <div className="h-44">
+                    <CaptureButtons target="chart" name={`${singleId ?? 'series'}-${k}`} className={CAPTURE_CORNER} />
                     <Line
                       ref={(chart) => {
                         charts.current[k] = chart ?? null;
@@ -864,7 +867,8 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                   // alguno); los ocultos en la leyenda no ocupan columna y el resto se reparte el ancho
                   <div className={`grid gap-2 ${columns.length > 2 ? 'lg:grid-cols-3' : columns.length > 1 ? 'lg:grid-cols-2' : ''}`}>
                     {columns.map((p) => (
-                      <div key={p} className={shown(m).includes(p) ? '' : 'hidden lg:block'}>
+                      <div key={p} data-capture="chart" className={`relative group/cap ${shown(m).includes(p) ? '' : 'hidden lg:block'}`}>
+                        {shown(m).includes(p) && <CaptureButtons target="chart" name={`${singleId ?? 'series'}-${k}-${p}`} className={CAPTURE_CORNER} />}
                         <div className="text-[10px] mb-0.5" style={{ color: PLAYER_COLOR[p] }}>
                           {PLAYER_LABEL[p]}
                         </div>
@@ -888,22 +892,29 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                 )}
               </div>
             ))}
-          <div className="text-center text-[11px] text-slate-400">
+          <div data-capture-keep="" className="text-center text-[11px] text-slate-400">
             {aligned === 'source' ? t('Segundo del vídeo (desde que arranca la fuente)', 'Video second (since the source starts)') : t('Segundos desde el inicio de la medida', 'Seconds since the start of the measurement')}
           </div>
         </div>
       ) : overlay ? (
-        <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
-          <h4 className="text-xs font-medium text-slate-300 mb-2">{players.map((p) => PLAYER_LABEL[p]).join(', ')}: {t('una línea por prueba, con el color del protocolo', 'one line per run, in the protocol colour')}{shade && players.length > 1 && <span className="text-slate-500 font-normal"> · {t('arriba, un carril de parones por protocolo, en el orden de la leyenda', 'at the top, one stall lane per protocol, in legend order')}</span>}</h4>
+        <div data-capture="block" className="relative group/cap bg-slate-950/60 border border-slate-800 rounded-lg p-3">
+          <CaptureButtons target="block" name={`series-${metricKey}`} className="absolute top-2 right-2" />
+          <h4 className="text-xs font-medium text-slate-300 mb-2 pr-14">{players.map((p) => PLAYER_LABEL[p]).join(', ')}: {t('una línea por prueba, con el color del protocolo', 'one line per run, in the protocol colour')}{shade && players.length > 1 && <span className="text-slate-500 font-normal"> · {t('arriba, un carril de parones por protocolo, en el orden de la leyenda', 'at the top, one stall lane per protocol, in legend order')}</span>}</h4>
           {metricKey === 'probe' && probeLegend}
           <div className="h-[28rem]">
             <Line data={{ datasets: players.flatMap((p) => datasetsFor(p, true)) }} options={overlayOptions} plugins={[shadeStalls, shadeProbes]} />
           </div>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div data-capture="block" className="space-y-3">
+          {players.length > 1 && (
+            <div className="flex justify-end -mb-2">
+              <CaptureButtons target="block" name={`series-${metricKey}`} label />
+            </div>
+          )}
           {players.map((p) => (
-            <div key={p} className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
+            <div key={p} data-capture="chart" className="relative group/cap bg-slate-950/60 border border-slate-800 rounded-lg p-3">
+              <CaptureButtons target="chart" name={`series-${metricKey}-${p}`} className="absolute top-2 right-2" />
               <h4 className="text-xs font-medium text-slate-300 mb-2">{PLAYER_LABEL[p]}</h4>
               {metricKey === 'probe' && p === 'moq' && (
                 <div className="mb-1">
