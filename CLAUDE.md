@@ -194,7 +194,8 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   y solo sin retardo se infla (3 veces el enlace a 2 Mbit/s, con calidades elegidas que nunca se pintan,
   `moq_selected_height` ≠ `moq_height`): el limitador `tbf` del router deja pasar sin esperar un paquete suelto tras un rato
   ocioso y, con el RTT mínimo de BBR en 0,1 ms, su filtro no descarta esa muestra (medido dentro del relay el 19-11-2026,
-  sección 6 de ese documento). Con MoQ de `main`, usa retardo base o declara que no lo hay.
+  sección 6 de ese documento). Con `ROUTER_SHAPER=netem` (limitador experimental, `netem rate`; README, sección 5) tampoco
+  se infla sin retardo. Con MoQ de `main`, usa retardo base o declara que no lo hay; y declara el limitador (`net_shaper`).
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
 - La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente del servidor se queda a ratos por detrás del tiempo real y los
