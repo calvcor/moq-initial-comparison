@@ -80,7 +80,7 @@ MIN_ROWS = 0.8
 OVERHEAD_S = 10
 
 UNRESTRICTED = {
-    direction: {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 300}
+    direction: {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 300, "shaper": "tbf"}
     for direction in ("down", "up")
 }
 

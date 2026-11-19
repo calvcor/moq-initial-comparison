@@ -182,6 +182,9 @@ class LinkProfile(BaseModel):
     jitter_ms: float = Field(0, ge=0, le=500)
     loss_pct: float = Field(0, ge=0, le=50)
     queue_ms: int = Field(300, ge=10, le=5000)  # cola del cuello de botella; solo actúa con rate_kbit. 300 ms, la de RFC 8867
+    # Cómo limita el caudal el router; solo actúa con rate_kbit (README, sección 5). tbf: el de siempre, cubo de fichas de un
+    # paquete; netem: experimento declarado (desde el 19-11-2026), netem rate retrasa cada paquete lo que tarda en salir
+    shaper: Literal["tbf", "netem"] = "tbf"
 
 class NetworkProfile(BaseModel):
     down: LinkProfile = LinkProfile()  # servidor -> navegador

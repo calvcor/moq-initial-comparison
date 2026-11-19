@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Network, Check } from 'lucide-react';
-import type { LinkProfile, NetworkProfile, NetworkState } from '../types';
+import type { LinkProfile, NetworkProfile, NetworkState, Shaper } from '../types';
 import { t } from '../lib/i18n';
 
 interface NetworkPanelProps {
@@ -10,7 +10,31 @@ interface NetworkPanelProps {
   onApply: (profile: NetworkProfile) => void;
 }
 
-export const CLEAR: LinkProfile = { rate_kbit: null, delay_ms: 0, jitter_ms: 0, loss_pct: 0, queue_ms: 300 };
+export const CLEAR: LinkProfile = { rate_kbit: null, delay_ms: 0, jitter_ms: 0, loss_pct: 0, queue_ms: 300, shaper: 'tbf' };
+
+// Cómo limita el caudal el router (README, sección 5); netem es un experimento declarado
+export const SHAPERS: { value: Shaper; label: string; hint: string }[] = [
+  {
+    value: 'tbf',
+    label: 'tbf',
+    hint: t(
+      'El de siempre: un cubo de fichas de un paquete fija el ritmo; tras un rato ocioso deja pasar un paquete suelto sin esperar.',
+      'The usual one: a one-packet token bucket sets the rate; after an idle spell it lets a lone packet through without waiting.',
+    ),
+  },
+  {
+    value: 'netem',
+    label: t('netem rate (experimento)', 'netem rate (experiment)'),
+    hint: t(
+      'Experimento declarado: netem rate retrasa cada paquete lo que tarda en salir a esa velocidad, como un enlace serie (el tbf queda a 10 Gbit/s solo para trocear los superpaquetes GSO). Sin retardo base, evita que la estimación de BBR del relay de MoQ de main se infle. Las medidas no son comparables con las de tbf.',
+      'Declared experiment: netem rate delays each packet by the time it takes to leave at that speed, like a serial link (the tbf stays at 10 Gbit/s only to split GSO superpackets). Without base delay, it keeps the BBR estimate of the MoQ main relay from inflating. Measurements are not comparable with those taken with tbf.',
+    ),
+  },
+];
+export const SHAPER_HINT = t(
+  'Cómo limita el router el ancho de banda; solo actúa con ancho de banda limitado (README, sección 5)',
+  'How the router limits the bandwidth; only acts with a bandwidth limit (README, section 5)',
+);
 
 // Perfiles orientativos para arrancar una prueba; no reproducen ninguna red medida
 export const PRESETS: { label: string; profile: NetworkProfile }[] = [
@@ -20,14 +44,14 @@ export const PRESETS: { label: string; profile: NetworkProfile }[] = [
   {
     label: t('Móvil', 'Mobile'),
     profile: {
-      down: { rate_kbit: 10000, delay_ms: 30, jitter_ms: 5, loss_pct: 0.2, queue_ms: 200 },
-      up: { rate_kbit: 5000, delay_ms: 30, jitter_ms: 5, loss_pct: 0.2, queue_ms: 200 },
+      down: { rate_kbit: 10000, delay_ms: 30, jitter_ms: 5, loss_pct: 0.2, queue_ms: 200, shaper: 'tbf' },
+      up: { rate_kbit: 5000, delay_ms: 30, jitter_ms: 5, loss_pct: 0.2, queue_ms: 200, shaper: 'tbf' },
     },
   },
   { label: t('Enlace saturado (3 Mbit)', 'Saturated link (3 Mbit)'), profile: { down: { ...CLEAR, rate_kbit: 3000, delay_ms: 30, queue_ms: 200 }, up: { ...CLEAR, delay_ms: 30 } } },
 ];
 
-const FIELDS: { key: keyof LinkProfile; label: string; unit: string; step: number; hint: string }[] = [
+const FIELDS: { key: Exclude<keyof LinkProfile, 'shaper'>; label: string; unit: string; step: number; hint: string }[] = [
   { key: 'rate_kbit', label: t('Ancho de banda', 'Bandwidth'), unit: 'kbit/s', step: 500, hint: t('Vacío = sin límite', 'Empty = no limit') },
   { key: 'delay_ms', label: t('Retardo', 'Delay'), unit: 'ms', step: 10, hint: t('Por sentido; el RTT es la suma de ambos', 'Per direction; the RTT is the sum of both') },
   { key: 'jitter_ms', label: 'Jitter', unit: 'ms', step: 1, hint: t('Variación del retardo; puede reordenar paquetes', 'Delay variation; may reorder packets') },
@@ -35,7 +59,10 @@ const FIELDS: { key: keyof LinkProfile; label: string; unit: string; step: numbe
   { key: 'queue_ms', label: t('Cola', 'Queue'), unit: 'ms', step: 50, hint: t('Búfer del cuello de botella; solo actúa con ancho de banda limitado', 'Bottleneck buffer; only acts with a bandwidth limit') },
 ];
 
-const same = (a: NetworkProfile, b: NetworkProfile) => JSON.stringify(a) === JSON.stringify(b);
+// Sin limitador explícito, tbf (perfiles anteriores al 19-11-2026)
+const norm = (l: LinkProfile) => ({ ...l, shaper: l.shaper ?? 'tbf' });
+const same = (a: NetworkProfile, b: NetworkProfile) =>
+  JSON.stringify({ down: norm(a.down), up: norm(a.up) }) === JSON.stringify({ down: norm(b.down), up: norm(b.up) });
 const kbps = (value: number | null) => (value === null ? '--' : `${value} kbps`);
 
 export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, isLoading, onApply }) => {
@@ -51,7 +78,9 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, is
     }
   }, [applied, initialized]);
 
-  const setField = (direction: 'down' | 'up', key: keyof LinkProfile, raw: string) => {
+  const setShaper = (direction: 'down' | 'up', shaper: Shaper) => setDraft((d) => ({ ...d, [direction]: { ...d[direction], shaper } }));
+  const netemApplied = (['down', 'up'] as const).some((d) => applied?.[d].shaper === 'netem' && applied[d].rate_kbit);
+  const setField = (direction: 'down' | 'up', key: Exclude<keyof LinkProfile, 'shaper'>, raw: string) => {
     const value = raw === '' ? (key === 'rate_kbit' ? null : 0) : Number(raw);
     setDraft((d) => ({ ...d, [direction]: { ...d[direction], [key]: value } }));
   };
@@ -81,12 +110,12 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, is
               {t('Emulación no disponible en este servidor', 'Emulation not available on this server')}
             </span>
           )}
-          {network?.shaper === 'netem' && (
+          {netemApplied && (
             <span
               className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30"
               title={t(
-                'Experimento declarado (ROUTER_SHAPER=netem; README, sección 5): el caudal lo limita netem rate, que retrasa cada paquete lo que tarda en salir a esa velocidad, en vez del tbf de siempre, que deja pasar un paquete suelto sin esperar tras un rato ocioso. Las medidas no son comparables con las de tbf.',
-                'Declared experiment (ROUTER_SHAPER=netem; README, section 5): the rate is limited by netem rate, which delays each packet by the time it takes to leave at that speed, instead of the usual tbf, which lets a lone packet through without waiting after an idle spell. Measurements are not comparable with those taken with tbf.',
+                'Experimento declarado (README, sección 5): el caudal lo limita netem rate, que retrasa cada paquete lo que tarda en salir a esa velocidad, en vez del tbf de siempre, que deja pasar un paquete suelto sin esperar tras un rato ocioso. Las medidas no son comparables con las de tbf.',
+                'Declared experiment (README, section 5): the rate is limited by netem rate, which delays each packet by the time it takes to leave at that speed, instead of the usual tbf, which lets a lone packet through without waiting after an idle spell. Measurements are not comparable with those taken with tbf.',
               )}
             >
               {t('Limitador: netem rate (experimento)', 'Limiter: netem rate (experiment)')}
@@ -121,7 +150,7 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, is
 
       <div className="space-y-2">
         {(['down', 'up'] as const).map((direction) => (
-          <div key={direction} className="grid grid-cols-6 gap-3 items-end">
+          <div key={direction} className="grid grid-cols-7 gap-3 items-end">
             <div className="text-xs text-slate-300 pb-2">
               <span className="font-semibold">{direction === 'down' ? t('Bajada', 'Downlink') : t('Subida', 'Uplink')}</span>
               <span className="block text-[10px] text-slate-500">{direction === 'down' ? t('servidor → navegador', 'server → browser') : t('navegador → servidor', 'browser → server')}</span>
@@ -144,6 +173,20 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, is
                 />
               </label>
             ))}
+            <label className="block" title={`${SHAPER_HINT}. ${SHAPERS.find((s) => s.value === (draft[direction].shaper ?? 'tbf'))?.hint ?? ''}`}>
+              {direction === 'down' && <span className="block text-xs font-medium text-slate-400 mb-1">{t('Limitador', 'Limiter')}</span>}
+              <select
+                value={draft[direction].shaper ?? 'tbf'}
+                onChange={(e) => setShaper(direction, e.target.value as Shaper)}
+                className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+              >
+                {SHAPERS.map((s) => (
+                  <option key={s.value} value={s.value} title={s.hint}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         ))}
       </div>

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { CLEAR, PRESETS } from './NetworkPanel';
+import { CLEAR, PRESETS, SHAPERS, SHAPER_HINT } from './NetworkPanel';
 import { PLAYER_IDS } from '../lib/samples';
 import { LOOP_VIDEOS, gopAt, isLoopVideo } from '../lib/sources';
-import type { RtcServer, CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr, LinkProfile, MoqAbr, MoqSwitching, PlayerId, PlayerOptions, PoolWorker, StreamConfig } from '../types';
+import type { RtcServer, CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr, LinkProfile, MoqAbr, MoqSwitching, PlayerId, PlayerOptions, PoolWorker, Shaper, StreamConfig } from '../types';
 import { SettingsModal } from './SettingsModal';
 import { lang, t } from '../lib/i18n';
 
@@ -41,6 +41,7 @@ const describe = (l: LinkProfile) =>
     l.delay_ms ? `${l.delay_ms} ms` : null,
     l.jitter_ms ? `±${l.jitter_ms} ms` : null,
     l.loss_pct ? `${l.loss_pct} %` : null,
+    l.rate_kbit && l.shaper === 'netem' ? 'netem rate' : null,
   ]
     .filter(Boolean)
     .join(', ') || t('sin límite', 'no limit');
@@ -55,9 +56,10 @@ const SWEEPS: Record<SweepParam, { label: string; unit: string; example: string 
   jitter: { label: 'Jitter', unit: 'ms', example: '0, 5, 10, 20' },
 };
 
-function sweep(param: SweepParam, values: number[], baseRttMs: number, queueMs: number): CampaignNetwork[] {
+function sweep(param: SweepParam, values: number[], baseRttMs: number, queueMs: number, shaper: Shaper): CampaignNetwork[] {
   return values.map((v) => {
-    const base = { ...CLEAR, delay_ms: baseRttMs / 2 };
+    // El limitador va en los dos sentidos; solo actúa donde hay ancho de banda limitado
+    const base = { ...CLEAR, delay_ms: baseRttMs / 2, shaper };
     let down: LinkProfile = { ...base };
     let up: LinkProfile = { ...base };
     let label = '';
@@ -79,12 +81,13 @@ function sweep(param: SweepParam, values: number[], baseRttMs: number, queueMs: 
       label = `jitter ${v} ms`;
     }
     if (baseRttMs && param !== 'rtt') label += ` (RTT ${baseRttMs} ms)`;
+    if (shaper === 'netem') label += ' · netem rate';
     return { label, profile: { down, up } };
   });
 }
 
 // Columnas de la tabla de condiciones, en el orden de cada sentido
-const LINK_COLUMNS: { key: keyof LinkProfile; label: string; unit: string; hint: string }[] = [
+const LINK_COLUMNS: { key: Exclude<keyof LinkProfile, 'shaper'>; label: string; unit: string; hint: string }[] = [
   { key: 'rate_kbit', label: t('Ancho de banda', 'Bandwidth'), unit: 'kbit/s', hint: t('Vacío = sin límite', 'Empty = no limit') },
   { key: 'delay_ms', label: t('Retardo', 'Delay'), unit: 'ms', hint: t('En este sentido; el RTT es la suma de los dos', 'In this direction; the RTT is the sum of both') },
   { key: 'jitter_ms', label: 'Jitter', unit: 'ms', hint: t('Variación del retardo; no puede superarlo y desordena paquetes', 'Delay variation; it cannot exceed the delay and reorders packets') },
@@ -143,6 +146,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
   const [sweepValues, setSweepValues] = useState(SWEEPS.rtt.example);
   const [sweepBaseRtt, setSweepBaseRtt] = useState(0);
   const [sweepQueue, setSweepQueue] = useState(300);
+  const [sweepShaper, setSweepShaper] = useState<Shaper>('tbf');
   const [targetsText, setTargetsText] = useState(initial ? targetsToText(initial.targets) : 'auto, 100, 300, 600, 1000');
   // Objetivos distintos por rama (solo se crean por la API): se conservan tal cual mientras no se edite el texto
   const [keptTargets, setKeptTargets] = useState<CampaignTarget[] | null>(
@@ -230,7 +234,10 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
     const parsed = parseLadder(text);
     if (parsed) setStream(i, { renditions: parsed });
   };
-  const setLink = (i: number, dir: 'down' | 'up', key: keyof LinkProfile, raw: string) => {
+  // El limitador, en los dos sentidos de la condición a la vez
+  const setShaper = (i: number, shaper: Shaper) =>
+    setNetworks((all) => all.map((n, j) => (j === i ? { ...n, profile: { down: { ...n.profile.down, shaper }, up: { ...n.profile.up, shaper } } } : n)));
+  const setLink = (i: number, dir: 'down' | 'up', key: Exclude<keyof LinkProfile, 'shaper'>, raw: string) => {
     const value = raw === '' ? (key === 'rate_kbit' ? null : 0) : Number(raw);
     setNetworks((all) => all.map((n, j) => (j === i ? { ...n, profile: { ...n.profile, [dir]: { ...n.profile[dir], [key]: value } } } : n)));
   };
@@ -632,9 +639,19 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
               <input className={input} type="number" min={10} value={sweepQueue} onChange={(e) => setSweepQueue(Number(e.target.value))} />
             </label>
           )}
+          <label className="flex flex-col gap-1" title={`${SHAPER_HINT}. ${SHAPERS.find((s) => s.value === sweepShaper)?.hint ?? ''}`}>
+            <span className={label}>{t('Limitador', 'Limiter')}</span>
+            <select className={input} value={sweepShaper} onChange={(e) => setSweepShaper(e.target.value as Shaper)}>
+              {SHAPERS.map((s) => (
+                <option key={s.value} value={s.value} title={s.hint}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             className="px-3 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-white"
-            onClick={() => setNetworks((all) => [...all, ...sweep(sweepParam, numbers(sweepValues), sweepBaseRtt, sweepQueue)])}
+            onClick={() => setNetworks((all) => [...all, ...sweep(sweepParam, numbers(sweepValues), sweepBaseRtt, sweepQueue, sweepShaper)])}
           >
             {t('Añadir barrido', 'Add sweep')}
           </button>
@@ -656,6 +673,9 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
               <thead className="text-[11px] text-slate-400">
                 <tr>
                   <th rowSpan={2} className="py-1 pr-2 font-medium align-bottom">{t('Nombre', 'Name')}</th>
+                  <th rowSpan={2} className="py-1 pr-2 font-medium align-bottom" title={`${SHAPER_HINT}. ${t('En los dos sentidos.', 'In both directions.')}`}>
+                    {t('Limitador', 'Limiter')}
+                  </th>
                   {(['down', 'up'] as const).map((d) => (
                     <th key={d} colSpan={LINK_COLUMNS.length} className={`py-1 px-2 font-semibold text-slate-300 text-center border-b border-slate-700 ${d === 'up' ? 'border-l' : ''}`}>
                       {DIRECTION_LABEL[d]}
@@ -687,6 +707,20 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                         onChange={(e) => setNetworks((all) => all.map((m, j) => (j === i ? { ...m, label: e.target.value } : m)))}
                       />
                     </td>
+                    <td className="py-1 pr-2">
+                      <select
+                        className={input}
+                        value={n.profile.down.shaper ?? 'tbf'}
+                        title={SHAPERS.find((s) => s.value === (n.profile.down.shaper ?? 'tbf'))?.hint}
+                        onChange={(e) => setShaper(i, e.target.value as Shaper)}
+                      >
+                        {SHAPERS.map((s) => (
+                          <option key={s.value} value={s.value} title={s.hint}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     {(['down', 'up'] as const).map((d) =>
                       LINK_COLUMNS.map(({ key: k }, j) => (
                         <td key={`${d}-${k}`} className={`py-1 pr-1 ${d === 'up' && j === 0 ? 'border-l border-slate-700 pl-2' : ''}`}>
@@ -714,6 +748,14 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
             <p className="text-slate-500 mt-1">
               {networks.map((n) => `${n.label}: ↓ ${describe(n.profile.down)} / ↑ ${describe(n.profile.up)}`).join(' · ')}
             </p>
+            {networks.some((n) => (['down', 'up'] as const).some((d) => n.profile[d].shaper === 'netem' && n.profile[d].rate_kbit)) && (
+              <p className="text-amber-300 mt-1">
+                {t(
+                  'Hay condiciones con el limitador netem rate: es un experimento declarado y cambia la red de los tres protocolos; sus medidas no son comparables con las de tbf (README, sección 5). Queda en net_down_shaper y net_up_shaper.',
+                  'Some conditions use the netem rate limiter: it is a declared experiment and changes the network of all three protocols; its measurements are not comparable with those taken with tbf (README, section 5). It is recorded in net_down_shaper and net_up_shaper.',
+                )}
+              </p>
+            )}
           </div>
         )}
         <p className="text-slate-500">{t('Las pruebas de control, sin restricción, se añaden solas (abajo). El jitter de netem desordena paquetes y castiga casi solo a QUIC (README, sección 5).', 'Unrestricted control runs are added automatically (below). netem jitter reorders packets and penalises almost only QUIC (README, section 5).')}</p>

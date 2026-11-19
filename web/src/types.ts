@@ -41,12 +41,17 @@ export interface TimecodeLayout {
 }
 
 // Condiciones de un sentido del enlace emulado por el router
+// Cómo limita el caudal el router (README, sección 5): tbf, el de siempre (cubo de fichas de un paquete), o netem, el
+// experimento declarado del 19-11-2026 (netem rate retrasa cada paquete lo que tarda en salir, como un enlace serie)
+export type Shaper = 'tbf' | 'netem';
+
 export interface LinkProfile {
   rate_kbit: number | null; // null = sin límite
   delay_ms: number;
   jitter_ms: number;
   loss_pct: number;
   queue_ms: number;
+  shaper?: Shaper; // solo actúa con rate_kbit; sin él, tbf (perfiles anteriores al 19-11-2026)
 }
 
 export interface NetworkProfile {
@@ -94,7 +99,6 @@ export interface NetworkState {
   emulation_error?: string | null; // motivo por el que el servidor no puede emular la red, si es el caso
   clients?: Record<string, NetworkProfile>; // clientes con plaza propia: pruebas en paralelo
   tree?: RouterTree | null; // árbol de tc del router (README, sección 5)
-  shaper?: 'tbf' | 'netem'; // cómo se limita el caudal (ROUTER_SHAPER; netem es un experimento declarado); sin él, tbf
   stats: {
     dash_down: Counter;
     dash_up: Counter;
@@ -375,16 +379,17 @@ export interface SampleRow {
   pipeline_restarts: number | null; // reinicios automáticos del supervisor (fuente + DASH + MoQ)
   // Perfil de red activo en el router
   net_down_rate_kbit: number | null;
-  net_shaper: string | null; // cómo limita el caudal el router: tbf (por defecto) o netem (experimento; desde el 19-11-2026)
   net_down_delay_ms: number | null;
   net_down_jitter_ms: number | null;
   net_down_loss_pct: number | null;
   net_down_queue_ms: number | null;
+  net_down_shaper: string | null; // cómo limita el caudal el router: tbf o netem (experimento); desde el 19-11-2026
   net_up_rate_kbit: number | null;
   net_up_delay_ms: number | null;
   net_up_jitter_ms: number | null;
   net_up_loss_pct: number | null;
   net_up_queue_ms: number | null;
+  net_up_shaper: string | null;
   // Tráfico IP por protocolo visto por el router y descartes acumulados de la emulación
   dash_ip_down_kbps: number | null;
   dash_ip_up_kbps: number | null;

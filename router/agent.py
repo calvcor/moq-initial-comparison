@@ -29,13 +29,6 @@ NGINX_IP = os.environ["NGINX_IP"]
 RELAY_IP = os.environ["RELAY_IP"]
 # Servidor de WebRTC (RTC_SERVER): el SFU de mediasoup o MediaMTX. Recibe el 8189 en UDP (ICE, DTLS y SRTP) y en TCP (la
 # señalización WebSocket, que solo usa mediasoup: MediaMTX negocia por WHEP a través del punto de entrada)
-# Cómo se limita el caudal (ROUTER_SHAPER en el .env; README, sección 5). "tbf" (por defecto): un tbf con ráfaga de un
-# paquete fija el ritmo, como siempre; tras un rato ocioso deja pasar un paquete suelto sin esperar. "netem"
-# (experimento declarado, desde el 19-11-2026): el tbf va a 10 Gbit/s solo para trocear los superpaquetes GSO, y el
-# ritmo lo pone netem rate, que retrasa cada paquete lo que tarda en salir por un enlace de esa velocidad, haya habido
-# tráfico antes o no, como un enlace serie. Sirve para separar ese efecto en la estimación de BBR del relay de MoQ
-# (../FINDINGS/moq_relay_probe_cwnd_overestimate.md, sección 6).
-SHAPER = "netem" if os.environ.get("ROUTER_SHAPER", "tbf").strip().lower() == "netem" else "tbf"
 RTC_IP = os.environ["MEDIAMTX_IP"] if os.environ.get("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else os.environ["SFU_IP"]
 DASH_PORT, DASH_TLS_PORT, MOQ_PORT, RTC_PORT = 8080, 8443, 4433, 8189
 
@@ -73,9 +66,16 @@ DIRECTIONS = ("down", "up")
 #    "delay_ms": float,        retardo
 #    "jitter_ms": float,       variación del retardo (±)
 #    "loss_pct": float,        pérdida aleatoria, en %
-#    "queue_ms": int}          cola del cuello de botella; solo cuenta con rate_kbit
+#    "queue_ms": int,          cola del cuello de botella; solo cuenta con rate_kbit
+#    "shaper": str}            cómo se limita el caudal; solo cuenta con rate_kbit (README, sección 5). "tbf" (por defecto):
+#                              un tbf con ráfaga de un paquete fija el ritmo, como siempre; tras un rato ocioso deja pasar un
+#                              paquete suelto sin esperar. "netem" (experimento declarado, desde el 19-11-2026): el tbf va a
+#                              10 Gbit/s solo para trocear los superpaquetes GSO y el ritmo lo pone netem rate, que retrasa cada
+#                              paquete lo que tarda en salir a esa velocidad, como un enlace serie
+#                              (../FINDINGS/moq_relay_probe_cwnd_overestimate.md, sección 6)
 # Perfil de red: un perfil de enlace por sentido, {"down": perfil de enlace, "up": perfil de enlace}.
-EMPTY = {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 300}
+EMPTY = {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 300, "shaper": "tbf"}
+SHAPERS = ("tbf", "netem")
 MTU_BITS = 1500 * 8
 
 # Perfil de red de la plaza general (el último POST /): {"down": perfil de enlace, "up": perfil de enlace}
@@ -176,7 +176,15 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
     # "link" es el perfil de enlace a aplicar (rate_kbit, delay_ms, jitter_ms, loss_pct y queue_ms)
     # "slot" es la plaza (1..MAX_CLIENTS para clientes con perfil propio, GENERAL para el resto)
     parent, limiter, netem = handles(queue, slot)
+    if link["shaper"] not in SHAPERS:
+        raise ValueError(f"Limitador desconocido: {link['shaper']} (tbf o netem)")
     active = bool(link["rate_kbit"] or link["delay_ms"] or link["jitter_ms"] or link["loss_pct"])
+    # netem conserva su rate en un "change" que no lo nombra: al pasar de netem a tbf (o al revés) se recrea la plaza
+    shaper = link["shaper"] if link["rate_kbit"] else "tbf"
+    if shaped.get((queue, slot)) and (applied.get((queue, slot)) or {}).get("applied_shaper", "tbf") != shaper:
+        for dev in interfaces():
+            run(f"tc qdisc del dev {dev} parent {parent} handle {limiter}:", check=False)
+        shaped[queue, slot] = False
     for dev in interfaces():
         if not active:
             # Sin restricciones se retira todo: paso directo real, no un limitador muy alto
@@ -188,8 +196,8 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
         # superpaquetes GSO/TSO, que netem descartaría enteros falseando la tasa de pérdida.
         rate_bps = (link["rate_kbit"] or 1_000_000) * 1000
         verb = "change" if shaped.get((queue, slot)) else "add"
-        # Con SHAPER "netem", el tbf solo trocea (10 Gbit/s) y el ritmo va en netem, más abajo
-        tbf_bps = 10_000_000_000 if SHAPER == "netem" and link["rate_kbit"] else rate_bps
+        # Con el limitador "netem", el tbf solo trocea (10 Gbit/s) y el ritmo va en netem, más abajo
+        tbf_bps = 10_000_000_000 if shaper == "netem" else rate_bps
         run(f"tc qdisc {verb} dev {dev} parent {parent} handle {limiter}: tbf rate {tbf_bps}bit burst 1600 latency 1s")
 
         # netem aplica retardo y pérdida, y su límite hace de cola del cuello de botella. El límite va en
@@ -197,7 +205,7 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
         hold_ms = link["delay_ms"] + link["jitter_ms"] + (link["queue_ms"] if link["rate_kbit"] else 1000)
         limit = max(20, math.ceil(rate_bps * hold_ms / 1000 / MTU_BITS))
         spec = f"limit {min(limit, 100000)}"
-        if SHAPER == "netem" and link["rate_kbit"]:
+        if shaper == "netem":
             spec += f" rate {rate_bps}bit"
         if link["delay_ms"] or link["jitter_ms"]:
             spec += f" delay {link['delay_ms']}ms"
@@ -206,7 +214,7 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
         if link["loss_pct"]:
             spec += f" loss {link['loss_pct']}%"
         run(f"tc qdisc {verb} dev {dev} parent {limiter}:1 handle {netem}: netem {spec}")
-        applied[queue, slot] = {**link, "limit": min(limit, 100000)}
+        applied[queue, slot] = {**link, "limit": min(limit, 100000), "applied_shaper": shaper}
     shaped[queue, slot] = active
 
 
