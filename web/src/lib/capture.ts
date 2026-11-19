@@ -1,6 +1,6 @@
 // Captura de gráficas como imagen (PNG), para copiarla al portapapeles o descargarla. Se captura un trozo de la página
 // tal como está maquetado (títulos, leyendas en HTML, textos, gráficas de Chart.js con sus ejes) en colores para papel:
-// fondo blanco, textos oscuros y las gráficas redibujadas con la copia para papel de `chartCopy.ts`. No se hace una
+// fondo transparente, textos oscuros y las gráficas redibujadas con la copia para papel de `chartCopy.ts`. No se hace una
 // captura de la pantalla: se recorre el DOM del trozo y se dibuja en un canvas aparte cada fondo de color, borde,
 // texto, icono y gráfica en su sitio, así que sale igual aunque esté fuera de la vista y la página no se toca.
 //
@@ -18,7 +18,6 @@ const INK = '#0f172a';
 const INK_SOFT = '#475569';
 const INK_FAINT = '#94a3b8';
 const RULE = '#cbd5e1';
-const PAPER = '#ffffff';
 const PAD = 16; // margen alrededor del contenido, en px CSS
 const GAP = 8; // separación entre las piezas de una gráfica suelta
 
@@ -157,7 +156,7 @@ async function layout(root: Element, ratio: number): Promise<Layer> {
       let source: CanvasImageSource = el;
       if (chart) {
         try {
-          source = paperCanvas(chart, ratio);
+          source = paperCanvas(chart, ratio, true);
         } catch {
           /* la gráfica tal como se ve */
         }
@@ -291,8 +290,6 @@ export async function captureBlob(target: Element): Promise<Blob> {
   canvas.width = Math.ceil((width + 2 * PAD) * ratio);
   canvas.height = Math.ceil((height + 2 * PAD) * ratio);
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = PAPER;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
   let y = PAD;
   for (const { ops, box, align } of layers) {
     const b = box!;

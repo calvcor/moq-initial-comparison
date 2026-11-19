@@ -20,7 +20,7 @@ export const isPrinting = (chart: Chart) => chart.canvas?.dataset.paper === '1';
 Chart.register({
   id: 'paperBackground',
   beforeDraw(chart: Chart) {
-    if (!isPrinting(chart)) return;
+    if (!isPrinting(chart) || chart.canvas.dataset.transparent === '1') return;
     const { ctx, width, height } = chart;
     ctx.save();
     ctx.fillStyle = PAPER;
@@ -40,8 +40,9 @@ function clone<T>(value: T): T {
 }
 
 /** La gráfica en colores para papel, dibujada en una copia aparte, en un canvas suelto; `pixelRatio` es la densidad de
- * píxeles (por defecto, la de la pantalla). También la usa la captura de bloques (`capture.ts`). */
-export function paperCanvas(chart: Chart, pixelRatio = chart.currentDevicePixelRatio): HTMLCanvasElement {
+ * píxeles (por defecto, la de la pantalla) y, con `transparent`, sin el fondo blanco. También la usa la captura de
+ * bloques (`capture.ts`), que la quiere transparente. */
+export function paperCanvas(chart: Chart, pixelRatio = chart.currentDevicePixelRatio, transparent = false): HTMLCanvasElement {
   const config = chart.config as unknown as { type: string; data: any; options: any; plugins: any[] };
   const options = clone(config.options ?? {});
   options.color = INK;
@@ -61,6 +62,7 @@ export function paperCanvas(chart: Chart, pixelRatio = chart.currentDevicePixelR
   data.datasets?.forEach((d: any, i: number) => (d.hidden = !chart.isDatasetVisible(i)));
   const canvas = document.createElement('canvas');
   canvas.dataset.paper = '1';
+  if (transparent) canvas.dataset.transparent = '1';
   canvas.width = chart.width;
   canvas.height = chart.height;
   const copy = new Chart(canvas, { type: config.type as any, data, options, plugins: config.plugins, platform: BasicPlatform } as any);
