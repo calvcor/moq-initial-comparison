@@ -9,6 +9,7 @@ import { NetworkPanel } from './components/NetworkPanel';
 import { RouterTreePanel } from './components/RouterTree';
 import { PipelineDiagram } from './components/PipelineDiagram';
 import { VersionsPanel } from './components/VersionsPanel';
+import { SettingsButton, SettingsModal } from './components/SettingsModal';
 import type { FrameTime } from './lib/glass';
 import { runQoETest } from './lib/qoe';
 import { QoEPanel } from './components/QoEPanel';
@@ -19,6 +20,7 @@ import type { PlayerId } from './lib/samples';
 import type { StreamConfig, ServerStatus, PlayerMetrics, SampleRow, NetworkProfile, VersionReport } from './types';
 import { Activity, Radio, Cpu, Network } from 'lucide-react';
 import { dashManifestUrl } from './lib/dashUrl';
+import { locale, t } from './lib/i18n';
 
 // Mismo origen que el dashboard: el punto de entrada (edge) reparte /api y el resto (DASH va directo al router: lib/dashUrl.ts)
 const API_BASE = '';
@@ -60,6 +62,7 @@ export function App() {
     return () => clearInterval(timer);
   }, []);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [config, setConfig] = useState<StreamConfig>({
     source: 'file',
     rtc_audio: false,
@@ -222,7 +225,7 @@ export function App() {
     if (serverStatus?.status !== 'running') return;
 
     const interval = setInterval(() => {
-      const timeStr = new Date().toLocaleTimeString();
+      const timeStr = new Date().toLocaleTimeString(locale);
       // Un reproductor desactivado aporta su fila vacía, nunca su último valor
       const active = playersRef.current;
       const currentDash = active.dash ? dashMetricsRef.current : INITIAL_METRICS.dash;
@@ -275,7 +278,7 @@ export function App() {
   const rejection = async (res: Response) => {
     const body = await res.json().catch(() => null);
     const detail = body?.detail;
-    return typeof detail === 'string' ? detail : `El servidor rechazó la configuración (${res.status})`;
+    return typeof detail === 'string' ? detail : t(`El servidor rechazó la configuración (${res.status})`, `The server rejected the configuration (${res.status})`);
   };
 
   const handleStart = async () => {
@@ -392,9 +395,9 @@ export function App() {
                   Media over QUIC vs. LL-DASH Testbed
                 </h1>
                 <p className="text-xs text-slate-400">
-                  Doctorado en Streaming de Vídeo de Baja Latencia |{' '}
+                  {t('Doctorado en Streaming de Vídeo de Baja Latencia', 'PhD in low-latency video streaming')} |{' '}
                   {serverStatus?.config.source === 'camera'
-                    ? `Cámara RTSP a ${serverStatus.config.fps} fps`
+                    ? t(`Cámara RTSP a ${serverStatus.config.fps} fps`, `RTSP camera at ${serverStatus.config.fps} fps`)
                     : serverStatus?.config.source === 'tos'
                       ? 'Tears of Steel 1080p24'
                       : 'Big Buck Bunny 1080p60'}
@@ -405,13 +408,13 @@ export function App() {
 
           <div className="flex items-center space-x-4 text-xs font-mono">
             <a href="/campaign" className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-indigo-300 hover:border-indigo-500">
-              Campañas de medida
+              {t('Campañas de medida', 'Measurement campaigns')}
             </a>
             <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
               <Cpu className="w-4 h-4 text-slate-400" />
               <span className="text-slate-400">Pipeline:</span>
               <span className={isStreaming ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                {isStreaming ? 'ACTIVO' : 'DETENIDO'}
+                {isStreaming ? t('ACTIVO', 'RUNNING') : t('DETENIDO', 'STOPPED')}
               </span>
             </div>
 
@@ -419,27 +422,34 @@ export function App() {
               <Network className="w-4 h-4 text-slate-400" />
               <span className="text-slate-400">Docker Backend:</span>
               <span className={serverStatus ? 'text-emerald-400' : 'text-amber-500'}>
-                {serverStatus ? 'Conectado (:8000)' : 'Desconectado'}
+                {serverStatus ? t('Conectado (:8000)', 'Connected (:8000)') : t('Desconectado', 'Disconnected')}
               </span>
             </div>
+            <SettingsButton onClick={() => setSettingsOpen(true)} />
           </div>
         </header>
+
+        {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
 
         <VersionsPanel report={versions} />
 
         {campaignRunning && (
           <div className="px-4 py-3 rounded-xl border border-amber-500/40 bg-amber-950/40 text-xs text-amber-200">
-            Campaña de medida en marcha (<span className="font-semibold">{campaign.name}</span>): la emisión y la red las lleva ella y los
-            reproductores de esta pestaña no se montan, para no compartir la red emulada con los del trabajador.{' '}
-            <a href="/campaign" className="underline hover:text-white">Ir a la campaña</a>
+            {t('Campaña de medida en marcha', 'Measurement campaign running')} (<span className="font-semibold">{campaign.name}</span>){t(
+              ': la emisión y la red las lleva ella y los reproductores de esta pestaña no se montan, para no compartir la red emulada con los del trabajador.',
+              ': it controls the stream and the network, and the players in this tab are not mounted, so they do not share the emulated network with the worker’s.',
+            )}{' '}
+            <a href="/campaign" className="underline hover:text-white">{t('Ir a la campaña', 'Go to the campaign')}</a>
           </div>
         )}
 
         {serverStatus?.campaign_preview && (
           <div className="px-4 py-3 rounded-xl border border-sky-500/40 bg-sky-950/40 text-xs text-sky-200">
-            Vista previa de la prueba <span className="font-mono">{serverStatus.campaign_preview.run}</span> abierta en la página de campañas: la red y
-            la emisión son las de esa prueba hasta que se cierre, y entonces vuelven a como estaban.{' '}
-            <a href="/campaign" className="underline hover:text-white">Ir a la campaña</a>
+            {t('Vista previa de la prueba', 'Preview of run')} <span className="font-mono">{serverStatus.campaign_preview.run}</span>{t(
+              ' abierta en la página de campañas: la red y la emisión son las de esa prueba hasta que se cierre, y entonces vuelven a como estaban.',
+              ' open on the campaigns page: the network and the stream are those of that run until it is closed, and then they return to how they were.',
+            )}{' '}
+            <a href="/campaign" className="underline hover:text-white">{t('Ir a la campaña', 'Go to the campaign')}</a>
           </div>
         )}
 
@@ -464,7 +474,7 @@ export function App() {
 
         {/* Reproductores activos: se pueden probar por separado o comparar de dos en dos */}
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-slate-400 font-medium mr-1">Reproductores:</span>
+          <span className="text-slate-400 font-medium mr-1">{t('Reproductores:', 'Players:')}</span>
           {PLAYER_IDS.map((id) => {
             const on = players[id];
             const last = on && PLAYER_IDS.filter((p) => players[p]).length === 1;
@@ -474,17 +484,17 @@ export function App() {
                 key={id}
                 onClick={() => togglePlayer(id)}
                 disabled={last}
-                title={last ? 'Tiene que quedar al menos un reproductor activo' : on ? 'Desactivar: se cierra su conexión y deja de descargar' : 'Activar'}
+                title={last ? t('Tiene que quedar al menos un reproductor activo', 'At least one player must stay on') : on ? t('Desactivar: se cierra su conexión y deja de descargar', 'Turn off: its connection is closed and it stops downloading') : t('Activar', 'Turn on')}
                 className={`px-3 py-1 rounded-lg border font-medium transition-colors ${on ? style : 'border-slate-700 bg-slate-900 text-slate-500 hover:text-slate-300'} ${last ? 'cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                {{ dash: 'LL-DASH', moq: 'MoQ', rtc: 'WebRTC' }[id]} {on ? '· activo' : '· apagado'}
+                {{ dash: 'LL-DASH', moq: 'MoQ', rtc: 'WebRTC' }[id]} {on ? t('· activo', '· on') : t('· apagado', '· off')}
               </button>
             );
           })}
-          <span className="text-slate-500 ml-2">Activar o apagar uno empieza un tramo de medida nuevo.</span>
+          <span className="text-slate-500 ml-2">{t('Activar o apagar uno empieza un tramo de medida nuevo.', 'Turning one on or off starts a new measurement window.')}</span>
 
           {/* Sonido: un solo reproductor a la vez, para no mezclarlos */}
-          <span className="text-slate-400 font-medium ml-auto mr-1">Sonido:</span>
+          <span className="text-slate-400 font-medium ml-auto mr-1">{t('Sonido:', 'Audio:')}</span>
           {([null, ...PLAYER_IDS] as (PlayerId | null)[]).map((id) => {
             const unavailable = id !== null && (!players[id] || (id === 'rtc' && !rtcAudio));
             const selected = audioPlayer === id;
@@ -495,16 +505,16 @@ export function App() {
                 disabled={unavailable}
                 title={
                   id === 'rtc' && !rtcAudio
-                    ? 'La rama WebRTC va sin audio: actívalo en el panel de control (Audio en WebRTC)'
+                    ? t('La rama WebRTC va sin audio: actívalo en el panel de control (Audio en WebRTC)', 'The WebRTC branch has no audio: turn it on in the control panel (WebRTC audio)')
                     : id !== null && !players[id]
-                      ? 'Reproductor apagado'
+                      ? t('Reproductor apagado', 'Player off')
                       : undefined
                 }
                 className={`px-2.5 py-1 rounded-lg border transition-colors ${
                   selected ? 'border-indigo-500 bg-indigo-900/50 text-indigo-200' : 'border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200'
                 } ${unavailable ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                {id === null ? 'Ninguno' : { dash: 'LL-DASH', moq: 'MoQ', rtc: 'WebRTC' }[id]}
+                {id === null ? t('Ninguno', 'None') : { dash: 'LL-DASH', moq: 'MoQ', rtc: 'WebRTC' }[id]}
               </button>
             );
           })}
@@ -562,7 +572,7 @@ export function App() {
           <div className="flex items-center space-x-2 mb-3">
             <Activity className="w-4 h-4 text-indigo-400" />
             <h2 className="font-semibold text-sm text-slate-300">
-              Comparativa Cuantitativa de Rendimiento y QoE
+              {t('Comparativa Cuantitativa de Rendimiento y QoE', 'Quantitative comparison of performance and QoE')}
             </h2>
           </div>
           <MetricsDashboard

@@ -18,6 +18,9 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   en español, con el tono de lo que ya hay.
 - Commits en español, con un título descriptivo ("DASH: umbral de búfer vacío configurable") y cuerpo
   explicando el porqué cuando no es obvio. Se suben directamente a `main`.
+- La interfaz web es bilingüe (Ajustes → Idioma; README, 4.4c): **todo texto visible nuevo va como
+  `t('español', 'English')`** (`web/src/lib/i18n.ts`); igual las frases nuevas del análisis y las comparaciones del
+  orquestador (`server/app/i18n.py`; el español no debe cambiar). Columnas del CSV, campos de la API y comentarios, sin traducir.
 
 ## Principios de medida (lo más importante)
 

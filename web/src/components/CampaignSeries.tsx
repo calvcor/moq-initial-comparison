@@ -4,6 +4,7 @@ import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
 import { isPrinting } from '../lib/chartCopy';
 import { multiStream, streamDifferences, streamName } from '../lib/campaignStreams';
+import { t } from '../lib/i18n';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
 
@@ -33,63 +34,98 @@ interface Metric {
 }
 const METRICS: Record<string, Metric> = {
   g2g: { label: 'Glass-to-glass', unit: 'ms', field: 'g2g_ms' },
-  kbps: { label: 'Bitrate de vídeo recibido', unit: 'kbit/s', field: 'kbps' },
-  ip_down: { label: 'Tráfico IP de bajada en el router', unit: 'kbit/s', field: 'ip_down_kbps', source: 'ip' },
-  ip_up: { label: 'Tráfico IP de subida en el router', unit: 'kbit/s', field: 'ip_up_kbps', source: 'ip' },
-  drops_down: { label: 'Descartes en la cola de bajada, en cada segundo', unit: 'paquetes', field: 'ip_down_dropped', source: 'ip', note: 'Paquetes que descartó la cola de este protocolo en el router, de las lecturas del orquestador (desde el 3-11-2026). Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.' },
+  kbps: { label: t('Bitrate de vídeo recibido', 'Received video bitrate'), unit: 'kbit/s', field: 'kbps' },
+  ip_down: { label: t('Tráfico IP de bajada en el router', 'Downlink IP traffic at the router'), unit: 'kbit/s', field: 'ip_down_kbps', source: 'ip' },
+  ip_up: { label: t('Tráfico IP de subida en el router', 'Uplink IP traffic at the router'), unit: 'kbit/s', field: 'ip_up_kbps', source: 'ip' },
+  drops_down: {
+    label: t('Descartes en la cola de bajada, en cada segundo', 'Drops in the downlink queue, per second'),
+    unit: t('paquetes', 'packets'),
+    field: 'ip_down_dropped',
+    source: 'ip',
+    note: t(
+      'Paquetes que descartó la cola de este protocolo en el router, de las lecturas del orquestador (desde el 3-11-2026). Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.',
+      'Packets dropped by this protocol’s queue at the router, from the orchestrator’s readings (since 3-11-2026). It combines queue overflow and the network profile’s random loss: they are only overflow on networks with a bandwidth limit and no loss. The queue is sized in 1500-byte packets, so its actual duration is approximate.',
+    ),
+  },
   // Lo lee el servidor cada segundo (desde el 30-10-2026); es de la emisión, el mismo en las tres ramas
   source_lag: {
-    label: 'Retraso de la fuente',
+    label: t('Retraso de la fuente', 'Source lag'),
     unit: 'ms',
     field: 'source_lag_ms',
     source: 'ip',
-    note: 'Es de la emisión, el mismo en los tres protocolos: cuánto fue FFmpeg por detrás del tiempo real en cada segundo (la marca quemada menos lo que le toca por su número de frame). Los reproductores pintan por PTS, así que lo ven como esa misma cantidad de latencia de menos.',
+    note: t(
+      'Es de la emisión, el mismo en los tres protocolos: cuánto fue FFmpeg por detrás del tiempo real en cada segundo (la marca quemada menos lo que le toca por su número de frame). Los reproductores pintan por PTS, así que lo ven como esa misma cantidad de latencia de menos.',
+      'It belongs to the stream, the same for the three protocols: how far FFmpeg lagged behind real time in each second (the burnt-in timestamp minus what its frame number calls for). Players render by PTS, so they see it as that same amount of latency less.',
+    ),
   },
-  height: { label: 'Altura reproducida', unit: 'p', field: 'height' },
+  height: { label: t('Altura reproducida', 'Rendered height'), unit: 'p', field: 'height' },
   // La que eligió la adaptación: la reproducida la sigue cuando llega (DASH, al consumir el búfer; WebRTC, en el
   // siguiente keyframe; MoQ, según su modo de cambio). Vacía en DASH antes del 4-11-2026 (su altura era la elegida)
   selected: {
-    label: 'Calidad elegida',
+    label: t('Calidad elegida', 'Selected rendition'),
     unit: 'p',
     field: 'selected_height',
-    note: 'la que elige la adaptación (DASH, la representación que descarga; MoQ, la pista que pide; WebRTC, la capa que envía mediasoup, vacía con MediaMTX); la reproducida la sigue con retraso.',
+    note: t(
+      'la que elige la adaptación (DASH, la representación que descarga; MoQ, la pista que pide; WebRTC, la capa que envía mediasoup, vacía con MediaMTX); la reproducida la sigue con retraso.',
+      'the one chosen by adaptation (DASH, the representation it downloads; MoQ, the track it requests; WebRTC, the layer mediasoup sends, empty with MediaMTX); the rendered one follows it with a delay.',
+    ),
   },
   bw: {
-    label: 'Ancho de banda estimado',
+    label: t('Ancho de banda estimado', 'Estimated bandwidth'),
     unit: 'kbit/s',
     field: 'bw_estimate_kbps',
-    note: 'cada protocolo el suyo, y no significan lo mismo: DASH, el caudal medio de sus descargas (sin límite de red sigue al bitrate descargado, README 6); MoQ, la estimación del relay que usa su adaptación; WebRTC, la de mediasoup hacia el espectador (vacía con MediaMTX).',
+    note: t(
+      'cada protocolo el suyo, y no significan lo mismo: DASH, el caudal medio de sus descargas (sin límite de red sigue al bitrate descargado, README 6); MoQ, la estimación del relay que usa su adaptación; WebRTC, la de mediasoup hacia el espectador (vacía con MediaMTX).',
+      'each protocol its own, and they do not mean the same: DASH, the mean throughput of its downloads (without a bandwidth limit it follows the downloaded bitrate, README 6); MoQ, the relay estimate its adaptation uses; WebRTC, mediasoup’s estimate towards the viewer (empty with MediaMTX).',
+    ),
   },
   // Experimento de README 6.3: solo con el ABR de MoQ en Sondeo o Sondeo v2 (moq_abr probe o probe2)
   probe: {
-    label: 'Capacidad estimada por el sondeo',
+    label: t('Capacidad estimada por el sondeo', 'Capacity estimated by probing'),
     unit: 'kbit/s',
     field: 'probe_capacity_kbps',
     only: 'moq',
-    note: 'Solo MoQ con el ABR en Sondeo o Sondeo v2 (README 6.3): lo que recibían la calidad actual y la de sondeo en los últimos segundos del último sondeo, completo o cortado. Se mantiene hasta el siguiente, así que la línea va a escalones; queda vacía hasta el primero, y también si un sondeo se corta en su arranque. En la calidad más alta no se sondea. No es la estimación del relay, que va en Ancho de banda estimado. Las bandas son los sondeos, de su inicio a su fin, del color de cómo terminaron (exactos desde el 6-11-2026; antes, cada fila con sondeo como un segundo entero, sin resultado).',
+    note: t(
+      'Solo MoQ con el ABR en Sondeo o Sondeo v2 (README 6.3): lo que recibían la calidad actual y la de sondeo en los últimos segundos del último sondeo, completo o cortado. Se mantiene hasta el siguiente, así que la línea va a escalones; queda vacía hasta el primero, y también si un sondeo se corta en su arranque. En la calidad más alta no se sondea. No es la estimación del relay, que va en Ancho de banda estimado. Las bandas son los sondeos, de su inicio a su fin, del color de cómo terminaron (exactos desde el 6-11-2026; antes, cada fila con sondeo como un segundo entero, sin resultado).',
+      'Only MoQ with the ABR in Probe or Probe v2 (README 6.3): what the current rendition and the probed one received in the last seconds of the last probe, complete or cut. It holds until the next one, so the line is stepped; it stays empty until the first, and also if a probe is cut at its start. The highest rendition is not probed. It is not the relay estimate, which is under Estimated bandwidth. The bands are the probes, from start to end, coloured by how they ended (exact since 6-11-2026; before, each row with a probe as a whole second, with no outcome).',
+    ),
   },
   // DASH: vídeo descargado por delante en el instante de la fila; MoQ y WebRTC: espera media de los frames
   // entregados desde la fila anterior
-  buffer: { label: 'Búfer', unit: 'ms', field: 'buffer_ms', note: 'No es la misma magnitud: en DASH, el vídeo descargado por delante del punto de reproducción; en MoQ y WebRTC, lo que espera de media cada frame en el reproductor (vacío si no sale ninguno, como en un parón).' },
-  stall: { label: 'Tiempo parado acumulado', unit: 'ms', field: 'stall_ms' },
-  frametime: { label: 'Tiempo en pantalla p95', unit: 'ms', field: 'frametime_p95_ms' },
+  buffer: {
+    label: t('Búfer', 'Buffer'),
+    unit: 'ms',
+    field: 'buffer_ms',
+    note: t(
+      'No es la misma magnitud: en DASH, el vídeo descargado por delante del punto de reproducción; en MoQ y WebRTC, lo que espera de media cada frame en el reproductor (vacío si no sale ninguno, como en un parón).',
+      'Not the same quantity: in DASH, the video downloaded ahead of the playback position; in MoQ and WebRTC, the mean time each frame waits in the player (empty if none is output, as in a stall).',
+    ),
+  },
+  stall: { label: t('Tiempo parado acumulado', 'Cumulative stall time'), unit: 'ms', field: 'stall_ms' },
+  frametime: { label: t('Tiempo en pantalla p95', 'On-screen time p95'), unit: 'ms', field: 'frametime_p95_ms' },
   // Según el timecode, en las tres ramas: ms de la fuente por ms reales y ms de la fuente que no se pintaron
-  content: { label: 'Avance del contenido', unit: '×', field: 'content_speed' },
-  skipped: { label: 'Contenido no reproducido en cada segundo', unit: 'ms', field: 'content_skipped_ms' },
+  content: { label: t('Avance del contenido', 'Content progress'), unit: '×', field: 'content_speed' },
+  skipped: { label: t('Contenido no reproducido en cada segundo', 'Content not played, per second'), unit: 'ms', field: 'content_skipped_ms' },
   // Media de cada segundo; solo DASH cambia la velocidad del vídeo
-  rate: { label: 'Velocidad de reproducción', unit: '×', field: 'playback_rate', only: 'dash' },
+  rate: { label: t('Velocidad de reproducción', 'Playback rate'), unit: '×', field: 'playback_rate', only: 'dash' },
   // De la página del trabajador (lib/mainThread.ts, desde el 3-11-2026), la misma para todos sus reproductores
   main_missed: {
-    label: 'Refrescos perdidos en el hilo principal',
-    unit: 'por s',
+    label: t('Refrescos perdidos en el hilo principal', 'Missed refreshes on the main thread'),
+    unit: t('por s', 'per s'),
     field: 'main_refreshes_missed',
-    note: 'Es de la página, el mismo valor en los tres protocolos: refrescos de pantalla de cada segundo en que el hilo principal no llegó a pintar (requestAnimationFrame no se ejecutó). MoQ pinta en ese hilo y pierde frames cuando sube; el <video> de DASH y WebRTC presenta fuera de él.',
+    note: t(
+      'Es de la página, el mismo valor en los tres protocolos: refrescos de pantalla de cada segundo en que el hilo principal no llegó a pintar (requestAnimationFrame no se ejecutó). MoQ pinta en ese hilo y pierde frames cuando sube; el <video> de DASH y WebRTC presenta fuera de él.',
+      'It belongs to the page, the same value for the three protocols: display refreshes in each second in which the main thread did not paint (requestAnimationFrame did not run). MoQ renders on that thread and drops frames when it rises; the <video> of DASH and WebRTC presents outside it.',
+    ),
   },
   main_long: {
-    label: 'Tiempo en frames largos del hilo principal',
-    unit: 'ms por s',
+    label: t('Tiempo en frames largos del hilo principal', 'Time in long frames on the main thread'),
+    unit: t('ms por s', 'ms per s'),
     field: 'main_long_frame_ms',
-    note: 'Es de la página, el mismo valor en los tres protocolos: duración sumada de los frames de 50 ms o más de cada segundo (Long Animation Frames API de Chrome; vacío en navegadores sin ella).',
+    note: t(
+      'Es de la página, el mismo valor en los tres protocolos: duración sumada de los frames de 50 ms o más de cada segundo (Long Animation Frames API de Chrome; vacío en navegadores sin ella).',
+      'It belongs to the page, the same value for the three protocols: summed duration of the frames of 50 ms or more in each second (Chrome’s Long Animation Frames API; empty in browsers without it).',
+    ),
   },
 };
 
@@ -200,12 +236,12 @@ type ProbeOutcome = 'up' | 'stay' | 'cut' | 'abort' | 'open' | null;
 type ProbeSpan = [number, number, ProbeOutcome];
 const PROBE_COLOR: Record<string, string> = { up: '#38bdf8', stay: '#94a3b8', cut: '#f43f5e', abort: '#a78bfa', open: '#facc15', unknown: '#64748b' };
 const PROBE_LABEL: Record<string, string> = {
-  up: 'subió',
-  stay: 'terminó sin subir (no cabía)',
-  cut: 'cortado (la calidad actual perdió ritmo)',
-  abort: 'cerrado a mitad',
-  open: 'en curso al acabar las filas',
-  unknown: 'sondeo, sin resultado (filas anteriores al 6-11-2026)',
+  up: t('subió', 'switched up'),
+  stay: t('terminó sin subir (no cabía)', 'ended without switching up (did not fit)'),
+  cut: t('cortado (la calidad actual perdió ritmo)', 'cut (the current rendition fell behind)'),
+  abort: t('cerrado a mitad', 'closed midway'),
+  open: t('en curso al acabar las filas', 'in progress when the rows end'),
+  unknown: t('sondeo, sin resultado (filas anteriores al 6-11-2026)', 'probe, no outcome (rows before 6-11-2026)'),
 };
 
 function probeSpans(series: Series | undefined): { spans: ProbeSpan[]; exact: boolean } | null {
@@ -275,7 +311,7 @@ const ProbeLegend: React.FC<{ outcomes: string[]; exact: boolean }> = ({ outcome
           {PROBE_LABEL[o]}
         </span>
       ))}
-      {!exact && <span>(cada fila con sondeo, como un segundo entero)</span>}
+      {!exact && <span>{t('(cada fila con sondeo, como un segundo entero)', '(each row with a probe, as a whole second)')}</span>}
     </div>
   ) : null;
 
@@ -298,10 +334,10 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
   // va en la clave, debajo de las casillas
   const streamOf = (r: CampaignRun) => (multiStream(plan) ? `, ${streamName(r.stream).toLowerCase()}` : '');
   const conditionLabel = (key: string) => {
-    const [st, n, t] = key.split(':');
-    const prefix = !multiStream(plan) ? '' : st === '*' ? 'todas las emisiones · ' : `${streamName(Number(st)).toLowerCase()} · `;
-    if (n === '') return prefix ? `${prefix}pruebas de control` : 'Pruebas de control';
-    return `${prefix}objetivo ${plan.targets[Number(t)].label} · ${plan.networks[Number(n)].label}`;
+    const [st, n, tg] = key.split(':');
+    const prefix = !multiStream(plan) ? '' : st === '*' ? t('todas las emisiones · ', 'all streams · ') : `${streamName(Number(st)).toLowerCase()} · `;
+    if (n === '') return prefix ? t(`${prefix}pruebas de control`, `${prefix}control runs`) : t('Pruebas de control', 'Control runs');
+    return t(`${prefix}objetivo ${plan.targets[Number(tg)].label} · ${plan.networks[Number(n)].label}`, `${prefix}target ${plan.targets[Number(tg)].label} · ${plan.networks[Number(n)].label}`);
   };
   // Por emisión, objetivo y, dentro de cada uno, red, en el orden del plan; las de control al final de su emisión, y
   // las de todas las emisiones detrás, en el mismo orden (solo las que se midieron en más de una)
@@ -340,17 +376,17 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
   const changes = (i: number, value: string) => {
     const current = parts(condition);
     const best = parts(bestFor(i, value) ?? condition);
-    return ['la emisión', 'la red', 'el objetivo'].filter((_, j) => j !== i && best[j] !== current[j]);
+    return [t('la emisión', 'the stream'), t('la red', 'the network'), t('el objetivo', 'the target')].filter((_, j) => j !== i && best[j] !== current[j]);
   };
   const optionLabel = (i: number, value: string) => {
     const base =
       i === 0
-        ? value === '*' ? 'Todas (comparar emisiones)' : streamName(Number(value))
+        ? value === '*' ? t('Todas (comparar emisiones)', 'All (compare streams)') : streamName(Number(value))
         : i === 1
-          ? value === '' ? 'Control (sin restricción)' : plan.networks[Number(value)].label
+          ? value === '' ? t('Control (sin restricción)', 'Control (no restriction)') : plan.networks[Number(value)].label
           : plan.targets[Number(value)].label;
     const other = changes(i, value);
-    return other.length ? `${base} (cambia ${other.join(' y ')})` : base;
+    return other.length ? t(`${base} (cambia ${other.join(' y ')})`, `${base} (changes ${other.join(' and ')})`) : base;
   };
   const [selected, setSelected] = useState<string[]>([]);
   const [metricKey, setMetricKey] = useState('g2g');
@@ -468,7 +504,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
         title: {
           display: true,
           color: TICK,
-          text: aligned === 'source' ? 'Segundo del vídeo (desde que arranca la fuente)' : 'Segundos desde el inicio de la medida',
+          text: aligned === 'source' ? t('Segundo del vídeo (desde que arranca la fuente)', 'Video second (since the source starts)') : t('Segundos desde el inicio de la medida', 'Seconds since the start of the measurement'),
         },
       },
       y: {
@@ -661,20 +697,20 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
 
   return (
     <div ref={container} className="space-y-3 pt-2 scroll-mt-4">
-      <h4 className="text-xs font-semibold text-slate-200">Segundo a segundo</h4>
+      <h4 className="text-xs font-semibold text-slate-200">{t('Segundo a segundo', 'Second by second')}</h4>
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-400">Vista</span>
+          <span className="text-[11px] text-slate-400">{t('Vista', 'View')}</span>
           <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" value={view} onChange={(e) => setView(e.target.value as 'runs' | 'metrics')}>
-            <option value="runs">Comparar pruebas (una métrica)</option>
-            <option value="metrics">Varias métricas de una prueba</option>
+            <option value="runs">{t('Comparar pruebas (una métrica)', 'Compare runs (one metric)')}</option>
+            <option value="metrics">{t('Varias métricas de una prueba', 'Several metrics of one run')}</option>
           </select>
         </label>
         {(
           [
-            [0, 'Emisión', curStream],
-            [1, 'Red', curNetwork],
-            [2, 'Objetivo', curTarget],
+            [0, t('Emisión', 'Stream'), curStream],
+            [1, t('Red', 'Network'), curNetwork],
+            [2, t('Objetivo', 'Target'), curTarget],
           ] as const
         )
           // La emisión, solo con varias
@@ -694,7 +730,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
         {view === 'runs' ? (
           <>
             <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-slate-400">Métrica</span>
+              <span className="text-[11px] text-slate-400">{t('Métrica', 'Metric')}</span>
               <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200" value={metricKey} onChange={(e) => setMetricKey(e.target.value)}>
                 {Object.entries(METRICS).map(([k, m]) => (
                   <option key={k} value={k}>
@@ -705,13 +741,13 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
             </label>
             <label className="flex items-center gap-1.5 pb-1 text-slate-300">
               <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} />
-              Superponer los protocolos
+              {t('Superponer los protocolos', 'Overlay the protocols')}
             </label>
           </>
         ) : (
           <>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-slate-400">Prueba</span>
+            <span className="text-[11px] text-slate-400">{t('Prueba', 'Run')}</span>
             <select className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200 font-mono" value={singleId ?? ''} onChange={(e) => setSingle(e.target.value)}>
               {runs
                 .filter((r) => inCondition(r, condition))
@@ -722,24 +758,27 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                 ))}
             </select>
           </label>
-          <label className="flex items-center gap-1.5 pb-1 text-slate-300" title="Sin superponer, cada protocolo va en su columna, con la misma escala en las tres para cada métrica">
+          <label className="flex items-center gap-1.5 pb-1 text-slate-300" title={t('Sin superponer, cada protocolo va en su columna, con la misma escala en las tres para cada métrica', 'Without overlay, each protocol goes in its own column, with the same scale in all three for each metric')}>
             <input type="checkbox" checked={stripOverlay} onChange={(e) => setStripOverlay(e.target.checked)} />
-            Superponer los protocolos
+            {t('Superponer los protocolos', 'Overlay the protocols')}
           </label>
           </>
         )}
-        <label className="flex items-center gap-1.5 pb-1 text-slate-300" title="Cada parón como una franja vertical del color de su línea, de su inicio a su fin exactos (con los protocolos superpuestos, un carril por protocolo en lo alto de la gráfica). En pruebas medidas antes del 28-10-2026 no hay intervalos: se sombrea cada segundo con tiempo parado, más opaco cuanto más del segundo estuvo parado">
+        <label className="flex items-center gap-1.5 pb-1 text-slate-300" title={t(
+            'Cada parón como una franja vertical del color de su línea, de su inicio a su fin exactos (con los protocolos superpuestos, un carril por protocolo en lo alto de la gráfica). En pruebas medidas antes del 28-10-2026 no hay intervalos: se sombrea cada segundo con tiempo parado, más opaco cuanto más del segundo estuvo parado',
+            'Each stall as a vertical band in the colour of its line, from its exact start to its exact end (with the protocols overlaid, one lane per protocol at the top of the chart). Runs measured before 28-10-2026 have no intervals: each second with stall time is shaded, more opaque the more of the second was stalled',
+          )}>
           <input type="checkbox" checked={shade} onChange={(e) => setShade(e.target.checked)} />
-          Sombrear los parones
+          {t('Sombrear los parones', 'Shade the stalls')}
         </label>
         <span className="text-slate-500 pb-1">
           {plan.content === 'restart'
-            ? 'Contenido reiniciado en cada prueba: el mismo segundo del eje es el mismo tramo del vídeo en todas.'
-            : 'Contenido continuo: cada prueba ve un tramo distinto del bucle; el eje solo alinea el inicio de la medida.'}{' '}
-          Discontinuo: calentamiento.{' '}
+            ? t('Contenido reiniciado en cada prueba: el mismo segundo del eje es el mismo tramo del vídeo en todas.', 'Content restarted in each run: the same second on the axis is the same part of the video in all of them.')
+            : t('Contenido continuo: cada prueba ve un tramo distinto del bucle; el eje solo alinea el inicio de la medida.', 'Continuous content: each run sees a different part of the loop; the axis only aligns the start of the measurement.')}{' '}
+          {t('Discontinuo: calentamiento.', 'Dashed: warm-up.')}{' '}
           {view === 'runs'
-            ? `Hasta ${MAX_RUNS} pruebas.${metric.note ? ` ${metric.label}: ${metric.note}` : ''}`
-            : `Una franja por métrica, con el mismo eje de tiempo: el puntero marca el mismo segundo en todas.${notes.map(([, m]) => ` ${m.label}: ${m.note}`).join('')}`}
+            ? `${t(`Hasta ${MAX_RUNS} pruebas.`, `Up to ${MAX_RUNS} runs.`)}${metric.note ? ` ${metric.label}: ${metric.note}` : ''}`
+            : `${t('Una franja por métrica, con el mismo eje de tiempo: el puntero marca el mismo segundo en todas.', 'One strip per metric, on the same time axis: the pointer marks the same second in all of them.')}${notes.map(([, m]) => ` ${m.label}: ${m.note}`).join('')}`}
         </span>
       </div>
       {view === 'metrics' && (
@@ -767,13 +806,20 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
         <ul className="text-slate-400">
           {streamDifferences(plan).map((d, i) => (
             <li key={i}>
-              <span className="text-slate-300">{streamName(i)}:</span> {d || 'igual que las demás'}
+              <span className="text-slate-300">{streamName(i)}:</span> {d || t('igual que las demás', 'same as the others')}
             </li>
           ))}
         </ul>
       )}
-      {error && <p className="text-rose-400">No se pudieron leer las series: {error}</p>}
-      {loading && <p className="text-amber-300/90">Leyendo las filas de las pruebas elegidas… (la primera vez en una campaña grande, unos segundos: se indexan sus filas)</p>}
+      {error && <p className="text-rose-400">{t('No se pudieron leer las series', 'Could not read the series')}: {error}</p>}
+      {loading && (
+        <p className="text-amber-300/90">
+          {t(
+            'Leyendo las filas de las pruebas elegidas… (la primera vez en una campaña grande, unos segundos: se indexan sus filas)',
+            'Reading the rows of the selected runs… (the first time in a large campaign, a few seconds: its rows are being indexed)',
+          )}
+        </p>
+      )}
       {view === 'metrics' ? (
         <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 space-y-1">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1">
@@ -792,9 +838,9 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                 {PLAYER_LABEL[p]}
               </button>
             ))}
-            {shade && stripOverlay && players.length > 1 && <span className="text-slate-500 text-[11px]">arriba de cada franja, un carril de parones por protocolo, en este orden</span>}
+            {shade && stripOverlay && players.length > 1 && <span className="text-slate-500 text-[11px]">{t('arriba de cada franja, un carril de parones por protocolo, en este orden', 'at the top of each strip, one stall lane per protocol, in this order')}</span>}
           </div>
-          {!metricKeys.length && <p className="text-slate-500">Elige al menos una métrica.</p>}
+          {!metricKeys.length && <p className="text-slate-500">{t('Elige al menos una métrica.', 'Choose at least one metric.')}</p>}
           {Object.entries(METRICS)
             .filter(([k]) => metricKeys.includes(k))
             .map(([k, m]) => (
@@ -841,12 +887,12 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
               </div>
             ))}
           <div className="text-center text-[11px] text-slate-400">
-            {aligned === 'source' ? 'Segundo del vídeo (desde que arranca la fuente)' : 'Segundos desde el inicio de la medida'}
+            {aligned === 'source' ? t('Segundo del vídeo (desde que arranca la fuente)', 'Video second (since the source starts)') : t('Segundos desde el inicio de la medida', 'Seconds since the start of the measurement')}
           </div>
         </div>
       ) : overlay ? (
         <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
-          <h4 className="text-xs font-medium text-slate-300 mb-2">{players.map((p) => PLAYER_LABEL[p]).join(', ')}: una línea por prueba, con el color del protocolo{shade && players.length > 1 && <span className="text-slate-500 font-normal"> · arriba, un carril de parones por protocolo, en el orden de la leyenda</span>}</h4>
+          <h4 className="text-xs font-medium text-slate-300 mb-2">{players.map((p) => PLAYER_LABEL[p]).join(', ')}: {t('una línea por prueba, con el color del protocolo', 'one line per run, in the protocol colour')}{shade && players.length > 1 && <span className="text-slate-500 font-normal"> · {t('arriba, un carril de parones por protocolo, en el orden de la leyenda', 'at the top, one stall lane per protocol, in legend order')}</span>}</h4>
           {metricKey === 'probe' && probeLegend}
           <div className="h-[28rem]">
             <Line data={{ datasets: players.flatMap((p) => datasetsFor(p, true)) }} options={overlayOptions} plugins={[shadeStalls, shadeProbes]} />
@@ -860,7 +906,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
               {metricKey === 'probe' && p === 'moq' && (
                 <div className="mb-1">
                   {probeLegend}
-                  {chosen.length > 1 && <div className="text-[10px] text-slate-500">Los sondeos de cada prueba, en carriles abajo: el de más abajo es la primera de la leyenda</div>}
+                  {chosen.length > 1 && <div className="text-[10px] text-slate-500">{t('Los sondeos de cada prueba, en carriles abajo: el de más abajo es la primera de la leyenda', 'The probes of each run, in lanes at the bottom: the lowest is the first in the legend')}</div>}
                 </div>
               )}
               <div className="h-80">

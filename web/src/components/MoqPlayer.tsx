@@ -10,6 +10,7 @@ import { MoqProbeAbr } from '../lib/moqProbe';
 import { decodedFrame, delayValue, isViewersApi, paintedFrame, playerProps, toMs } from '../lib/moqApi';
 import { MoqExplain } from './MoqExplain';
 import type { MoqAbr, MoqSwitching, PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } from '../types';
+import { t } from '../lib/i18n';
 
 const SWITCHING_KEY = 'testbed.moqSwitching';
 const ABR_KEY = 'testbed.moqAbr';
@@ -186,7 +187,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
 
     if (!('WebTransport' in window)) {
       setStatus('error');
-      setErrorMsg('WebTransport no está soportado en este navegador. Usa Chrome o Edge.');
+      setErrorMsg(t('WebTransport no está soportado en este navegador. Usa Chrome o Edge.', 'WebTransport is not supported in this browser. Use Chrome or Edge.'));
       onMetricsUpdate({ status: 'error', errorMessage: 'WebTransport no soportado' });
       return;
     }
@@ -459,20 +460,20 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         {status === 'connecting' && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center space-y-2">
             <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs text-slate-400">Negociando sesión WebTransport QUIC...</span>
+            <span className="text-xs text-slate-400">{t('Negociando sesión WebTransport QUIC...', 'Negotiating WebTransport QUIC session...')}</span>
           </div>
         )}
 
         {status === 'idle' && (
           <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-slate-500 space-y-1">
-            <p className="text-sm font-medium">Stream detenido</p>
-            <p className="text-xs text-slate-600">Inicia el pipeline desde el panel de control</p>
+            <p className="text-sm font-medium">{t('Stream detenido', 'Stream stopped')}</p>
+            <p className="text-xs text-slate-600">{t('Inicia el pipeline desde el panel de control', 'Start the pipeline from the control panel')}</p>
           </div>
         )}
 
         {status === 'error' && (
           <div className="absolute inset-0 bg-red-950/80 flex flex-col items-center justify-center text-red-300 p-4 text-center">
-            <p className="text-sm font-semibold">Error de Conexión MoQ</p>
+            <p className="text-sm font-semibold">{t('Error de Conexión MoQ', 'MoQ connection error')}</p>
             <p className="text-xs text-red-400 mt-1 max-w-sm">{errorMsg}</p>
           </div>
         )}
@@ -481,13 +482,16 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
       {/* Control de Latencia Objetivo en Vivo */}
       <div
         className="px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs"
-        title="Búfer de jitter de @moq/watch (opción delay), no la latencia total: un retardo de red constante se suma aparte. Con un valor fijo, ese valor. En auto depende de la versión: la 0.6.3 publicada lo calcula como 1,25 veces el RTT mínimo (suelo de 20 ms) y no lo sube durante la sesión hasta recargar; la compilada desde main (git@…) lo estima de lo tarde que llegan los frames respecto al más rápido de los últimos 2 s (percentil 95, techo de unos 2 s): sube al empeorar la red y baja al estabilizarse, aunque la red siga lenta. En ambos casos se suma el jitter que declara el catálogo; el resultado es el que se muestra entre paréntesis."
+        title={t(
+          'Búfer de jitter de @moq/watch (opción delay), no la latencia total: un retardo de red constante se suma aparte. Con un valor fijo, ese valor. En auto depende de la versión: la 0.6.3 publicada lo calcula como 1,25 veces el RTT mínimo (suelo de 20 ms) y no lo sube durante la sesión hasta recargar; la compilada desde main (git@…) lo estima de lo tarde que llegan los frames respecto al más rápido de los últimos 2 s (percentil 95, techo de unos 2 s): sube al empeorar la red y baja al estabilizarse, aunque la red siga lenta. En ambos casos se suma el jitter que declara el catálogo; el resultado es el que se muestra entre paréntesis.',
+          '@moq/watch jitter buffer (delay option), not the total latency: a constant network delay adds on top. With a fixed value, that value. In auto it depends on the version: the published 0.6.3 computes it as 1.25 times the minimum RTT (20 ms floor) and does not raise it during the session until reload; the one built from main (git@…) estimates it from how late frames arrive relative to the fastest one in the last 2 s (95th percentile, ceiling of about 2 s): it rises when the network worsens and drops when it stabilises, even if the network stays slow. In both cases the jitter declared by the catalog is added; the result is the one shown in parentheses.',
+        )}
       >
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
-          <span className="text-slate-400 font-medium whitespace-nowrap">Latencia objetivo:</span>
+          <span className="text-slate-400 font-medium whitespace-nowrap">{t('Latencia objetivo:', 'Target latency:')}</span>
           <span className="font-mono text-emerald-400 font-semibold whitespace-nowrap">
             {targetLatencyMs === 0 ? 'auto (RTT)' : `${targetLatencyMs}ms`}
-            {resolvedDelayMs !== null && ` (efectiva ${resolvedDelayMs}ms)`}
+            {resolvedDelayMs !== null && t(` (efectiva ${resolvedDelayMs}ms)`, ` (effective ${resolvedDelayMs}ms)`)}
           </span>
         </div>
         <div className="flex items-center space-x-3 flex-1 min-w-[10rem] max-w-xs ml-auto">
@@ -512,7 +516,10 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <label
           className="flex items-center space-x-1.5 whitespace-nowrap"
-          title="Experimento, no el comportamiento de @moq/watch. Librería: decide @moq/watch (la estimación del relay y su regla del 80 %). Sondeo: decide un controlador del banco que, a ratos, pide la calidad siguiente con la prioridad mínima y sube si cabe en lo que reciben las dos; baja si la actual deja de llegar a su ritmo (README 6.3). Sondeo v2: el mismo, sin pedir 10 s de atraso de golpe y subiendo también si la siguiente llega a su ritmo. Solo actúa con Calidad en Auto. Se recuerda en este navegador."
+          title={t(
+            'Experimento, no el comportamiento de @moq/watch. Librería: decide @moq/watch (la estimación del relay y su regla del 80 %). Sondeo: decide un controlador del banco que, a ratos, pide la calidad siguiente con la prioridad mínima y sube si cabe en lo que reciben las dos; baja si la actual deja de llegar a su ritmo (README 6.3). Sondeo v2: el mismo, sin pedir 10 s de atraso de golpe y subiendo también si la siguiente llega a su ritmo. Solo actúa con Calidad en Auto. Se recuerda en este navegador.',
+            'Experiment, not the @moq/watch behaviour. Library: @moq/watch decides (the relay estimate and its 80 % rule). Probing: a testbed controller decides; every so often it requests the next rendition with the lowest priority and switches up if it fits in what both receive; it switches down if the current one stops keeping up with its frame rate (README 6.3). Probing v2: the same, without requesting a 10 s backlog at once and also switching up if the next one keeps up with its frame rate. Only acts with Rendition on Auto. Remembered in this browser.',
+          )}
         >
           <span>ABR:</span>
           <select
@@ -520,29 +527,32 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
             onChange={(e) => handleAbrChange(e.target.value as MoqAbr)}
             className="bg-slate-900 border border-slate-700 text-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-emerald-500"
           >
-            <option value="watch">Librería</option>
-            <option value="probe" disabled={abrSupported === false}>Sondeo{abrSupported === false ? ' (no con esta versión)' : ''}</option>
-            <option value="probe2" disabled={abrSupported === false}>Sondeo v2{abrSupported === false ? ' (no con esta versión)' : ''}</option>
+            <option value="watch">{t('Librería', 'Library')}</option>
+            <option value="probe" disabled={abrSupported === false}>{t('Sondeo', 'Probing')}{abrSupported === false ? t(' (no con esta versión)', ' (not with this version)') : ''}</option>
+            <option value="probe2" disabled={abrSupported === false}>{t('Sondeo v2', 'Probing v2')}{abrSupported === false ? t(' (no con esta versión)', ' (not with this version)') : ''}</option>
           </select>
         </label>
         <label
           className="flex items-center space-x-1.5 whitespace-nowrap"
-          title="Experimento, no el comportamiento de @moq/watch: qué hacer al bajar de calidad. Se recuerda en este navegador. Sin corte: el original, sigue descargando la calidad anterior hasta que la nueva la alcanza. Cancelar: deja de descargar la anterior al momento y congela su última imagen hasta que la nueva la alcanza. Prioridad: sin corte, pero la nueva calidad se pide con más prioridad que la anterior. Subir de calidad es siempre sin corte. Se aplica al siguiente cambio, sin reconectar."
+          title={t(
+            'Experimento, no el comportamiento de @moq/watch: qué hacer al bajar de calidad. Se recuerda en este navegador. Sin corte: el original, sigue descargando la calidad anterior hasta que la nueva la alcanza. Cancelar: deja de descargar la anterior al momento y congela su última imagen hasta que la nueva la alcanza. Prioridad: sin corte, pero la nueva calidad se pide con más prioridad que la anterior. Subir de calidad es siempre sin corte. Se aplica al siguiente cambio, sin reconectar.',
+            'Experiment, not the @moq/watch behaviour: what to do when switching down. Remembered in this browser. Seamless: the original, keeps downloading the previous rendition until the new one catches up. Cancel: stops downloading the previous one at once and freezes its last frame until the new one catches up. Priority: seamless, but the new rendition is requested with higher priority than the previous one. Switching up is always seamless. Applies to the next switch, without reconnecting.',
+          )}
         >
-          <span>Cambio:</span>
+          <span>{t('Cambio:', 'Switching:')}</span>
           <select
             value={switching}
             disabled={switchingSupported === false}
             onChange={(e) => handleSwitchingChange(e.target.value as MoqSwitching)}
             className="bg-slate-900 border border-slate-700 text-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
           >
-            <option value="seamless">Sin corte</option>
-            <option value="cancel">Cancelar</option>
-            <option value="priority">Prioridad</option>
+            <option value="seamless">{t('Sin corte', 'Seamless')}</option>
+            <option value="cancel">{t('Cancelar', 'Cancel')}</option>
+            <option value="priority">{t('Prioridad', 'Priority')}</option>
           </select>
         </label>
-        <label className="flex items-center space-x-1.5 whitespace-nowrap" title="Auto deja decidir al algoritmo de adaptación del reproductor; fijar una calidad lo desactiva.">
-          <span>Calidad:</span>
+        <label className="flex items-center space-x-1.5 whitespace-nowrap" title={t('Auto deja decidir al algoritmo de adaptación del reproductor; fijar una calidad lo desactiva.', 'Auto lets the player\'s adaptation algorithm decide; fixing a rendition disables it.')}>
+          <span>{t('Calidad:', 'Rendition:')}</span>
           <select
             value={quality}
             onChange={(e) => handleQualityChange(e.target.value === 'auto' ? 'auto' : Number(e.target.value))}
@@ -560,9 +570,9 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
           type="button"
           onClick={() => setShowExplain((v) => !v)}
           className="ml-auto text-emerald-400 hover:text-emerald-300 whitespace-nowrap"
-          title="Cómo sube y baja de calidad este reproductor con las opciones elegidas"
+          title={t('Cómo sube y baja de calidad este reproductor con las opciones elegidas', 'How this player switches renditions up and down with the selected options')}
         >
-          {showExplain ? 'Ocultar explicación ▴' : 'Cómo funciona ▾'}
+          {showExplain ? t('Ocultar explicación ▴', 'Hide explanation ▴') : t('Cómo funciona ▾', 'How it works ▾')}
         </button>
         </div>
       </div>

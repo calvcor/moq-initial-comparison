@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import type { Campaign } from '../types';
+import { lang, t } from '../lib/i18n';
 
 // Análisis en texto de una campaña (README 4.8, «Análisis de la campaña»): lo escribe el orquestador
 // (GET /api/campaigns/{id}/analysis) con reglas fijas a partir de las pruebas válidas; aquí solo se muestra. TextReport
@@ -14,13 +15,16 @@ export interface TextAnalysis {
 }
 
 export const BUSY_NOTE = (busy: string) =>
-  `Hay una campaña en marcha («${busy}»): el análisis y la comparación esperan a que termine o se ponga en pausa, para no interferir en sus medidas.`;
+  t(
+    `Hay una campaña en marcha («${busy}»): el análisis y la comparación esperan a que termine o se ponga en pausa, para no interferir en sus medidas.`,
+    `A campaign is running (“${busy}”): the analysis and the comparison wait until it finishes or is paused, so as not to interfere with its measurements.`,
+  );
 
 /** El texto entero, para pegarlo en notas o en un documento. */
 function plainText(title: string, a: TextAnalysis): string {
   const lines = [title, '', ...a.overview];
   if (a.conditions?.length) {
-    lines.push('', 'QUÉ CAMBIA ENTRE LAS DOS');
+    lines.push('', t('QUÉ CAMBIA ENTRE LAS DOS', 'WHAT DIFFERS BETWEEN THE TWO'));
     a.conditions.forEach((c) => lines.push(`- ${c.label}: ${c.a} (A) / ${c.b} (B)`));
   }
   for (const section of a.sections) {
@@ -31,7 +35,7 @@ function plainText(title: string, a: TextAnalysis): string {
     }
   }
   if (a.warnings.length) {
-    lines.push('', 'AVISOS');
+    lines.push('', t('AVISOS', 'WARNINGS'));
     a.warnings.forEach((w) => lines.push(`- ${w}`));
   }
   return lines.join('\n');
@@ -58,11 +62,11 @@ export const TextReport: React.FC<{ data: TextAnalysis; title: string; method: s
             <p key={i}>{s}</p>
           ))}
         </div>
-        <button className="ml-auto shrink-0 flex items-center gap-1 text-slate-300 hover:text-white" onClick={copy} title="Copiar como texto">
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />} {copied ? 'Copiado' : 'Copiar texto'}
+        <button className="ml-auto shrink-0 flex items-center gap-1 text-slate-300 hover:text-white" onClick={copy} title={t('Copiar como texto', 'Copy as text')}>
+          {copied ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />} {copied ? t('Copiado', 'Copied') : t('Copiar texto', 'Copy text')}
         </button>
       </div>
-      {copyError && <p className="text-rose-300">No se pudo copiar al portapapeles</p>}
+      {copyError && <p className="text-rose-300">{t('No se pudo copiar al portapapeles', 'Could not copy to the clipboard')}</p>}
       {data.warnings.length > 0 && (
         <ul className="space-y-0.5 text-amber-300/90">
           {data.warnings.map((w, i) => (
@@ -72,7 +76,7 @@ export const TextReport: React.FC<{ data: TextAnalysis; title: string; method: s
       )}
       {data.conditions && data.conditions.length > 0 && (
         <section className="space-y-1">
-          <h3 className="text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-800 pb-0.5">Qué cambia entre las dos</h3>
+          <h3 className="text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-800 pb-0.5">{t('Qué cambia entre las dos', 'What differs between the two')}</h3>
           <table className="w-full text-left">
             <thead className="text-[10px] text-slate-500 uppercase">
               <tr>
@@ -123,7 +127,7 @@ export const CampaignAnalysis: React.FC<{ campaign: Campaign; busy: string | nul
   useEffect(() => {
     if (busy) return;
     let cancelled = false;
-    fetch(`/api/campaigns/${campaign.id}/analysis`)
+    fetch(`/api/campaigns/${campaign.id}/analysis?lang=${lang}`)
       .then(async (res) => {
         const body = await res.json().catch(() => null);
         if (!res.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${res.status}`);
@@ -142,13 +146,16 @@ export const CampaignAnalysis: React.FC<{ campaign: Campaign; busy: string | nul
   }, [campaign.id, done, busy]);
 
   if (busy) return <p className="text-amber-300/90">{BUSY_NOTE(busy)}</p>;
-  if (error) return <p className="text-rose-300">Análisis: {error}</p>;
-  if (!data) return <p className="text-slate-500">Analizando…</p>;
+  if (error) return <p className="text-rose-300">{t('Análisis', 'Analysis')}: {error}</p>;
+  if (!data) return <p className="text-slate-500">{t('Analizando…', 'Analysing…')}</p>;
   return (
     <TextReport
       data={data}
-      title={`Análisis de «${campaign.name}»`}
-      method="Reglas fijas sobre las pruebas válidas: la unidad es la condición (emisión × red × objetivo), con la mediana de sus repeticiones. Una diferencia cuenta en una condición si supera la variación entre sus repeticiones; las tendencias usan solo las combinaciones medidas en todos los niveles. Es una lectura descriptiva, no un contraste estadístico (README 4.8)."
+      title={t(`Análisis de «${campaign.name}»`, `Analysis of “${campaign.name}”`)}
+      method={t(
+        'Reglas fijas sobre las pruebas válidas: la unidad es la condición (emisión × red × objetivo), con la mediana de sus repeticiones. Una diferencia cuenta en una condición si supera la variación entre sus repeticiones; las tendencias usan solo las combinaciones medidas en todos los niveles. Es una lectura descriptiva, no un contraste estadístico (README 4.8).',
+        'Fixed rules over the valid runs: the unit is the condition (stream × network × target), with the median of its repetitions. A difference counts in a condition if it exceeds the variation between its repetitions; trends use only the combinations measured at every level. It is a descriptive reading, not a statistical test (README 4.8).',
+      )}
     />
   );
 };

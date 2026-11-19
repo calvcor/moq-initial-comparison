@@ -8,6 +8,7 @@ import { gridCols } from '../lib/layout';
 import { syncClock } from '../lib/clock';
 import { PLAYER_IDS, INITIAL_METRICS } from '../lib/samples';
 import { dashManifestUrl } from '../lib/dashUrl';
+import { t } from '../lib/i18n';
 import type { CampaignAssignment, PlayerId, PlayerMetrics, PlayerPreset, ServerStatus } from '../types';
 
 // Vista previa de una prueba (README, 4.8): el servidor ya ha aplicado su red y su emisión, y aquí se montan los
@@ -74,27 +75,35 @@ export const CampaignPreview: React.FC<{ preview: Preview; onClose: () => void }
     <div className="bg-slate-900 border border-sky-800/60 rounded-xl p-4 space-y-3 text-xs">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="flex items-center gap-1.5 font-semibold text-sky-200">
-          <Eye className="w-4 h-4" /> Vista previa de <span className="font-mono">{preview.run}</span>
+          <Eye className="w-4 h-4" /> {t('Vista previa de', 'Preview of')} <span className="font-mono">{preview.run}</span>
         </span>
         <span className="text-slate-400">
-          red <span className="text-slate-200">{preview.network_label}</span> · objetivo <span className="text-slate-200">{preview.target_label}</span> ·
-          repetición {(preview.rep ?? 0) + 1}
+          {t('red', 'network')} <span className="text-slate-200">{preview.network_label}</span> · {t('objetivo', 'target')}{' '}
+          <span className="text-slate-200">{preview.target_label}</span> · {t('repetición', 'repetition')} {(preview.rep ?? 0) + 1}
           {preview.kind === 'control' && ' · control'}
         </span>
         <span className="font-mono text-slate-400">
           {players.map((p) => `${p} ${lastG2g[p] != null ? `${Math.round(lastG2g[p]!)} ms` : '--'}`).join(' · ')}
         </span>
         <span className="text-slate-500">
-          Red y emisión de la prueba aplicadas en el servidor; no se graba nada. Al cerrar vuelven a como estaban.
+          {t(
+            'Red y emisión de la prueba aplicadas en el servidor; no se graba nada. Al cerrar vuelven a como estaban.',
+            'Network and stream of the run applied on the server; nothing is recorded. Closing restores them.',
+          )}
         </span>
         <button className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700 text-slate-200 hover:border-slate-500" onClick={onClose}>
-          <X className="w-3.5 h-3.5" /> Cerrar
+          <X className="w-3.5 h-3.5" /> {t('Cerrar', 'Close')}
         </button>
       </div>
 
       {!ready || !status ? (
         <p className="text-slate-400">
-          {preview.stream_changed ? `Emisión reiniciada con la configuración de la prueba: se esperan ${preview.settle_s} s antes de montar los reproductores…` : 'Cargando…'}
+          {preview.stream_changed
+            ? t(
+                `Emisión reiniciada con la configuración de la prueba: se esperan ${preview.settle_s} s antes de montar los reproductores…`,
+                `Stream restarted with the run's configuration: waiting ${preview.settle_s} s before mounting the players…`,
+              )
+            : t('Cargando…', 'Loading…')}
         </p>
       ) : (
         <div className={`grid gap-4 ${gridCols(active)}`}>

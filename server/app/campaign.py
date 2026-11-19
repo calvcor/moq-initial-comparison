@@ -595,7 +595,7 @@ class Campaigns:
     # Lo que una campaña gana al medir y se quita al borrar sus medidas
     MEASURED_FIELDS = ("restore", "versions", "worker_browsers", "reopened", "holds_queue", "current", "batch")
     # Con el índice de las filas y el análisis guardado, que salen de ellas (README 4.8)
-    MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl", "samples_index.json", "ip_index.json", "analysis.json")
+    MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl", "samples_index.json", "ip_index.json", "analysis.json", "analysis.en.json")
 
     def clear(self, cid: str) -> dict:
         """Borra las medidas de una campaña que no está en marcha y la deja lista, como recién creada: las pruebas se

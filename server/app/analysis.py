@@ -23,46 +23,47 @@ import statistics
 from typing import Optional
 
 from . import samples_index
+from .i18n import Localized, language, t
 from .compare import INVALID_BEFORE, PLAYER_LABEL, SOURCE_LABEL, STALL_FIX, hp, local_day, num, relative
 
 PLAYERS = ("dash", "moq", "rtc")
 # El código del análisis entra en la clave del análisis guardado: al desplegar otra versión, se rehace
 CODE = hashlib.sha1(b"".join(open(os.path.join(os.path.dirname(__file__), name), "rb").read()
-                             for name in ("analysis.py", "compare.py", "samples_index.py"))).hexdigest()
+                             for name in ("analysis.py", "compare.py", "samples_index.py", "i18n.py"))).hexdigest()
 
 # Métricas del análisis: etiqueta, unidad, escala de presentación, decimales, diferencia por debajo de la cual se
 # consideran iguales (en unidades del resumen; "frame": un frame de la emisión; "1%": el 1 % del valor), por debajo de
 # qué media no se da porcentaje relativo (sobre valores tan pequeños exagera) y cómo se dice que uno va por debajo o por
 # encima del otro
 METRICS = {
-    "g2g_p50_ms": dict(label="latencia mediana", unit="ms", scale=1, digits=0, same="frame", small=None,
-                       lower="tiene menos latencia", higher="tiene más latencia"),
-    "g2g_p95_ms": dict(label="latencia p95", unit="ms", scale=1, digits=0, same="frame", small=None,
-                       lower="tiene menos latencia en el p95", higher="tiene más latencia en el p95"),
-    "stall_ratio": dict(label="tiempo parado", unit="%", scale=100, digits=1, same=0.0005, small=0.005,
-                        lower="se ha parado menos", higher="se ha parado más"),
-    "height_mean": dict(label="altura media reproducida", unit="p", scale=1, digits=0, same=1, small=None,
-                        lower="ha reproducido a menos altura", higher="ha reproducido a más altura"),
-    "ladder_top_share": dict(label="tiempo en la calidad más alta de la emisión", unit="%", scale=100, digits=0, same=0.01, small=0.05,
-                             lower="ha pasado menos tiempo en la calidad más alta", higher="ha pasado más tiempo en la calidad más alta"),
-    "kbps_mean": dict(label="bitrate de vídeo recibido", unit="kbit/s", scale=1, digits=0, same="1%", small=None,
-                      lower="ha recibido menos bitrate", higher="ha recibido más bitrate"),
-    "quality_switches": dict(label="cambios de calidad", unit="", scale=1, digits=1, same=1, small=1,
-                             lower="ha cambiado menos de calidad", higher="ha cambiado más de calidad"),
-    "content_skipped_share": dict(label="contenido no reproducido", unit="%", scale=100, digits=1, same=0.0005, small=0.005,
-                                  lower="ha dejado sin reproducir menos contenido", higher="ha dejado sin reproducir más contenido"),
+    "g2g_p50_ms": Localized(label=("latencia mediana", "median latency"), unit="ms", scale=1, digits=0, same="frame", small=None,
+                       lower=("tiene menos latencia", "has lower latency"), higher=("tiene más latencia", "has higher latency")),
+    "g2g_p95_ms": Localized(label=("latencia p95", "p95 latency"), unit="ms", scale=1, digits=0, same="frame", small=None,
+                       lower=("tiene menos latencia en el p95", "has lower p95 latency"), higher=("tiene más latencia en el p95", "has higher p95 latency")),
+    "stall_ratio": Localized(label=("tiempo parado", "stall time"), unit="%", scale=100, digits=1, same=0.0005, small=0.005,
+                        lower=("se ha parado menos", "has stalled less"), higher=("se ha parado más", "has stalled more")),
+    "height_mean": Localized(label=("altura media reproducida", "mean played height"), unit="p", scale=1, digits=0, same=1, small=None,
+                        lower=("ha reproducido a menos altura", "has played at a lower height"), higher=("ha reproducido a más altura", "has played at a higher height")),
+    "ladder_top_share": Localized(label=("tiempo en la calidad más alta de la emisión", "time in the highest rendition of the stream"), unit="%", scale=100, digits=0, same=0.01, small=0.05,
+                             lower=("ha pasado menos tiempo en la calidad más alta", "has spent less time in the highest rendition"), higher=("ha pasado más tiempo en la calidad más alta", "has spent more time in the highest rendition")),
+    "kbps_mean": Localized(label=("bitrate de vídeo recibido", "received video bitrate"), unit="kbit/s", scale=1, digits=0, same="1%", small=None,
+                      lower=("ha recibido menos bitrate", "has received less bitrate"), higher=("ha recibido más bitrate", "has received more bitrate")),
+    "quality_switches": Localized(label=("cambios de calidad", "quality switches"), unit="", scale=1, digits=1, same=1, small=1,
+                             lower=("ha cambiado menos de calidad", "has switched quality less"), higher=("ha cambiado más de calidad", "has switched quality more")),
+    "content_skipped_share": Localized(label=("contenido no reproducido", "content not played"), unit="%", scale=100, digits=1, same=0.0005, small=0.005,
+                                  lower=("ha dejado sin reproducir menos contenido", "has left less content unplayed"), higher=("ha dejado sin reproducir más contenido", "has left more content unplayed")),
 }
 # Las de las tendencias (la p95 y el tiempo en la más alta harían el texto el doble de largo sin decir mucho más)
 TREND_METRICS = ("g2g_p50_ms", "stall_ratio", "height_mean", "kbps_mean", "quality_switches", "content_skipped_share")
 
 # Familias de parámetros de red: los que cambian juntos en una serie, cómo se ordena de menos a más restrictiva y cómo
-# se dice al recorrerla
+# se dice al recorrerla (en español e inglés; network_series lo da en el idioma de la petición)
 FAMILIES = {
-    "loss": (("loss_pct",), lambda v: max(x or 0 for x in v), "al subir la pérdida"),
-    "rate": (("rate_kbit",), lambda v: -min((x if x else float("inf")) for x in v), "al bajar el límite de caudal"),
-    "delay": (("delay_ms",), lambda v: sum(x or 0 for x in v), "al subir el retardo"),
-    "jitter": (("jitter_ms",), lambda v: sum(x or 0 for x in v), "al subir el jitter"),
-    "queue": (("queue_ms",), lambda v: -sum(x or 0 for x in v), "al acortar la cola del router"),
+    "loss": (("loss_pct",), lambda v: max(x or 0 for x in v), ("al subir la pérdida", "as loss increases")),
+    "rate": (("rate_kbit",), lambda v: -min((x if x else float("inf")) for x in v), ("al bajar el límite de caudal", "as the bandwidth limit decreases")),
+    "delay": (("delay_ms",), lambda v: sum(x or 0 for x in v), ("al subir el retardo", "as delay increases")),
+    "jitter": (("jitter_ms",), lambda v: sum(x or 0 for x in v), ("al subir el jitter", "as jitter increases")),
+    "queue": (("queue_ms",), lambda v: -sum(x or 0 for x in v), ("al acortar la cola del router", "as the router queue shortens")),
 }
 
 def median(values: list[float]) -> Optional[float]:
@@ -120,10 +121,17 @@ class Data:
 
     def cell_label(self, cell: tuple) -> str:
         stream, network, target = cell
-        parts = [f"emisión {stream + 1}"] if len(self.plan["streams"]) > 1 else []
+        parts = [t(f"emisión {stream + 1}", f"stream {stream + 1}")] if len(self.plan["streams"]) > 1 else []
         parts.append("control" if network is None else self.plan["networks"][network]["label"])
         parts.append(self.plan["targets"][target]["label"])
         return " · ".join(parts)
+
+
+def unit_suffix(unit: str) -> str:
+    """La unidad detrás del número: con espacio (12 %), salvo el % en inglés (12%)."""
+    if not unit:
+        return ""
+    return unit if unit == "%" and t("es", "en") == "en" else f" {unit}"
 
 
 def fmt(key: str, value: Optional[float]) -> str:
@@ -132,7 +140,7 @@ def fmt(key: str, value: Optional[float]) -> str:
         return "--"
     if key == "height_mean":
         return hp(value)
-    return f"{num(value * m['scale'], m['digits'])}{(' ' + m['unit']) if m['unit'] else ''}"
+    return f"{num(value * m['scale'], m['digits'])}{unit_suffix(m['unit'])}"
 
 
 def seq(key: str, values: list[Optional[float]]) -> str:
@@ -140,13 +148,13 @@ def seq(key: str, values: list[Optional[float]]) -> str:
     m = METRICS[key]
     if key == "height_mean":
         return " → ".join(hp(v) for v in values)
-    return " → ".join("--" if v is None else num(v * m["scale"], m["digits"]) for v in values) + (f" {m['unit']}" if m["unit"] else "")
+    return " → ".join("--" if v is None else num(v * m["scale"], m["digits"]) for v in values) + unit_suffix(m["unit"])
 
 
 def listing(items: list[str], limit: int = 6) -> str:
     shown = items[:limit]
-    text = ", ".join(shown[:-1]) + (f" y {shown[-1]}" if len(shown) > 1 else shown[0] if shown else "")
-    return text + (f" (y {len(items) - limit} más)" if len(items) > limit else "")
+    text = ", ".join(shown[:-1]) + (t(f" y {shown[-1]}", f" and {shown[-1]}") if len(shown) > 1 else shown[0] if shown else "")
+    return text + (t(f" (y {len(items) - limit} más)", f" (and {len(items) - limit} more)") if len(items) > limit else "")
 
 
 # --- comparación emparejada (dos protocolos o dos emisiones) ---
@@ -184,18 +192,32 @@ def paired_sentence(key: str, X: str, Y: str, r: dict) -> Optional[str]:
     if not r["lower"] and not r["higher"]:
         return None
     first, second = ("lower", "higher") if r["lower"] >= r["higher"] else ("higher", "lower")
-    text = f"{X} {m[first]} que {Y} en {r[first]} de {r['n']} {'condición' if r['n'] == 1 else 'condiciones'}"
+    text = t(f"{X} {m[first]} que {Y} en {r[first]} de {r['n']} {'condición' if r['n'] == 1 else 'condiciones'}",
+             f"{X} {m[first]} than {Y} in {r[first]} of {r['n']} {'condition' if r['n'] == 1 else 'conditions'}")
     if r[second]:
-        text += f", y al revés en {r[second]}"
+        text += t(f", y al revés en {r[second]}", f", and the reverse in {r[second]}")
     if r["unclear"]:
-        text += f"; en {r['unclear']} la diferencia no supera la variación entre repeticiones" if r["unclear"] > r["norep"] else f"; en {r['unclear']} no hay diferencia clara"
+        if r["unclear"] > r["norep"]:
+            text += t(f"; en {r['unclear']} la diferencia no supera la variación entre repeticiones",
+                      f"; in {r['unclear']} the difference does not exceed the variation between repetitions")
+        else:
+            text += t(f"; en {r['unclear']} no hay diferencia clara", f"; in {r['unclear']} there is no clear difference")
     # Si la media de conjunto va al revés que el recuento (unas pocas condiciones con diferencias grandes), se dice
     against = (r["x"] > r["y"]) if first == "lower" else (r["x"] < r["y"])
-    text += f". En conjunto, {'en cambio, ' if against else ''}{fmt(key, r['x'])} frente a {fmt(key, r['y'])}"
+    text += t(f". En conjunto, {'en cambio, ' if against else ''}{fmt(key, r['x'])} frente a {fmt(key, r['y'])}",
+              f". Overall, {'however, ' if against else ''}{fmt(key, r['x'])} vs. {fmt(key, r['y'])}")
     rel = relative(r["x"], r["y"])
     if rel is not None and (m["small"] is None or min(r["x"], r["y"]) >= m["small"]) and abs(rel) >= 0.01:
-        text += f", {num(rel + 1, 1)} veces más" if rel >= 1 else f", un {num(abs(rel) * 100)} % {'menos' if rel < 0 else 'más'}"
+        if rel >= 1:
+            text += t(f", {num(rel + 1, 1)} veces más", f", {num(rel + 1, 1)} times as much")
+        else:
+            text += t(f", un {num(abs(rel) * 100)} % {'menos' if rel < 0 else 'más'}", f", {num(abs(rel) * 100)}% {'less' if rel < 0 else 'more'}")
     return text + "."
+
+
+def quiet_sentence(text: str) -> bool:
+    """Si una frase de compare_levels es la de «sin diferencias claras» (en cualquiera de los dos idiomas)."""
+    return text.startswith(t("Sin diferencias", "No clear differences"))
 
 
 def compare_levels(data: Data, X: str, Y: str, pairs: list, keys: tuple, other: Optional[Data] = None) -> list[str]:
@@ -210,7 +232,7 @@ def compare_levels(data: Data, X: str, Y: str, pairs: list, keys: tuple, other: 
         else:
             quiet.append(METRICS[key]["label"])
     if quiet:
-        out.append(f"Sin diferencias claras en {listing(quiet, 10)}.")
+        out.append(t(f"Sin diferencias claras en {listing(quiet, 10)}.", f"No clear differences in {listing(quiet, 10)}."))
     return out
 
 
@@ -222,7 +244,7 @@ def protocols_section(data: Data) -> list[dict]:
             pairs = [(c, px, c, py) for c in data.cells if px in data.cells[c] and py in data.cells[c]]
             if not pairs:
                 continue
-            blocks.append({"title": f"{PLAYER_LABEL[px]} frente a {PLAYER_LABEL[py]}",
+            blocks.append({"title": t(f"{PLAYER_LABEL[px]} frente a {PLAYER_LABEL[py]}", f"{PLAYER_LABEL[px]} vs. {PLAYER_LABEL[py]}"),
                            "sentences": compare_levels(data, PLAYER_LABEL[px], PLAYER_LABEL[py], pairs, keys)})
     return blocks
 
@@ -233,7 +255,7 @@ def stream_differences(plan: dict) -> list[str]:
         frag = "1 frame" if s.get("frag_duration") == 0 else f"{num(s.get('frag_duration'), 1)} s"
         return [SOURCE_LABEL.get(s.get("source", "file"), s.get("source")), f"GOP {s.get('gop_size')}", f"seg {num(s.get('seg_duration'), 1)} s",
                 f"frag {frag}", ", ".join(f"{r['height']}p {r['bitrate_kbps']}" for r in s["renditions"]),
-                "audio WebRTC" if s.get("rtc_audio") else "sin audio", "pacer WebRTC" if s.get("rtc_pacing") else "sin pacer"]
+                "audio WebRTC" if s.get("rtc_audio") else t("sin audio", "no audio"), "pacer WebRTC" if s.get("rtc_pacing") else t("sin pacer", "no pacer")]
     all_parts = [parts(s) for s in plan["streams"]]
     differs = [k for k in range(len(all_parts[0])) if len({p[k] for p in all_parts}) > 1]
     return [" · ".join(p[k] for k in differs) for p in all_parts]
@@ -244,7 +266,7 @@ def streams_section(data: Data) -> list[dict]:
     if len(streams) < 2:
         return []
     names = stream_differences(data.plan)
-    label = lambda s: f"Emisión {s + 1}" + (f" ({names[s]})" if names[s] else "")
+    label = lambda s: t(f"Emisión {s + 1}", f"Stream {s + 1}") + (f" ({names[s]})" if names[s] else "")
     blocks = []
     for sx in range(len(streams)):
         for sy in range(sx + 1, len(streams)):
@@ -254,10 +276,10 @@ def streams_section(data: Data) -> list[dict]:
                          and p in data.cells[(s, n, t)] and p in data.cells[(sy, n, t)]]
                 if not pairs:
                     continue
-                X, Y = f"Con la emisión {sx + 1}, {PLAYER_LABEL[p]}", f"con la {sy + 1}"
+                X, Y = t(f"Con la emisión {sx + 1}, {PLAYER_LABEL[p]}", f"With stream {sx + 1}, {PLAYER_LABEL[p]}"), t(f"con la {sy + 1}", f"with stream {sy + 1}")
                 for sentence in compare_levels(data, X, Y, pairs, data.keys):
-                    sentences.append(sentence if not sentence.startswith("Sin diferencias") else f"{PLAYER_LABEL[p]}: {sentence[0].lower()}{sentence[1:]}")
-            blocks.append({"title": f"{label(sx)} frente a {label(sy)[0].lower()}{label(sy)[1:]}", "sentences": sentences})
+                    sentences.append(sentence if not quiet_sentence(sentence) else f"{PLAYER_LABEL[p]}: {sentence[0].lower()}{sentence[1:]}")
+            blocks.append({"title": t(f"{label(sx)} frente a {label(sy)[0].lower()}{label(sy)[1:]}", f"{label(sx)} vs. {label(sy)[0].lower()}{label(sy)[1:]}"), "sentences": sentences})
     return blocks
 
 
@@ -283,31 +305,33 @@ def describe(values: list[Optional[float]], labels: list[str], tol: float) -> Op
         head, tail = steps[:k - 1], steps[k - 1:]
         if max(v[:k]) - min(v[:k]) <= max(tol, 0.1 * span) and tail and big(head) <= 0.25 * big(tail):
             if all(x >= -step_tol for x in tail) or all(x <= step_tol for x in tail):
-                return f"apenas cambia hasta {lab[k - 1]} y {'sube' if v[-1] > v[k - 1] else 'baja'} a partir de {lab[k]}"
+                return t(f"apenas cambia hasta {lab[k - 1]} y {'sube' if v[-1] > v[k - 1] else 'baja'} a partir de {lab[k]}",
+                         f"barely changes up to {lab[k - 1]} and {'rises' if v[-1] > v[k - 1] else 'falls'} from {lab[k]} on")
     # Meseta al final
     for k in range(len(v) - 1, 2, -1):
         head, tail = steps[:len(v) - k], steps[len(v) - k:]
         if max(v[-k:]) - min(v[-k:]) <= max(tol, 0.1 * span) and head and big(tail) <= 0.25 * big(head):
             if all(x >= -step_tol for x in head) or all(x <= step_tol for x in head):
-                return f"{'sube' if v[-k] > v[0] else 'baja'} hasta {lab[-k]} y luego apenas cambia"
+                return t(f"{'sube' if v[-k] > v[0] else 'baja'} hasta {lab[-k]} y luego apenas cambia",
+                         f"{'rises' if v[-k] > v[0] else 'falls'} to {lab[-k]} and then barely changes")
     # Un valle o un pico interior claro (más que el umbral de paso a los dos lados), con tramos sin retrocesos grandes
     peak, low = v.index(max(v)), v.index(min(v))
     if 0 < low < len(v) - 1 and min(v[0], v[-1]) - v[low] > max(2 * tol, step_tol) \
             and all(x <= step_tol for x in steps[:low]) and all(x >= -step_tol for x in steps[low:]):
-        return f"baja hasta {lab[low]} y luego sube"
+        return t(f"baja hasta {lab[low]} y luego sube", f"falls to {lab[low]} and then rises")
     if 0 < peak < len(v) - 1 and v[peak] - max(v[0], v[-1]) > max(2 * tol, step_tol) \
             and all(x >= -step_tol for x in steps[:peak]) and all(x <= step_tol for x in steps[peak:]):
-        return f"sube hasta {lab[peak]} y luego baja"
+        return t(f"sube hasta {lab[peak]} y luego baja", f"rises to {lab[peak]} and then falls")
     if ups and not downs:
-        return "sube en cada paso" if ups == len(steps) > 1 else "sube"
+        return t("sube en cada paso", "rises at every step") if ups == len(steps) > 1 else t("sube", "rises")
     if downs and not ups:
-        return "baja en cada paso" if downs == len(steps) > 1 else "baja"
+        return t("baja en cada paso", "falls at every step") if downs == len(steps) > 1 else t("baja", "falls")
     if not ups and not downs:
-        return "tiende a subir" if v[-1] - v[0] > 2 * tol else "tiende a bajar" if v[0] - v[-1] > 2 * tol else "varía sin tendencia clara"
+        return t("tiende a subir", "tends to rise") if v[-1] - v[0] > 2 * tol else t("tiende a bajar", "tends to fall") if v[0] - v[-1] > 2 * tol else t("varía sin tendencia clara", "varies with no clear trend")
     net = v[-1] - v[0]
     if abs(net) > span / 2:
-        return "tiende a subir" if net > 0 else "tiende a bajar"
-    return "varía sin tendencia clara"
+        return t("tiende a subir", "tends to rise") if net > 0 else t("tiende a bajar", "tends to fall")
+    return t("varía sin tendencia clara", "varies with no clear trend")
 
 
 def series_values(data: Data, player: str, key: str, levels: list, which: str) -> list[Optional[float]]:
@@ -361,12 +385,12 @@ def trend_block(data: Data, title: str, verb: str, labels: list[str], levels_of:
         if parts:
             text = f"{label[0].upper()}{label[1:]} {verb}: " + "; ".join(parts)
             if unchanged:
-                text += f"; no cambia en {listing(unchanged)}"
+                text += t(f"; no cambia en {listing(unchanged)}", f"; unchanged for {listing(unchanged)}")
             sentences.append(text + ".")
         elif unchanged:
-            flat.append(f"{label} de {listing(unchanged)}")
+            flat.append(t(f"{label} de {listing(unchanged)}", f"{label} of {listing(unchanged)}"))
     if flat:
-        sentences.append(f"No cambian {verb}: {'; '.join(flat)}.")
+        sentences.append(t(f"No cambian {verb}: {'; '.join(flat)}.", f"Unchanged {verb}: {'; '.join(flat)}."))
     return {"title": title, "levels": labels, "sentences": sentences}
 
 
@@ -388,7 +412,7 @@ def network_series(plan: dict) -> list[tuple[str, list[int]]]:
                 distinct.setdefault(values[i], i)
             if len(distinct) >= 2:
                 ordered = sorted(distinct.values(), key=lambda i: order(values[i]))
-                out.append((verb, ordered))
+                out.append((t(*verb), ordered))
     return out
 
 
@@ -396,7 +420,7 @@ def network_section(data: Data) -> list[dict]:
     blocks = []
     for verb, members in network_series(data.plan):
         labels = [data.plan["networks"][i]["label"] for i in members]
-        title = f"Red: {' → '.join(labels)}"
+        title = t(f"Red: {' → '.join(labels)}", f"Network: {' → '.join(labels)}")
         blocks.append(trend_block(data, title, verb, labels, {p: members for p in data.players}, "network"))
     return blocks
 
@@ -411,7 +435,8 @@ def target_section(data: Data) -> list[dict]:
         levels[p] = sorted(known, key=lambda i: targets[i][f"{p}_ms"])
     order = levels[data.players[0]] if data.players else []
     labels = [targets[i]["label"] for i in order]
-    block = trend_block(data, f"Latencia objetivo: {' → '.join(labels)}", "al subir la latencia objetivo", labels, levels, "target")
+    block = trend_block(data, t(f"Latencia objetivo: {' → '.join(labels)}", f"Target latency: {' → '.join(labels)}"),
+                        t("al subir la latencia objetivo", "as target latency increases"), labels, levels, "target")
     # Si la latencia sigue al objetivo o se queda por encima de los más bajos
     for p in data.players:
         values = series_values(data, p, "g2g_p50_ms", levels[p], "target")
@@ -423,16 +448,21 @@ def target_section(data: Data) -> list[dict]:
         floor = min(v for _, v in pairs)
         if not above:
             (t0, v0), (t1, v1) = pairs[0], pairs[-1]
-            block["sentences"].append(f"{PLAYER_LABEL[p]} sigue al objetivo: su latencia mediana no lo pasa en más de 2 frames en ninguno (de {num(v0)} ms con {num(t0)} ms a {num(v1)} ms con {num(t1)} ms).")
+            block["sentences"].append(t(f"{PLAYER_LABEL[p]} sigue al objetivo: su latencia mediana no lo pasa en más de 2 frames en ninguno (de {num(v0)} ms con {num(t0)} ms a {num(v1)} ms con {num(t1)} ms).",
+                                        f"{PLAYER_LABEL[p]} follows the target: its median latency never exceeds it by more than 2 frames (from {num(v0)} ms at {num(t0)} ms to {num(v1)} ms at {num(t1)} ms)."))
         elif above == [t for t, _ in pairs][:len(above)]:
             if len(above) == len(pairs):
-                block["sentences"].append(f"{PLAYER_LABEL[p]} queda por encima del objetivo en todos (no baja de {num(floor)} ms de mediana).")
+                block["sentences"].append(t(f"{PLAYER_LABEL[p]} queda por encima del objetivo en todos (no baja de {num(floor)} ms de mediana).",
+                                            f"{PLAYER_LABEL[p]} stays above the target in all of them (its median never goes below {num(floor)} ms)."))
             else:
-                block["sentences"].append(f"{PLAYER_LABEL[p]} queda por encima del objetivo con los de hasta {num(above[-1])} ms (no baja de {num(floor)} ms de mediana); a partir de ahí, en el objetivo o por debajo.")
+                block["sentences"].append(t(f"{PLAYER_LABEL[p]} queda por encima del objetivo con los de hasta {num(above[-1])} ms (no baja de {num(floor)} ms de mediana); a partir de ahí, en el objetivo o por debajo.",
+                                            f"{PLAYER_LABEL[p]} stays above the target for targets up to {num(above[-1])} ms (its median never goes below {num(floor)} ms); beyond that, at or below the target."))
         else:
-            block["sentences"].append(f"{PLAYER_LABEL[p]} queda por encima del objetivo en {len(above)} de {len(pairs)} objetivos ({', '.join(f'{num(t)} ms' for t in above)}).")
+            block["sentences"].append(t(f"{PLAYER_LABEL[p]} queda por encima del objetivo en {len(above)} de {len(pairs)} objetivos ({', '.join(f'{num(x)} ms' for x in above)}).",
+                                        f"{PLAYER_LABEL[p]} stays above the target in {len(above)} of {len(pairs)} targets ({', '.join(f'{num(x)} ms' for x in above)})."))
     if block["sentences"] and len(data.players) > 1:
-        block["sentences"].append("La latencia objetivo es el mando de cada reproductor tal como lo entiende su implementación: no significa lo mismo en los tres.")
+        block["sentences"].append(t("La latencia objetivo es el mando de cada reproductor tal como lo entiende su implementación: no significa lo mismo en los tres.",
+                                    "The target latency is each player's control knob as its implementation understands it: it does not mean the same in all three."))
     return [block]
 
 
@@ -457,15 +487,18 @@ def controls_section(data: Data) -> list[dict]:
             # Además del umbral, un cuarto del recorrido de todas las de control: con mucha dispersión, una diferencia
             # de medianas pequeña es ruido
             if abs(b - a) > max(abs_tol, rel_tol * abs(a), (max(all_values) - min(all_values)) / 4):
-                changes.append(f"{METRICS[key]['label']} de {fmt(key, a)} a {fmt(key, b)}")
+                changes.append(t(f"{METRICS[key]['label']} de {fmt(key, a)} a {fmt(key, b)}", f"{METRICS[key]['label']} from {fmt(key, a)} to {fmt(key, b)}"))
         if changes:
-            sentences.append(f"{PLAYER_LABEL[p]}, de la primera a la segunda mitad de la campaña: {'; '.join(changes)}.")
+            sentences.append(t(f"{PLAYER_LABEL[p]}, de la primera a la segunda mitad de la campaña: {'; '.join(changes)}.",
+                               f"{PLAYER_LABEL[p]}, from the first to the second half of the campaign: {'; '.join(changes)}."))
         else:
             stable.append(PLAYER_LABEL[p])
     n = len({r["id"] for r, _, _ in data.controls})
-    head = f"{n} pruebas de control (sin restricción de red), en el orden en que se midieron."
+    head = t(f"{n} pruebas de control (sin restricción de red), en el orden en que se midieron.",
+             f"{n} control runs (no network restriction), in the order they were measured.")
     if stable:
-        sentences.append(f"Sin deriva apreciable en {listing(stable)}: latencia, tiempo parado y altura parecidos en las dos mitades.")
+        sentences.append(t(f"Sin deriva apreciable en {listing(stable)}: latencia, tiempo parado y altura parecidos en las dos mitades.",
+                           f"No noticeable drift in {listing(stable)}: similar latency, stall time and height in both halves."))
     return [{"title": "", "sentences": [head] + sentences}]
 
 
@@ -478,9 +511,9 @@ def grouped(data: Data, cells: list[tuple]) -> str:
     for (stream, network), targets in groups.items():
         name = ("control" if network is None else data.plan["networks"][network]["label"])
         if len(data.plan["streams"]) > 1:
-            name = f"emisión {stream + 1} · {name}"
+            name = t(f"emisión {stream + 1} · {name}", f"stream {stream + 1} · {name}")
         everything = len(targets) == len(data.plan["targets"]) and len(targets) > 1
-        parts.append(f"{name} ({'todos los objetivos' if everything else listing(targets, 20)})")
+        parts.append(f"{name} ({t('todos los objetivos', 'all targets') if everything else listing(targets, 20)})")
     return "; ".join(parts)
 
 
@@ -490,22 +523,25 @@ def cases_section(data: Data) -> list[dict]:
         cells = [c for c in data.cells if p in data.cells[c]]
         blind = [c for c in cells if (data.value(c, p, "coverage") or 0) < 0.5]
         if blind:
-            sentences.append(f"{PLAYER_LABEL[p]} dio latencia medida en menos de la mitad de los segundos en {len(blind)} de {len(cells)} condiciones: {grouped(data, blind)}.")
+            sentences.append(t(f"{PLAYER_LABEL[p]} dio latencia medida en menos de la mitad de los segundos en {len(blind)} de {len(cells)} condiciones: {grouped(data, blind)}.",
+                               f"{PLAYER_LABEL[p]} had a latency measurement in fewer than half of the seconds in {len(blind)} of {len(cells)} conditions: {grouped(data, blind)}."))
         if len(data.plan["streams"][0]["renditions"]) > 1 and not data.plan.get("quality"):
             never = [c for c in cells if all(s.get("height_max") is not None and s["height_max"] < data.tops[c[0]] for s in data.cells[c][p])]
             if never and len(never) < len(cells):
-                sentences.append(f"{PLAYER_LABEL[p]} no llegó a la calidad más alta en ninguna repetición de {len(never)} de {len(cells)} condiciones: {grouped(data, never)}.")
+                sentences.append(t(f"{PLAYER_LABEL[p]} no llegó a la calidad más alta en ninguna repetición de {len(never)} de {len(cells)} condiciones: {grouped(data, never)}.",
+                                   f"{PLAYER_LABEL[p]} did not reach the highest rendition in any repetition in {len(never)} of {len(cells)} conditions: {grouped(data, never)}."))
             elif never:
-                sentences.append(f"{PLAYER_LABEL[p]} no llegó a la calidad más alta en ninguna prueba.")
+                sentences.append(t(f"{PLAYER_LABEL[p]} no llegó a la calidad más alta en ninguna prueba.", f"{PLAYER_LABEL[p]} did not reach the highest rendition in any run."))
         noisy = []
         for c in cells:
             mid, spread = data.value(c, p, "g2g_p50_ms"), data.spread(c, p, "g2g_p50_ms")
             if mid and spread is not None and spread > max(100, 0.5 * mid):
                 values = [s["g2g_p50_ms"] for s in data.cells[c][p] if s.get("g2g_p50_ms") is not None]
-                noisy.append((spread, f"{data.cell_label(c)} (de {num(min(values))} a {num(max(values))} ms)"))
+                noisy.append((spread, t(f"{data.cell_label(c)} (de {num(min(values))} a {num(max(values))} ms)", f"{data.cell_label(c)} (from {num(min(values))} to {num(max(values))} ms)")))
         if noisy:
             noisy.sort(reverse=True)
-            sentences.append(f"{PLAYER_LABEL[p]}, repeticiones con latencias medianas muy distintas: {listing([t for _, t in noisy], 4)}.")
+            sentences.append(t(f"{PLAYER_LABEL[p]}, repeticiones con latencias medianas muy distintas: {listing([x for _, x in noisy], 4)}.",
+                               f"{PLAYER_LABEL[p]}, repetitions with very different median latencies: {listing([x for _, x in noisy], 4)}."))
     return [{"title": "", "sentences": sentences}] if sentences else []
 
 
@@ -516,25 +552,29 @@ def overview(data: Data) -> list[str]:
     tests = [r for r in data.valid if r["kind"] == "test"]
     reps = [len(v) for cell in data.cells.values() for v in cell.values()]
     many = lambda n, one, other: f"{n} {one if n == 1 else other}"
-    out = [f"{many(len(tests), 'prueba válida', 'pruebas válidas')} en {many(len(data.cells), 'condición', 'condiciones')} ({many(len(plan['streams']), 'emisión', 'emisiones')} × "
-           f"{many(len(plan['networks']), 'red', 'redes')} × {many(len(plan['targets']), 'objetivo', 'objetivos')}), con {listing([PLAYER_LABEL[p] for p in data.players])}"
-           f"{' a la vez' if plan.get('player_mode', 'together') == 'together' and len(data.players) > 1 else ''}; "
-           f"{(num(min(reps)) if min(reps) == max(reps) else f'de {num(min(reps))} a {num(max(reps))}') if reps else '--'} {'repetición válida' if reps and max(reps) == 1 else 'repeticiones válidas'} por condición."]
+    out = [f"{many(len(tests), t('prueba válida', 'valid run'), t('pruebas válidas', 'valid runs'))} {t('en', 'in')} {many(len(data.cells), t('condición', 'condition'), t('condiciones', 'conditions'))} ({many(len(plan['streams']), t('emisión', 'stream'), t('emisiones', 'streams'))} × "
+           f"{many(len(plan['networks']), t('red', 'network'), t('redes', 'networks'))} × {many(len(plan['targets']), t('objetivo', 'target'), t('objetivos', 'targets'))}), {t('con', 'with')} {listing([PLAYER_LABEL[p] for p in data.players])}"
+           f"{t(' a la vez', ' simultaneously') if plan.get('player_mode', 'together') == 'together' and len(data.players) > 1 else ''}; "
+           f"{(num(min(reps)) if min(reps) == max(reps) else t(f'de {num(min(reps))} a {num(max(reps))}', f'{num(min(reps))} to {num(max(reps))}')) if reps else '--'} "
+           f"{t('repetición válida', 'valid repetition') if reps and max(reps) == 1 else t('repeticiones válidas', 'valid repetitions')} {t('por condición', 'per condition')}."]
     invalid = [r for r in runs if r["state"] == "invalid"]
     if invalid:
         reasons: dict[str, int] = {}
         for r in invalid:
-            for reason in r["invalid_reasons"] or ["sin motivo"]:
+            for reason in r["invalid_reasons"] or [t("sin motivo", "no reason")]:
                 reason = re.sub(r"\d+", "N", reason)
                 reasons[reason] = reasons.get(reason, 0) + 1
         top = sorted(reasons.items(), key=lambda x: -x[1])[:3]
-        out.append(f"{len(invalid)} intentos inválidos ({'; '.join(f'{n}: {t}' for t, n in top)}).")
+        out.append(t(f"{len(invalid)} intentos inválidos ({'; '.join(f'{n}: {x}' for x, n in top)}).",
+                     f"{len(invalid)} invalid attempts ({'; '.join(f'{n}: {x}' for x, n in top)})."))
     pending = sum(1 for r in runs if r["state"] in ("pending", "preparing", "mounting", "warmup", "measuring", "closing"))
     if pending:
-        out.append(f"La campaña no ha terminado: quedan {pending} pruebas; las condiciones sin medir no entran.")
+        out.append(t(f"La campaña no ha terminado: quedan {pending} pruebas; las condiciones sin medir no entran.",
+                     f"The campaign has not finished: {pending} runs remain; unmeasured conditions are not included."))
     if count("replaced"):
         n = count("replaced")
-        out.append(f"{n} {'prueba válida sustituida' if n == 1 else 'pruebas válidas sustituidas'} por su repetición no {'cuenta' if n == 1 else 'cuentan'}.")
+        out.append(t(f"{n} {'prueba válida sustituida' if n == 1 else 'pruebas válidas sustituidas'} por su repetición no {'cuenta' if n == 1 else 'cuentan'}.",
+                     f"{n} {'valid run replaced by its repetition does' if n == 1 else 'valid runs replaced by their repetitions do'} not count."))
     return out
 
 
@@ -542,34 +582,48 @@ def warnings(data: Data) -> list[str]:
     out = []
     days = sorted(d for d in (local_day(r.get("started_ms")) for r in data.valid) if d)
     if days and days[0] < INVALID_BEFORE:
-        out.append("Hay pruebas anteriores al 9-10-2026: el lector de timecode de entonces degradaba MoQ y esas medidas están invalidadas.")
+        out.append(t("Hay pruebas anteriores al 9-10-2026: el lector de timecode de entonces degradaba MoQ y esas medidas están invalidadas.",
+                     "There are runs from before 2026-10-09: the timecode reader of that time degraded MoQ and those measurements are invalid."))
     elif days and days[0] < STALL_FIX:
-        out.append("Hay pruebas anteriores al 28-10-2026: su tiempo parado no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas).")
+        out.append(t("Hay pruebas anteriores al 28-10-2026: su tiempo parado no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas).",
+                     "There are runs from before 2026-10-28: their stall time does not count stretches without picture (it greatly underestimates DASH under loss)."))
     reps = [len(v) for cell in data.cells.values() for v in cell.values()]
     if reps and min(reps) < 3:
-        out.append("Hay condiciones con menos de tres repeticiones válidas: la variación entre repeticiones se queda corta y el recuento de condiciones a favor de uno u otro es orientativo.")
+        out.append(t("Hay condiciones con menos de tres repeticiones válidas: la variación entre repeticiones se queda corta y el recuento de condiciones a favor de uno u otro es orientativo.",
+                     "Some conditions have fewer than three valid repetitions: the variation between repetitions is underestimated and the count of conditions favouring one or the other is only indicative."))
     lagged = {r["id"] for r in data.valid for s in r["summary"]["players"].values() if (s.get("source_lag_max_ms") or 0) > 100}
     if lagged:
-        out.append(f"En {len(lagged)} de {len(data.valid)} pruebas la fuente fue más de 100 ms por detrás del tiempo real: en ellas los reproductores ven menos latencia.")
+        out.append(t(f"En {len(lagged)} de {len(data.valid)} pruebas la fuente fue más de 100 ms por detrás del tiempo real: en ellas los reproductores ven menos latencia.",
+                     f"In {len(lagged)} of {len(data.valid)} runs the source fell more than 100 ms behind real time: in those, the players see less latency."))
     # Sin estar parado: un parón ya baja los fps
     slow = {r["id"] for r in data.valid for p, s in r["summary"]["players"].items()
             if s.get("fps_mean") is not None and s["fps_mean"] < 0.9 * data.fps[r["stream"]] and (s.get("stall_ratio") or 0) < 0.01}
     if slow:
-        out.append(f"En {len(slow)} de {len(data.valid)} pruebas algún reproductor pintó menos del 90 % de los frames sin estar parado: puede ser el trabajador, que no daba abasto (revisa los frames largos del hilo principal), o el protocolo, que descartaba frames.")
+        out.append(t(f"En {len(slow)} de {len(data.valid)} pruebas algún reproductor pintó menos del 90 % de los frames sin estar parado: puede ser el trabajador, que no daba abasto (revisa los frames largos del hilo principal), o el protocolo, que descartaba frames.",
+                     f"In {len(slow)} of {len(data.valid)} runs some player rendered less than 90% of the frames while not stalled: either the worker could not keep up (check the main thread's long frames) or the protocol was dropping frames."))
     if data.plan.get("parallel"):
-        out.append("Pruebas en paralelo: las de una tanda compartían servidor (relay, SFU, publicador y CPU).")
+        out.append(t("Pruebas en paralelo: las de una tanda compartían servidor (relay, SFU, publicador y CPU).",
+                     "Parallel runs: those in the same batch shared the server (relay, SFU, publisher and CPU)."))
     if any(s.get("source") == "camera" for s in data.plan["streams"]):
-        out.append("Con la cámara el contenido no se repite y la latencia no incluye el tramo cámara → servidor.")
+        out.append(t("Con la cámara el contenido no se repite y la latencia no incluye el tramo cámara → servidor.",
+                     "With the camera the content does not repeat and the latency does not include the camera → server leg."))
     o = data.plan.get("player_options") or {}
     experiments = [f"{k}={v}" for k, v in o.items() if (k == "moq_abr" and v != "watch") or (k == "moq_switching" and v != "seamless") or (k == "dash_abr" and v == "l2afix")]
     if experiments:
-        out.append(f"Campaña con experimentos declarados ({', '.join(experiments)}): no es el comportamiento de fábrica.")
+        out.append(t(f"Campaña con experimentos declarados ({', '.join(experiments)}): no es el comportamiento de fábrica.",
+                     f"Campaign with declared experiments ({', '.join(experiments)}): this is not the stock behaviour."))
     if len(data.players) > 1:
-        out.append("Entre protocolos, el búfer, la estimación de ancho de banda y el objetivo no significan lo mismo; el sonido, solo si se puso.")
+        out.append(t("Entre protocolos, el búfer, la estimación de ancho de banda y el objetivo no significan lo mismo; el sonido, solo si se puso.",
+                     "Across protocols, the buffer, the bandwidth estimate and the target do not mean the same thing; audio is present only if it was enabled."))
     return out
 
 
-def analyze(store, cid: str) -> dict:
+def analyze(store, cid: str, lang: str = "es") -> dict:
+    with language(lang):
+        return _analyze(store, cid)
+
+
+def _analyze(store, cid: str) -> dict:
     # Copia con el cerrojo; las filas se leen sin él, para no frenar al planificador
     with store.lock:
         campaign = store.campaigns.get(cid)
@@ -578,10 +632,12 @@ def analyze(store, cid: str) -> dict:
         campaign = json.loads(json.dumps(campaign))
     idx = samples_index.index(store, cid)
     # El análisis guardado vale mientras no cambien el código, las filas, el plan ni el estado de las pruebas
-    key = hashlib.sha1(json.dumps([CODE, idx["inode"], idx["offset"], campaign["plan"],
+    lang = t("es", "en")
+    key = hashlib.sha1(json.dumps([CODE, lang, idx["inode"], idx["offset"], campaign["plan"],
                                    [(r["id"], r["state"], r.get("started_ms")) for r in campaign["runs"]]],
                                   sort_keys=True, default=str).encode()).hexdigest()
-    path = store.path(cid, "analysis.json")
+    # Uno por idioma, para no rehacerlo al alternar
+    path = store.path(cid, "analysis.json" if lang == "es" else f"analysis.{lang}.json")
     try:
         with open(path) as f:
             saved = json.load(f)
@@ -600,11 +656,11 @@ def analyze(store, cid: str) -> dict:
 def compute(campaign: dict, idx: dict) -> dict:
     data = Data(campaign, idx)
     if not data.valid:
-        return {"overview": ["La campaña no tiene pruebas válidas todavía."], "sections": [], "warnings": []}
+        return {"overview": [t("La campaña no tiene pruebas válidas todavía.", "The campaign has no valid runs yet.")], "sections": [], "warnings": []}
     sections = []
-    for title, blocks in (("Entre protocolos", protocols_section(data)), ("Entre emisiones", streams_section(data)),
-                          ("Con la red", network_section(data)), ("Con la latencia objetivo", target_section(data)),
-                          ("Deriva", controls_section(data)), ("Casos a mirar", cases_section(data))):
+    for title, blocks in ((t("Entre protocolos", "Between protocols"), protocols_section(data)), (t("Entre emisiones", "Between streams"), streams_section(data)),
+                          (t("Con la red", "With the network"), network_section(data)), (t("Con la latencia objetivo", "With target latency"), target_section(data)),
+                          (t("Deriva", "Drift"), controls_section(data)), (t("Casos a mirar", "Cases to review"), cases_section(data))):
         blocks = [b for b in blocks if b["sentences"]]
         if blocks:
             sections.append({"title": title, "blocks": blocks})

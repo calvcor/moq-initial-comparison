@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Play, Square, Settings2, RefreshCw, Plus, X } from 'lucide-react';
 import type { StreamConfig, ServerStatus, Rendition, SourceKind, CameraState, LoopVideo, VideoState } from '../types';
 import { LOOP_VIDEOS, gopAt, isLoopVideo } from '../lib/sources';
+import { lang, t } from '../lib/i18n';
 
 const MAX_RENDITIONS = 5;
 const HEIGHTS = [1080, 720, 540, 480, 360, 240];
@@ -97,10 +98,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
         <div className="flex items-center space-x-2">
           <Settings2 className="w-5 h-5 text-indigo-400" />
-          <h3 className="font-semibold text-slate-200">Panel de Control Experimental</h3>
+          <h3 className="font-semibold text-slate-200">{t('Panel de Control Experimental', 'Experiment control panel')}</h3>
           {hasChanges && (
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              Cambios pendientes
+              {t('Cambios pendientes', 'Pending changes')}
             </span>
           )}
           {source && source.state !== 'ready' && (
@@ -108,12 +109,14 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               className={`text-[11px] px-2 py-0.5 rounded-full border ${
                 source.state === 'error' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-sky-500/20 text-sky-300 border-sky-500/30'
               }`}
-              title={source.error ?? 'Los vídeos fuente no vienen con el repositorio: se descargan de download.blender.org la primera vez.'}
+              title={source.error ?? t('Los vídeos fuente no vienen con el repositorio: se descargan de download.blender.org la primera vez.', 'The source videos are not in the repository: they are downloaded from download.blender.org the first time.')}
             >
-              {source.state === 'downloading' && `Descargando ${sourceLabel}… ${source.progress_pct} %`}
-              {source.state === 'extracting' && `Descomprimiendo ${sourceLabel}…`}
+              {source.state === 'downloading' && t(`Descargando ${sourceLabel}… ${source.progress_pct} %`, `Downloading ${sourceLabel}… ${source.progress_pct} %`)}
+              {source.state === 'extracting' && t(`Descomprimiendo ${sourceLabel}…`, `Extracting ${sourceLabel}…`)}
               {source.state === 'error' &&
-                (pendingKind === 'file' ? 'Fallo al descargar Big Buck Bunny; reintentando' : `Fallo al descargar ${sourceLabel}; se reintenta al elegirlo`)}
+                (pendingKind === 'file'
+                  ? t('Fallo al descargar Big Buck Bunny; reintentando', 'Big Buck Bunny download failed; retrying')
+                  : t(`Fallo al descargar ${sourceLabel}; se reintenta al elegirlo`, `${sourceLabel} download failed; it is retried when selected`))}
             </span>
           )}
         </div>
@@ -126,7 +129,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               className="flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-semibold transition cursor-pointer disabled:opacity-50 shadow-md shadow-indigo-600/30 animate-pulse"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Aplicar Cambios</span>
+              <span>{t('Aplicar Cambios', 'Apply changes')}</span>
             </button>
           )}
 
@@ -137,7 +140,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               className="flex items-center space-x-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-sm font-medium transition cursor-pointer disabled:opacity-50"
             >
               <Square className="w-4 h-4" />
-              <span>Detener Pipeline</span>
+              <span>{t('Detener Pipeline', 'Stop pipeline')}</span>
             </button>
           ) : (
             <button
@@ -146,7 +149,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               className="flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition cursor-pointer disabled:opacity-50"
             >
               <Play className="w-4 h-4" />
-              <span>Iniciar Streaming</span>
+              <span>{t('Iniciar Streaming', 'Start streaming')}</span>
             </button>
           )}
         </div>
@@ -160,7 +163,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       <div className="grid grid-cols-4 gap-4">
         {/* Fuente de la emisión */}
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1.5">Fuente</label>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">{t('Fuente', 'Source')}</label>
           <select
             value={config.source}
             onChange={(e) => setSource(e.target.value as SourceKind)}
@@ -169,11 +172,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           >
             {(Object.keys(LOOP_VIDEOS) as LoopVideo[]).map((k) => (
               <option key={k} value={k}>
-                {LOOP_VIDEOS[k].label} en bucle
+                {t(`${LOOP_VIDEOS[k].label} en bucle`, `${LOOP_VIDEOS[k].label} (loop)`)}
               </option>
             ))}
             <option value="camera" disabled={camera ? !camera.configured : false}>
-              Cámara RTSP{camera && !camera.configured ? ' (sin configurar)' : ''}
+              {t('Cámara RTSP', 'RTSP camera')}{camera && !camera.configured ? t(' (sin configurar)', ' (not configured)') : ''}
             </option>
           </select>
           <span
@@ -183,12 +186,15 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             {selected && LOOP_VIDEOS[selected].detail}
             {config.source === 'camera' &&
               (probing
-                ? 'Consultando la cámara…'
+                ? t('Consultando la cámara…', 'Probing the camera…')
                 : camera?.error
-                  ? 'La cámara no responde'
+                  ? t('La cámara no responde', 'The camera does not respond')
                   : camera?.probe
-                    ? `${camera.host ?? ''} · ${camera.probe.width}x${camera.probe.height} a ${camera.probe.fps} fps → emisión a ${config.fps} fps`
-                    : (camera?.host ?? 'Sin datos de la cámara'))}
+                    ? t(
+                        `${camera.host ?? ''} · ${camera.probe.width}x${camera.probe.height} a ${camera.probe.fps} fps → emisión a ${config.fps} fps`,
+                        `${camera.host ?? ''} · ${camera.probe.width}x${camera.probe.height} at ${camera.probe.fps} fps → stream at ${config.fps} fps`,
+                      )
+                    : (camera?.host ?? t('Sin datos de la cámara', 'No camera data')))}
           </span>
         </div>
 
@@ -214,21 +220,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             ))}
           </select>
           <span className="text-[10px] text-slate-500 mt-1 block">
-            1 Keyframe = 1 nuevo MoQ Group ID
+            {t('1 Keyframe = 1 nuevo MoQ Group ID', '1 keyframe = 1 new MoQ group ID')}
           </span>
         </div>
 
         {/* Chunk CMAF LL-DASH */}
         <div>
           <label className="block text-xs font-medium text-slate-400 mb-1.5">
-            Fragmento CMAF (LL-DASH)
+            {t('Fragmento CMAF (LL-DASH)', 'CMAF fragment (LL-DASH)')}
           </label>
           <select
             value={config.frag_duration}
             onChange={(e) => onConfigChange({ ...config, frag_duration: Number(e.target.value) })}
             className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
           >
-            <option value={0}>1 frame ({(1000 / (config.fps || 60)).toFixed(1).replace('.', ',')} ms)</option>
+            <option value={0}>1 frame ({(1000 / (config.fps || 60)).toFixed(1).replace('.', lang === 'en' ? '.' : ',')} ms)</option>
             <option value={0.1}>100 ms</option>
             <option value={0.2}>200 ms</option>
             <option value={0.5}>500 ms</option>
@@ -242,20 +248,20 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         {/* Segmento Completo DASH */}
         <div>
           <label className="block text-xs font-medium text-slate-400 mb-1.5">
-            Segmento DASH (-seg_duration)
+            {t('Segmento DASH (-seg_duration)', 'DASH segment (-seg_duration)')}
           </label>
           <select
             value={config.seg_duration}
             onChange={(e) => onConfigChange({ ...config, seg_duration: Number(e.target.value) })}
             className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
           >
-            {gopSeconds <= 0.5 && <option value={0.5}>0.5 segundos</option>}
-            {gopSeconds <= 1 && <option value={1.0}>1.0 segundo</option>}
-            <option value={2.0}>2.0 segundos</option>
-            <option value={4.0}>4.0 segundos</option>
+            {gopSeconds <= 0.5 && <option value={0.5}>{t('0.5 segundos', '0.5 seconds')}</option>}
+            {gopSeconds <= 1 && <option value={1.0}>{t('1.0 segundo', '1.0 second')}</option>}
+            <option value={2.0}>{t('2.0 segundos', '2.0 seconds')}</option>
+            <option value={4.0}>{t('4.0 segundos', '4.0 seconds')}</option>
           </select>
           <span className="text-[10px] text-slate-500 mt-1 block">
-            Debe ser ≥ GOP ({gopSeconds.toFixed(1)}s)
+            {t('Debe ser ≥ GOP', 'Must be ≥ GOP')} ({gopSeconds.toFixed(1)}s)
           </span>
         </div>
 
@@ -265,7 +271,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       <div className="mt-4 pt-3 border-t border-slate-800">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-slate-400">
-            Escalera de calidades <span className="text-slate-600">(la adaptación elige entre ellas; con una sola no hay adaptación)</span>
+            {t('Escalera de calidades', 'Rendition ladder')}{' '}
+            <span className="text-slate-600">{t('(la adaptación elige entre ellas; con una sola no hay adaptación)', '(adaptation chooses among them; with a single one there is no adaptation)')}</span>
           </span>
           <button
             onClick={addRendition}
@@ -273,7 +280,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             className="flex items-center space-x-1 px-2.5 py-1 rounded border border-slate-800 bg-slate-950 text-xs text-slate-300 hover:text-white cursor-pointer disabled:opacity-40 disabled:cursor-default"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Añadir calidad</span>
+            <span>{t('Añadir calidad', 'Add rendition')}</span>
           </button>
         </div>
         <div className="grid grid-cols-5 gap-3">
@@ -304,7 +311,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 onClick={() => onConfigChange({ ...config, renditions: config.renditions.filter((_, i) => i !== index) })}
                 disabled={config.renditions.length <= 1}
                 className="text-slate-500 hover:text-rose-400 cursor-pointer disabled:opacity-30 disabled:cursor-default"
-                title="Quitar esta calidad"
+                title={t('Quitar esta calidad', 'Remove this rendition')}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -312,7 +319,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           ))}
         </div>
         <span className="text-[10px] text-slate-500 mt-1.5 block">
-          Todas a {config.fps} fps y con el mismo GOP. Cambiar la escalera reinicia la fuente; el servidor las ordena de mayor a menor.
+          {t(
+            `Todas a ${config.fps} fps y con el mismo GOP. Cambiar la escalera reinicia la fuente; el servidor las ordena de mayor a menor.`,
+            `All at ${config.fps} fps with the same GOP. Changing the ladder restarts the source; the server sorts them from highest to lowest.`,
+          )}
         </span>
       </div>
 
@@ -325,10 +335,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             onChange={(e) => onConfigChange({ ...config, rtc_audio: e.target.checked })}
             className="accent-indigo-500"
           />
-          <span>Audio en WebRTC (Opus de la fuente, sin recodificar)</span>
+          <span>{t('Audio en WebRTC (Opus de la fuente, sin recodificar)', 'WebRTC audio (Opus from the source, not re-encoded)')}</span>
         </label>
         <span className="text-[10px] text-slate-500 mt-1 block">
-          Desactivado por defecto. Con audio, el navegador sincroniza las dos pistas y puede retrasar el vídeo: es otra condición de medida (queda en el CSV, rtc_audio).
+          {t(
+            'Desactivado por defecto. Con audio, el navegador sincroniza las dos pistas y puede retrasar el vídeo: es otra condición de medida (queda en el CSV, rtc_audio).',
+            'Off by default. With audio, the browser synchronises both tracks and may delay the video: it is a different measurement condition (recorded in the CSV, rtc_audio).',
+          )}
         </span>
         <label className="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer w-fit mt-2">
           <input
@@ -337,10 +350,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             onChange={(e) => onConfigChange({ ...config, rtc_pacing: e.target.checked })}
             className="accent-indigo-500"
           />
-          <span>Pacer en la ingesta de WebRTC (solo mediasoup)</span>
+          <span>{t('Pacer en la ingesta de WebRTC (solo mediasoup)', 'Pacer on the WebRTC ingest (mediasoup only)')}</span>
         </label>
         <span className="text-[10px] text-slate-500 mt-1 block">
-          Experimento, desactivado por defecto. El relay reparte el RTP de cada calidad a 2,5 veces su bitrate, como un publicador WebRTC, en vez de soltar cada frame de golpe; mediasoup lo reenvía con ese ritmo. Es común a todos los espectadores y retrasa las keyframes. Con MediaMTX no hace nada (queda en el CSV, rtc_pacing).
+          {t(
+            'Experimento, desactivado por defecto. El relay reparte el RTP de cada calidad a 2,5 veces su bitrate, como un publicador WebRTC, en vez de soltar cada frame de golpe; mediasoup lo reenvía con ese ritmo. Es común a todos los espectadores y retrasa las keyframes. Con MediaMTX no hace nada (queda en el CSV, rtc_pacing).',
+            'Experiment, off by default. The relay sends the RTP of each rendition at 2.5 times its bitrate, like a WebRTC publisher, instead of releasing each frame at once; mediasoup forwards it at that pace. It is shared by all viewers and delays keyframes. It does nothing with MediaMTX (recorded in the CSV, rtc_pacing).',
+          )}
         </span>
       </div>
     </div>

@@ -1323,16 +1323,16 @@ def no_campaign_running():
                                                     "esperan a que termine o se ponga en pausa, para no interferir en sus medidas")
 
 @app.get("/api/campaigns/{cid}/analysis")
-def analyze_campaign(cid: str):
+def analyze_campaign(cid: str, lang: str = "es"):
     """Análisis en texto de una campaña (README 4.8, «Análisis de la campaña»): resumen, secciones (entre protocolos,
     entre emisiones, con la red, con el objetivo, deriva y casos a mirar), cada una con bloques de frases, y avisos.
-    409 con una campaña en marcha."""
+    lang=en, en inglés (README 4.4c). 409 con una campaña en marcha."""
     campaign_or_404(cid)
     no_campaign_running()
-    return campaign_analysis.analyze(campaigns, cid)
+    return campaign_analysis.analyze(campaigns, cid, lang)
 
 @app.get("/api/campaigns-compare")
-def compare_campaigns(a: str, b: str):
+def compare_campaigns(a: str, b: str, lang: str = "es"):
     """Comparación en texto de dos campañas enteras (README 4.8, «Comparar dos campañas»): a y b son sus ids. Empareja
     condiciones por perfil de red, latencia objetivo y emisión, y dice cómo va B respecto a A: lo que cambia entre las dos
     (conditions), resumen, secciones y avisos, como el análisis. 409 con una campaña en marcha."""
@@ -1340,18 +1340,18 @@ def compare_campaigns(a: str, b: str):
     campaign_or_404(b)
     no_campaign_running()
     try:
-        return campaign_versus.versus(campaigns, a, b)
+        return campaign_versus.versus(campaigns, a, b, lang)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
 @app.get("/api/compare")
-def compare_runs(a: str, b: str):
+def compare_runs(a: str, b: str, lang: str = "es"):
     """Comparación en texto de dos pruebas, de la misma campaña o de dos distintas (README 4.8, «Comparar dos pruebas»):
     a y b son campaña/prueba/protocolo, p. ej. 20261029-105628/r0069/moq. Devuelve lo que cambia entre las dos, las
     métricas con su diferencia y la variación entre repeticiones, las frases y los avisos. 409 con una campaña en marcha."""
     no_campaign_running()
     try:
-        return campaign_compare.compare(campaigns, a, b)
+        return campaign_compare.compare(campaigns, a, b, lang)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e.args[0]) if e.args else "No encontrada")
     except ValueError as e:

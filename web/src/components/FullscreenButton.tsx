@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
+import { t } from '../lib/i18n';
 
 // Pantalla completa de la zona de vídeo de un reproductor (el contenedor, no solo el <video> o el canvas,
 // para que se sigan viendo sus avisos). Solo escala la imagen: el timecode se lee del frame decodificado,
@@ -25,7 +26,7 @@ export const FullscreenButton: React.FC<{ target: React.RefObject<HTMLElement | 
     <button
       onClick={() => toggleFullscreen(target.current)}
       className="absolute top-2 right-2 z-10 p-1.5 rounded bg-black/50 text-slate-300 hover:text-white hover:bg-black/70 opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
-      title={active ? 'Salir de pantalla completa (Esc)' : 'Pantalla completa (o doble clic en el vídeo)'}
+      title={active ? t('Salir de pantalla completa (Esc)', 'Exit full screen (Esc)') : t('Pantalla completa (o doble clic en el vídeo)', 'Full screen (or double-click the video)')}
     >
       {active ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
     </button>

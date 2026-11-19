@@ -6,6 +6,7 @@ import { RtcTracer } from '../lib/trace';
 import { serverNowMs } from '../lib/clock';
 import { openMediasoup, openWhep, type RtcCallbacks, type SfuStats } from '../lib/rtcSession';
 import type { PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } from '../types';
+import { t } from '../lib/i18n';
 
 interface RtcPlayerProps {
   isStreaming: boolean;
@@ -270,15 +271,20 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center space-y-2">
             <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
             <span className="text-xs text-slate-400">
-              {joinWaitS !== null ? `Esperando a que la emisión lleve unos segundos publicada (~${joinWaitS} s)...` : 'Negociando sesión WebRTC...'}
+              {joinWaitS !== null
+                ? t(
+                    `Esperando a que la emisión lleve unos segundos publicada (~${joinWaitS} s)...`,
+                    `Waiting until the stream has been published for a few seconds (~${joinWaitS} s)...`,
+                  )
+                : t('Negociando sesión WebRTC...', 'Negotiating WebRTC session...')}
             </span>
           </div>
         )}
 
         {status === 'idle' && (
           <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-slate-500 space-y-1">
-            <p className="text-sm font-medium">Stream detenido</p>
-            <p className="text-xs text-slate-600">Inicia el pipeline desde el panel de control</p>
+            <p className="text-sm font-medium">{t('Stream detenido', 'Stream stopped')}</p>
+            <p className="text-xs text-slate-600">{t('Inicia el pipeline desde el panel de control', 'Start the pipeline from the control panel')}</p>
           </div>
         )}
       </div>
@@ -286,11 +292,14 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
       {/* Búfer de jitter objetivo */}
       <div
         className="px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs"
-        title="Búfer de jitter que se pide al navegador (RTCRtpReceiver.jitterBufferTarget). En auto no se pide nada y el navegador lo ajusta solo según la red."
+        title={t(
+          'Búfer de jitter que se pide al navegador (RTCRtpReceiver.jitterBufferTarget). En auto no se pide nada y el navegador lo ajusta solo según la red.',
+          'Jitter buffer requested from the browser (RTCRtpReceiver.jitterBufferTarget). In auto nothing is requested and the browser adjusts it on its own to the network.',
+        )}
       >
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
-          <span className="text-slate-400 font-medium whitespace-nowrap">Búfer objetivo:</span>
-          <span className="font-mono text-amber-400 font-semibold whitespace-nowrap">{targetMs === 0 ? 'auto (navegador)' : `${targetMs}ms`}</span>
+          <span className="text-slate-400 font-medium whitespace-nowrap">{t('Búfer objetivo:', 'Target buffer:')}</span>
+          <span className="font-mono text-amber-400 font-semibold whitespace-nowrap">{targetMs === 0 ? t('auto (navegador)', 'auto (browser)') : `${targetMs}ms`}</span>
         </div>
         <div className="flex items-center space-x-3 flex-1 min-w-[10rem] max-w-xs ml-auto">
           <span className="text-[10px] text-slate-500 font-mono">auto</span>
@@ -309,12 +318,23 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
 
       <div className="px-4 py-2 bg-slate-950/60 border-t border-slate-800/60 text-[11px] text-slate-500 flex flex-wrap justify-between gap-x-4 gap-y-1 font-mono">
         {server === 'mediasoup' ? (
-          <span title="Un FFmpeg pasa el MPEG-TS a RTP, sin recodificar, y mediasoup elige la capa de este espectador (RTC_SERVER=mediasoup). No atiende peticiones de keyframe: cada cambio espera al siguiente IDR.">
-            mediasoup · RTP · simulcast de {renditions.length}
+          <span
+            title={t(
+              'Un FFmpeg pasa el MPEG-TS a RTP, sin recodificar, y mediasoup elige la capa de este espectador (RTC_SERVER=mediasoup). No atiende peticiones de keyframe: cada cambio espera al siguiente IDR.',
+              'An FFmpeg passes the MPEG-TS to RTP, without re-encoding, and mediasoup picks the layer for this viewer (RTC_SERVER=mediasoup). Keyframe requests are not served: each switch waits for the next IDR.',
+            )}
+          >
+            {t(`mediasoup · RTP · simulcast de ${renditions.length}`, `mediasoup · RTP · simulcast of ${renditions.length}`)}
           </span>
         ) : (
-          <span title={ingest === 'udp' ? 'MediaMTX lee el MPEG-TS de la fuente por UDP, sin FFmpeg intermedio (RTC_INGEST=udp).' : 'Un FFmpeg remultiplexa el MPEG-TS y lo publica en MediaMTX por RTSP (RTC_INGEST=rtsp, la versión anterior).'}>
-            MediaMTX · {ingest === 'udp' ? 'UDP directo' : 'vía RTSP'} · {whepUrl(mtxPath)}
+          <span
+            title={
+              ingest === 'udp'
+                ? t('MediaMTX lee el MPEG-TS de la fuente por UDP, sin FFmpeg intermedio (RTC_INGEST=udp).', 'MediaMTX reads the source MPEG-TS over UDP, with no intermediate FFmpeg (RTC_INGEST=udp).')
+                : t('Un FFmpeg remultiplexa el MPEG-TS y lo publica en MediaMTX por RTSP (RTC_INGEST=rtsp, la versión anterior).', 'An FFmpeg remuxes the MPEG-TS and publishes it to MediaMTX over RTSP (RTC_INGEST=rtsp, the previous version).')
+            }
+          >
+            MediaMTX · {ingest === 'udp' ? t('UDP directo', 'direct UDP') : t('vía RTSP', 'via RTSP')} · {whepUrl(mtxPath)}
           </span>
         )}
         <span>{server === 'mediasoup' ? 'mediasoup-client' : 'RTCPeerConnection'} + &lt;video&gt;</span>

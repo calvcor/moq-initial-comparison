@@ -8,6 +8,7 @@ import { DashTracer } from '../lib/trace';
 import { DashExplain } from './DashExplain';
 import { DASH_NEEDS_HOST } from '../lib/dashUrl';
 import type { DashAbr, PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } from '../types';
+import { t } from '../lib/i18n';
 
 // Modo de corrección de latencia de dash.js: LoL+, que además de la latencia mira el búfer y frena por debajo
 // de playbackBufferMin (0,5 s). Hasta el 27-10-2026 aquí ponía 'liveCatchupModeLoLp', que dash.js no reconoce,
@@ -232,7 +233,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
 
       if (attempts >= 75) {
         setPlayerStatus('error');
-        setErrorMsg('El archivo manifest.mpd aún no está disponible');
+        setErrorMsg(t('El archivo manifest.mpd aún no está disponible', 'manifest.mpd is not available yet'));
         return;
       }
 
@@ -418,21 +419,21 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         {playerStatus === 'connecting' && (
           <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center space-y-2">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs text-slate-400">Sincronizando Live Edge CMAF...</span>
+            <span className="text-xs text-slate-400">{t('Sincronizando Live Edge CMAF...', 'Syncing to the CMAF live edge...')}</span>
           </div>
         )}
 
         {playerStatus === 'idle' && (
           <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center text-slate-500 space-y-1">
-            <p className="text-sm font-medium">Stream detenido</p>
-            <p className="text-xs text-slate-600">Inicia el pipeline desde el panel de control</p>
+            <p className="text-sm font-medium">{t('Stream detenido', 'Stream stopped')}</p>
+            <p className="text-xs text-slate-600">{t('Inicia el pipeline desde el panel de control', 'Start the pipeline from the control panel')}</p>
           </div>
         )}
 
         {playerStatus === 'error' && (
           <div className="absolute inset-0 bg-red-950/80 flex flex-col items-center justify-center text-red-300 p-4 text-center">
-            <p className="text-sm font-semibold">Error en LL-DASH</p>
-            <p className="text-xs text-red-400 mt-1">{errorMsg || 'No se puede conectar al manifiesto'}</p>
+            <p className="text-sm font-semibold">{t('Error en LL-DASH', 'LL-DASH error')}</p>
+            <p className="text-xs text-red-400 mt-1">{errorMsg || t('No se puede conectar al manifiesto', 'Cannot connect to the manifest')}</p>
           </div>
         )}
       </div>
@@ -440,8 +441,8 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       {/* Control de Latencia Objetivo en Vivo */}
       <div className="px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
-          <span className="text-slate-400 font-medium whitespace-nowrap">Latencia objetivo:</span>
-          <span className="font-mono text-blue-400 font-semibold whitespace-nowrap">{targetLatency === null ? 'de fábrica (dash.js)' : `${targetLatency.toFixed(2)}s (${Math.round(targetLatency * 1000)}ms)`}</span>
+          <span className="text-slate-400 font-medium whitespace-nowrap">{t('Latencia objetivo:', 'Target latency:')}</span>
+          <span className="font-mono text-blue-400 font-semibold whitespace-nowrap">{targetLatency === null ? t('de fábrica (dash.js)', 'default (dash.js)') : `${targetLatency.toFixed(2)}s (${Math.round(targetLatency * 1000)}ms)`}</span>
         </div>
         <div className="flex items-center space-x-3 flex-1 min-w-[10rem] max-w-xs ml-auto">
           <span className="text-[10px] text-slate-500 font-mono">0.05s</span>
@@ -461,13 +462,16 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       {/* Búfer mínimo de la corrección LoL+ (liveCatchup.playbackBufferMin) */}
       <div
         className="px-4 py-2.5 bg-slate-900 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs"
-        title="Corrección de latencia LoL+ (liveCatchup.playbackBufferMin): si el búfer baja de este nivel, dash.js frena la reproducción para rellenarlo (más cuanto menos búfer, hasta casi 0,5×) y no persigue la latencia objetivo hasta superarlo. Como la latencia nunca es menor que el búfer, hace de suelo: con un objetivo por debajo de este valor, la latencia queda por encima del objetivo. 0 = no frenar nunca por búfer (valor al abrir la página). 0,5 s es el valor de fábrica de dash.js."
+        title={t(
+          'Corrección de latencia LoL+ (liveCatchup.playbackBufferMin): si el búfer baja de este nivel, dash.js frena la reproducción para rellenarlo (más cuanto menos búfer, hasta casi 0,5×) y no persigue la latencia objetivo hasta superarlo. Como la latencia nunca es menor que el búfer, hace de suelo: con un objetivo por debajo de este valor, la latencia queda por encima del objetivo. 0 = no frenar nunca por búfer (valor al abrir la página). 0,5 s es el valor de fábrica de dash.js.',
+          'LoL+ latency correction (liveCatchup.playbackBufferMin): if the buffer drops below this level, dash.js slows playback to refill it (more the less buffer there is, down to almost 0.5×) and does not chase the target latency until it is exceeded again. Since latency is never lower than the buffer, it acts as a floor: with a target below this value, latency stays above the target. 0 = never slow down for the buffer (value on page load). 0.5 s is the dash.js default.',
+        )}
       >
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
-          <span className="text-slate-400 font-medium whitespace-nowrap">Búfer mínimo:</span>
+          <span className="text-slate-400 font-medium whitespace-nowrap">{t('Búfer mínimo:', 'Minimum buffer:')}</span>
           <span className="font-mono text-blue-400 font-semibold whitespace-nowrap">
-            {playbackBufferMin === 0 ? 'sin frenar' : `${playbackBufferMin.toFixed(2)}s`}
-            {playbackBufferMin === 0.5 && ' (de fábrica)'}
+            {playbackBufferMin === 0 ? t('sin frenar', 'no slowdown') : `${playbackBufferMin.toFixed(2)}s`}
+            {playbackBufferMin === 0.5 && t(' (de fábrica)', ' (default)')}
           </span>
         </div>
         <div className="flex items-center space-x-3 flex-1 min-w-[10rem] max-w-xs ml-auto">
@@ -488,12 +492,15 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       {/* Umbral de salto al directo (liveCatchup.maxDrift) */}
       <div
         className="px-4 py-2.5 bg-slate-900 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs"
-        title="Si la latencia se desvía del objetivo más que este valor, dash.js salta al directo en vez de corregir con la velocidad de reproducción. El salto aborta las descargas en curso y abre conexiones TCP nuevas: con retardo de red alto puede encadenar saltos y paradas. 0 = no saltar nunca."
+        title={t(
+          'Si la latencia se desvía del objetivo más que este valor, dash.js salta al directo en vez de corregir con la velocidad de reproducción. El salto aborta las descargas en curso y abre conexiones TCP nuevas: con retardo de red alto puede encadenar saltos y paradas. 0 = no saltar nunca.',
+          'If latency deviates from the target by more than this value, dash.js seeks to the live edge instead of correcting with the playback rate. The seek aborts in-flight downloads and opens new TCP connections: with high network delay it can chain seeks and stalls. 0 = never seek.',
+        )}
       >
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
-          <span className="text-slate-400 font-medium whitespace-nowrap">Salto al directo:</span>
+          <span className="text-slate-400 font-medium whitespace-nowrap">{t('Salto al directo:', 'Seek to live:')}</span>
           <span className="font-mono text-blue-400 font-semibold whitespace-nowrap">
-            {maxDrift === 0 ? 'desactivado' : `desvío > ${maxDrift.toFixed(1)}s`}
+            {maxDrift === 0 ? t('desactivado', 'disabled') : t(`desvío > ${maxDrift.toFixed(1)}s`, `drift > ${maxDrift.toFixed(1)}s`)}
           </span>
         </div>
         <div className="flex items-center space-x-3 flex-1 min-w-[10rem] max-w-xs ml-auto">
@@ -516,16 +523,22 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
           className="truncate"
           title={
             url
-              ? 'El navegador conecta directamente al servidor de DASH a través del router de emulación: su propia conexión TCP atraviesa la red emulada, como en MoQ y WebRTC.'
+              ? t(
+                  'El navegador conecta directamente al servidor de DASH a través del router de emulación: su propia conexión TCP atraviesa la red emulada, como en MoQ y WebRTC.',
+                  'The browser connects directly to the DASH server through the emulation router: its own TCP connection crosses the emulated network, as in MoQ and WebRTC.',
+                )
               : DASH_NEEDS_HOST
           }
         >
-          {url ? `Directo · ${new URL(url).host}` : 'Sin camino directo (falta DASH_HOST)'}
+          {url ? t(`Directo · ${new URL(url).host}`, `Direct · ${new URL(url).host}`) : t('Sin camino directo (falta DASH_HOST)', 'No direct path (DASH_HOST missing)')}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <label
           className="flex items-center space-x-1.5 whitespace-nowrap"
-          title="Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (README 6). Cambiarlo recrea el reproductor."
+          title={t(
+            'Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (README 6). Cambiarlo recrea el reproductor.',
+            'dash.js adaptation rules in Auto. Default: the stock ones (throughput and BOLA, insufficient buffer, switch history, request abandonment). L2A and LoL+: their low-latency rules, each on its own. L2A (bugfix): experiment, L2A with its dash.js 5 units bug fixed (README 6). Changing it recreates the player.',
+          )}
         >
           <span>ABR:</span>
           <select
@@ -533,14 +546,14 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
             onChange={(e) => setAbr(e.target.value as DashAbr)}
             className="bg-slate-900 border border-slate-700 text-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-500"
           >
-            <option value="default">Por defecto</option>
+            <option value="default">{t('Por defecto', 'Default')}</option>
             <option value="l2a">L2A</option>
             <option value="l2afix">L2A (bugfix)</option>
             <option value="lolp">LoL+</option>
           </select>
         </label>
-        <label className="flex items-center space-x-1.5 whitespace-nowrap" title="Auto deja decidir al algoritmo de adaptación del reproductor; fijar una calidad lo desactiva.">
-          <span>Calidad:</span>
+        <label className="flex items-center space-x-1.5 whitespace-nowrap" title={t('Auto deja decidir al algoritmo de adaptación del reproductor; fijar una calidad lo desactiva.', 'Auto lets the player\'s adaptation algorithm decide; fixing a rendition disables it.')}>
+          <span>{t('Calidad:', 'Rendition:')}</span>
           <select
             value={quality}
             onChange={(e) => handleQualityChange(e.target.value === 'auto' ? 'auto' : Number(e.target.value))}
@@ -558,9 +571,9 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
           type="button"
           onClick={() => setShowExplain((v) => !v)}
           className="ml-auto text-blue-400 hover:text-blue-300 whitespace-nowrap"
-          title="Cómo elige calidad y cómo persigue la latencia este reproductor con las opciones elegidas"
+          title={t('Cómo elige calidad y cómo persigue la latencia este reproductor con las opciones elegidas', 'How this player picks a rendition and chases latency with the selected options')}
         >
-          {showExplain ? 'Ocultar explicación ▴' : 'Cómo funciona ▾'}
+          {showExplain ? t('Ocultar explicación ▴', 'Hide explanation ▴') : t('Cómo funciona ▾', 'How it works ▾')}
         </button>
         </div>
       </div>

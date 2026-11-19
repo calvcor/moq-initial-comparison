@@ -6,6 +6,7 @@
 // vuelve a moverse tras cerrar el menú, para no tapar la gráfica (tooltips, clics en los puntos).
 
 import { BasicPlatform, Chart } from 'chart.js';
+import { t } from './i18n';
 
 const INK = '#0f172a';
 const GRID = '#cbd5e1';
@@ -91,7 +92,7 @@ function onPointerDown(e: PointerEvent) {
   const rect = canvas.getBoundingClientRect();
   const img = document.createElement('img');
   img.src = src;
-  img.alt = 'Gráfica';
+  img.alt = t('Gráfica', 'Chart');
   img.draggable = false;
   Object.assign(img.style, {
     position: 'fixed',

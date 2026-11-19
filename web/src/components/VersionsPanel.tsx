@@ -1,18 +1,19 @@
 import React from 'react';
 import type { VersionReport } from '../types';
+import { locale, t } from '../lib/i18n';
 
 // Componentes de terceros de los que dependen las medidas, con dónde se fija la versión de cada uno
 const COMPONENTS: { key: string; name: string; where: string }[] = [
   { key: 'moq_relay', name: 'moq-relay', where: 'docker-compose.yml (MOQ_RELAY_VERSION)' },
   { key: 'moq_cli', name: 'moq-cli', where: 'server/Dockerfile' },
   { key: 'moq_watch', name: '@moq/watch', where: 'web/package.json' },
-  { key: 'moq_net', name: '@moq/net', where: 'dependencia de @moq/watch, fijada en web/package-lock.json' },
-  { key: 'moq_hang', name: '@moq/hang', where: 'dependencia de @moq/watch, fijada en web/package-lock.json' },
+  { key: 'moq_net', name: '@moq/net', where: t('dependencia de @moq/watch, fijada en web/package-lock.json', 'dependency of @moq/watch, pinned in web/package-lock.json') },
+  { key: 'moq_hang', name: '@moq/hang', where: t('dependencia de @moq/watch, fijada en web/package-lock.json', 'dependency of @moq/watch, pinned in web/package-lock.json') },
   { key: 'dashjs', name: 'dash.js', where: 'web/package.json' },
   { key: 'mediasoup', name: 'mediasoup', where: 'sfu/package.json' },
   { key: 'mediasoup_client', name: 'mediasoup-client', where: 'web/package.json' },
   { key: 'mediamtx', name: 'MediaMTX', where: 'docker-compose.yml (MEDIAMTX_VERSION)' },
-  { key: 'ffmpeg', name: 'FFmpeg', where: 'paquete de Debian de la imagen del orquestador' },
+  { key: 'ffmpeg', name: 'FFmpeg', where: t('paquete de Debian de la imagen del orquestador', 'Debian package in the orchestrator image') },
 ];
 
 const parts = (version: string) => version.split('.').map((n) => parseInt(n, 10) || 0);
@@ -44,19 +45,22 @@ export const versionsLabel = (report: VersionReport | null): string | null => {
 export const VersionsPanel: React.FC<{ report: VersionReport | null }> = ({ report }) => {
   const installed = installedVersions(report);
   const outdated = COMPONENTS.filter((c) => isNewer(report?.latest[c.key], installed[c.key]));
-  const checked = report?.checked_at_ms ? new Date(report.checked_at_ms).toLocaleString() : null;
+  const checked = report?.checked_at_ms ? new Date(report.checked_at_ms).toLocaleString(locale) : null;
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-3 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-slate-400 font-medium mr-1">Versiones desplegadas:</span>
+        <span className="text-slate-400 font-medium mr-1">{t('Versiones desplegadas:', 'Deployed versions:')}</span>
         {COMPONENTS.map((c) => {
           const latest = report?.latest[c.key];
           const stale = isNewer(latest, installed[c.key]);
           return (
             <span
               key={c.key}
-              title={`Se fija en ${c.where}.` + (latest ? ` Última publicada: ${latest}.` : c.key === 'ffmpeg' ? ' No se consulta si hay versiones nuevas.' : '')}
+              title={
+                t(`Se fija en ${c.where}.`, `Pinned in ${c.where}.`) +
+                (latest ? t(` Última publicada: ${latest}.`, ` Latest release: ${latest}.`) : c.key === 'ffmpeg' ? t(' No se consulta si hay versiones nuevas.', ' New versions are not checked.') : '')
+              }
               className={`px-2 py-1 rounded border font-mono ${stale ? 'border-amber-600/60 bg-amber-950/40 text-amber-200' : 'border-slate-700 bg-slate-950 text-slate-300'}`}
             >
               {c.name} <span className="font-semibold">{installed[c.key] ?? '--'}</span>
@@ -67,13 +71,16 @@ export const VersionsPanel: React.FC<{ report: VersionReport | null }> = ({ repo
       </div>
       {outdated.length > 0 && (
         <p className="mt-2 text-amber-300">
-          Hay versiones más nuevas de {outdated.map((c) => c.name).join(', ')}. No se actualizan solas: hay que cambiar la versión fijada y
-          volver a desplegar. Las medidas hechas con versiones distintas no son comparables entre sí.
+          {t(
+            `Hay versiones más nuevas de ${outdated.map((c) => c.name).join(', ')}. No se actualizan solas: hay que cambiar la versión fijada y volver a desplegar. Las medidas hechas con versiones distintas no son comparables entre sí.`,
+            `Newer versions of ${outdated.map((c) => c.name).join(', ')} are available. They are not updated automatically: the pinned version must be changed and redeployed. Measurements made with different versions are not comparable.`,
+          )}
         </p>
       )}
       <p className="mt-1.5 text-[11px] text-slate-500">
-        {checked ? `Última comprobación: ${checked}.` : 'Todavía no se ha comprobado si hay versiones nuevas.'}
-        {report?.errors.length ? ` No se pudo consultar: ${report.errors.join(', ')}.` : ''} Pasa el ratón por cada una para ver dónde se fija.
+        {checked ? t(`Última comprobación: ${checked}.`, `Last check: ${checked}.`) : t('Todavía no se ha comprobado si hay versiones nuevas.', 'New versions have not been checked yet.')}
+        {report?.errors.length ? t(` No se pudo consultar: ${report.errors.join(', ')}.`, ` Could not check: ${report.errors.join(', ')}.`) : ''}{' '}
+        {t('Pasa el ratón por cada una para ver dónde se fija.', 'Hover over each one to see where it is pinned.')}
       </p>
     </div>
   );

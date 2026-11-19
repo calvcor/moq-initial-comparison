@@ -7,6 +7,7 @@ import { gridCols } from '../lib/layout';
 import { syncClock, serverNowMs } from '../lib/clock';
 import { PLAYER_IDS, INITIAL_METRICS, IpRates, buildSampleRow } from '../lib/samples';
 import { dashManifestUrl } from '../lib/dashUrl';
+import { t } from '../lib/i18n';
 import type { CampaignAssignment, WorkerBrowser, PlayerId, PlayerMetrics, PlayerPreset, SampleRow, ServerStatus, VersionReport } from '../types';
 
 // Trabajador de las campañas (README, 4.8). El servidor decide qué prueba toca; esta pestaña monta los
@@ -81,13 +82,13 @@ const HAS_DISPLAY = launchParams.get('display') !== '0';
 const DECODE: 'software' | 'auto' = launchParams.get('decode') === 'software' ? 'software' : 'auto';
 
 const PHASE_LABEL: Record<string, string> = {
-  idle: 'sin prueba',
-  pending: 'en cola',
-  preparing: 'preparando red y emisión',
-  mounting: 'montando reproductores',
-  warmup: 'calentamiento',
-  measuring: 'midiendo',
-  closing: 'cerrando',
+  idle: t('sin prueba', 'no run'),
+  pending: t('en cola', 'queued'),
+  preparing: t('preparando red y emisión', 'preparing network and stream'),
+  mounting: t('montando reproductores', 'mounting players'),
+  warmup: t('calentamiento', 'warm-up'),
+  measuring: t('midiendo', 'measuring'),
+  closing: t('cerrando', 'closing'),
 };
 
 /** Identificador de esta pestaña como trabajador; sobrevive a recargas, no a cerrarla. */
@@ -209,7 +210,7 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
             },
           }),
         });
-        if (!res.ok) throw new Error(`latido rechazado (${res.status})`);
+        if (!res.ok) throw new Error(t(`latido rechazado (${res.status})`, `heartbeat rejected (${res.status})`));
         const body = await res.json();
         if (stopped) return;
         setBusyBy(body.busy ? body.worker : null);
@@ -340,24 +341,34 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5">
         <span className="font-semibold text-slate-200">
-          Trabajador {name ? <>independiente {name} <span className="font-normal text-slate-500">({idRef.current})</span></> : idRef.current}
+          {name ? (
+            <>
+              {t('Trabajador independiente', 'Independent worker')} {name} <span className="font-normal text-slate-500">({idRef.current})</span>
+            </>
+          ) : (
+            <>
+              {t('Trabajador', 'Worker')} {idRef.current}
+            </>
+          )}
         </span>
         {busyBy ? (
           <span className="text-amber-300">
-            {name ? `Otro navegador usa ya el nombre ${name} (${busyBy}); esta pestaña espera` : `Ya hay otro trabajador conectado (${busyBy}); esta pestaña espera`}
+            {name
+              ? t(`Otro navegador usa ya el nombre ${name} (${busyBy}); esta pestaña espera`, `Another browser is already using the name ${name} (${busyBy}); this tab is waiting`)
+              : t(`Ya hay otro trabajador conectado (${busyBy}); esta pestaña espera`, `Another worker is already connected (${busyBy}); this tab is waiting`)}
           </span>
         ) : (
           <>
             <span className="text-slate-400">
-              Fase: <span className="text-indigo-300 font-medium">{PHASE_LABEL[phase] ?? phase}</span>
+              {t('Fase', 'Phase')}: <span className="text-indigo-300 font-medium">{PHASE_LABEL[phase] ?? phase}</span>
               {remaining !== null && <span className="font-mono text-slate-300"> · {remaining} s</span>}
             </span>
             {assignment?.run && (
               <span className="text-slate-400">
-                Prueba <span className="font-mono text-slate-200">{assignment.run}</span>
-                {assignment.network_label && <> · red <span className="text-slate-200">{assignment.network_label}</span></>}
-                {assignment.target_label && <> · objetivo <span className="text-slate-200">{assignment.target_label}</span></>}
-                {assignment.rep !== undefined && <> · repetición {assignment.rep + 1}</>}
+                {t('Prueba', 'Run')} <span className="font-mono text-slate-200">{assignment.run}</span>
+                {assignment.network_label && <> · {t('red', 'network')} <span className="text-slate-200">{assignment.network_label}</span></>}
+                {assignment.target_label && <> · {t('objetivo', 'target')} <span className="text-slate-200">{assignment.target_label}</span></>}
+                {assignment.rep !== undefined && <> · {t('repetición', 'repetition')} {assignment.rep + 1}</>}
               </span>
             )}
             {mounted && (
@@ -369,11 +380,12 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
         )}
         {latestBuild && latestBuild !== __WEB_BUILD__ && (
           <span className="text-amber-300">
-            Web desactualizada ({__WEB_BUILD__}; se sirve {latestBuild}): {mounted ? 'recargará al terminar la prueba' : 'no recibe pruebas hasta recargar'}
+            {t('Web desactualizada', 'Outdated web')} ({__WEB_BUILD__}; {t('se sirve', 'serving')} {latestBuild}):{' '}
+            {mounted ? t('recargará al terminar la prueba', 'will reload when the run ends') : t('no recibe pruebas hasta recargar', 'receives no runs until it reloads')}
           </span>
         )}
-        {error && <span className="text-rose-300">Sin servidor: {error}</span>}
-        <span className="text-slate-500 ml-auto">Deja esta pestaña visible: oculta, la prueba no vale.</span>
+        {error && <span className="text-rose-300">{t('Sin servidor', 'No server')}: {error}</span>}
+        <span className="text-slate-500 ml-auto">{t('Deja esta pestaña visible: oculta, la prueba no vale.', 'Keep this tab visible: if hidden, the run is invalid.')}</span>
       </div>
 
       {mounted && status && (

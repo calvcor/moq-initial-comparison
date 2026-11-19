@@ -3,6 +3,7 @@ import { ArrowLeftRight } from 'lucide-react';
 import type { Campaign } from '../types';
 import { BUSY_NOTE, TextReport, type TextAnalysis } from './CampaignAnalysis';
 import { CampaignVersusTables, type VersusTables } from './CampaignVersusTables';
+import { lang, t } from '../lib/i18n';
 
 // Comparación en texto de dos campañas enteras (README 4.8, «Comparar dos campañas»): la que se está viendo y otra que
 // se elige. La escribe el orquestador (GET /api/campaigns-compare) emparejando condiciones por perfil de red, latencia
@@ -32,7 +33,7 @@ export const CampaignVersus: React.FC<{ campaign: Campaign; busy: string | null 
     let cancelled = false;
     setData(null);
     setError(null);
-    fetch(`/api/campaigns-compare?${new URLSearchParams({ a, b })}`)
+    fetch(`/api/campaigns-compare?${new URLSearchParams({ a, b, lang })}`)
       .then(async (res) => {
         const body = await res.json().catch(() => null);
         if (!res.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${res.status}`);
@@ -50,22 +51,22 @@ export const CampaignVersus: React.FC<{ campaign: Campaign; busy: string | null 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-slate-400">Comparar con</span>
+        <span className="text-slate-400">{t('Comparar con', 'Compare with')}</span>
         <select
           className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 text-xs max-w-md"
           value={other}
           onChange={(e) => setOther(e.target.value)}
         >
-          <option value="">elige una campaña…</option>
+          <option value="">{t('elige una campaña…', 'choose a campaign…')}</option>
           {others.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} ({c.id}){c.archived ? ' · archivada' : ''}
+              {c.name} ({c.id}){c.archived ? t(' · archivada', ' · archived') : ''}
             </option>
           ))}
         </select>
         {other && (
-          <button className="flex items-center gap-1 text-slate-300 hover:text-white" onClick={() => setSwapped((v) => !v)} title="Intercambiar A y B">
-            <ArrowLeftRight className="w-3.5 h-3.5" /> Intercambiar
+          <button className="flex items-center gap-1 text-slate-300 hover:text-white" onClick={() => setSwapped((v) => !v)} title={t('Intercambiar A y B', 'Swap A and B')}>
+            <ArrowLeftRight className="w-3.5 h-3.5" /> {t('Intercambiar', 'Swap')}
           </button>
         )}
       </div>
@@ -74,13 +75,16 @@ export const CampaignVersus: React.FC<{ campaign: Campaign; busy: string | null 
           A: <span className="text-slate-200">{name(a)}</span> · B: <span className="text-slate-200">{name(b)}</span>
         </p>
       )}
-      {error && <p className="text-rose-300">Comparación: {error}</p>}
-      {other && !data && !error && <p className="text-slate-500">Comparando…</p>}
+      {error && <p className="text-rose-300">{t('Comparación', 'Comparison')}: {error}</p>}
+      {other && !data && !error && <p className="text-slate-500">{t('Comparando…', 'Comparing…')}</p>}
       {data && (
         <TextReport
           data={data}
-          title={`Comparación de «${name(a)}» (A) y «${name(b)}» (B)`}
-          method="Reglas fijas sobre las pruebas válidas de las dos: se emparejan las condiciones con el mismo perfil de red, la misma latencia objetivo (en ms) y la misma emisión (con una sola en cada campaña, aunque difieran). Una diferencia cuenta en una condición si supera la variación entre repeticiones de las dos; las tendencias usan solo los niveles medidos en las dos. Es una lectura descriptiva, no un contraste estadístico (README 4.8)."
+          title={t(`Comparación de «${name(a)}» (A) y «${name(b)}» (B)`, `Comparison of “${name(a)}” (A) and “${name(b)}” (B)`)}
+          method={t(
+            'Reglas fijas sobre las pruebas válidas de las dos: se emparejan las condiciones con el mismo perfil de red, la misma latencia objetivo (en ms) y la misma emisión (con una sola en cada campaña, aunque difieran). Una diferencia cuenta en una condición si supera la variación entre repeticiones de las dos; las tendencias usan solo los niveles medidos en las dos. Es una lectura descriptiva, no un contraste estadístico (README 4.8).',
+            'Fixed rules over the valid runs of both: conditions are paired by the same network profile, the same target latency (in ms) and the same stream (with a single stream in each campaign, even if they differ). A difference counts in a condition if it exceeds the variation between repetitions of both; trends use only the levels measured in both. This is a descriptive reading, not a statistical test (README 4.8).',
+          )}
         />
       )}
       {data?.tables && <CampaignVersusTables tables={data.tables} />}

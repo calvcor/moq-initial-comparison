@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import { Award, Download, Info, Play } from 'lucide-react';
 import { runQoETest, type PlayerId } from '../lib/qoe';
+import { lang, t } from '../lib/i18n';
 
 interface QoETerms {
   quality: number;
@@ -74,19 +75,33 @@ const PLAYERS: { id: PlayerId; label: string; color: string; text: string }[] = 
 ];
 
 const TERMS: { key: keyof QoETerms; label: string }[] = [
-  { key: 'quality', label: 'Calidad (α·Σ vmaf/20)' },
-  { key: 'rebuffer_time', label: 'Tiempo de parón (β)' },
-  { key: 'rebuffer_count', label: 'Número de parones (γ)' },
-  { key: 'latency', label: 'Latencia media (σ)' },
-  { key: 'speed', label: 'Velocidad (μ)' },
-  { key: 'smoothness', label: 'Suavidad (ω)' },
+  { key: 'quality', label: t('Calidad (α·Σ vmaf/20)', 'Quality (α·Σ vmaf/20)') },
+  { key: 'rebuffer_time', label: t('Tiempo de parón (β)', 'Stall time (β)') },
+  { key: 'rebuffer_count', label: t('Número de parones (γ)', 'Number of stalls (γ)') },
+  { key: 'latency', label: t('Latencia media (σ)', 'Mean latency (σ)') },
+  { key: 'speed', label: t('Velocidad (μ)', 'Playback speed (μ)') },
+  { key: 'smoothness', label: t('Suavidad (ω)', 'Smoothness (ω)') },
 ];
 
 const DURATIONS = [15, 30, 60, 120, 300];
 
 const fmt = (v: number | null | undefined, digits = 2) => (v === null || v === undefined ? '--' : v.toFixed(digits));
 
-const HINT = (
+const HINT =
+  lang === 'en' ? (
+    <div className="space-y-1.5">
+      <p>
+        Records the encoded stream on the server and logs what each active player paints. From that, the server computes the VMAF of every
+        painted frame and the LL-GABR QoE (equation 6, 1 s steps). Details and decisions in the README, section 4.7.
+      </p>
+      <p>Logging starts after the margin, so that the first painted frames (encoded earlier, by as much as the latency) are already recorded.</p>
+      <p className="text-amber-300">
+        VMAF is only computed with the stream stopped: computing it while the stream is running delays the encoder. So, by default, the server
+        stops the stream as soon as the recording ends, computes VMAF and QoE, and restarts it with the same configuration. QoE adds up per
+        second: only tests of the same duration are comparable.
+      </p>
+    </div>
+  ) : (
   <div className="space-y-1.5">
     <p>
       Graba en el servidor el flujo codificado y anota lo que pinta cada reproductor activo. Con eso el servidor calcula el VMAF de cada frame
@@ -101,7 +116,7 @@ const HINT = (
       comparables pruebas de la misma duración.
     </p>
   </div>
-);
+  );
 
 export const QoEPanel: React.FC<{
   streaming: boolean;
@@ -231,9 +246,9 @@ export const QoEPanel: React.FC<{
 
   const remaining = phase?.until ? Math.max(0, Math.ceil((phase.until - Date.now()) / 1000)) : null;
   const phaseText: Record<string, string> = {
-    recording: 'Grabando el margen inicial',
-    logging: 'Registrando lo que pinta cada reproductor',
-    uploading: 'Subiendo los registros',
+    recording: t('Grabando el margen inicial', 'Recording the initial margin'),
+    logging: t('Registrando lo que pinta cada reproductor', 'Logging what each player paints'),
+    uploading: t('Subiendo los registros', 'Uploading the logs'),
   };
 
   const value = (r: QoEStep) => (chart === 'vmaf' ? r.vmaf : chart === 'latency' ? (r.latency_s ?? 0) * 1000 : r.speed);
@@ -254,11 +269,11 @@ export const QoEPanel: React.FC<{
     animation: { duration: 0 },
     parsing: false as const,
     scales: {
-      x: { type: 'linear' as const, grid: { display: false }, ticks: { color: '#94a3b8' }, title: { display: true, text: 'segundo de la prueba', color: '#94a3b8' } },
+      x: { type: 'linear' as const, grid: { display: false }, ticks: { color: '#94a3b8' }, title: { display: true, text: t('segundo de la prueba', 'test second'), color: '#94a3b8' } },
       y: {
         grid: { color: '#334155' },
         ticks: { color: '#94a3b8' },
-        title: { display: true, text: chart === 'vmaf' ? 'VMAF' : chart === 'latency' ? 'latencia (ms)' : 'velocidad (×)', color: '#94a3b8' },
+        title: { display: true, text: chart === 'vmaf' ? 'VMAF' : chart === 'latency' ? t('latencia (ms)', 'latency (ms)') : t('velocidad (×)', 'speed (×)'), color: '#94a3b8' },
       },
     },
     plugins: { legend: { labels: { color: '#cbd5e1', font: { size: 12 } } } },
@@ -266,19 +281,19 @@ export const QoEPanel: React.FC<{
 
   const vmafNote = (() => {
     if (!current) return null;
-    if (current.state === 'error') return <span className="text-red-400">Grabación fallida: {current.error}</span>;
-    if (current.state !== 'ready') return <span className="text-slate-400">Grabación: {current.state === 'recording' ? 'grabando' : 'indexando'}…</span>;
+    if (current.state === 'error') return <span className="text-red-400">{t('Grabación fallida', 'Recording failed')}: {current.error}</span>;
+    if (current.state !== 'ready') return <span className="text-slate-400">{t('Grabación', 'Recording')}: {current.state === 'recording' ? t('grabando', 'recording') : t('indexando', 'indexing')}…</span>;
     const v = current.vmaf?.state;
     if (v === 'done') return null;
-    if (v === 'error') return <span className="text-red-400">VMAF fallido: {current.vmaf?.error}</span>;
-    if (v === 'running') return <span className="text-slate-300">Calculando el VMAF…</span>;
+    if (v === 'error') return <span className="text-red-400">{t('VMAF fallido', 'VMAF failed')}: {current.vmaf?.error}</span>;
+    if (v === 'running') return <span className="text-slate-300">{t('Calculando el VMAF…', 'Computing VMAF…')}</span>;
     return (
       <span className="flex flex-wrap items-center gap-2 text-amber-300">
-        VMAF en cola: se calcula en cuanto la emisión esté parada.
+        {t('VMAF en cola: se calcula en cuanto la emisión esté parada.', 'VMAF queued: computed as soon as the stream is stopped.')}
         {current.vmaf?.note && <span className="text-slate-400">({current.vmaf.note})</span>}
         {streaming && (
           <button onClick={onStopStream} className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer">
-            Detener la emisión
+            {t('Detener la emisión', 'Stop the stream')}
           </button>
         )}
       </span>
@@ -290,7 +305,7 @@ export const QoEPanel: React.FC<{
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="group relative flex items-center gap-2 cursor-help">
           <Award className="w-4 h-4 text-amber-400" />
-          <h4 className="text-sm font-semibold text-slate-300">Prueba de QoE (LL-GABR + VMAF)</h4>
+          <h4 className="text-sm font-semibold text-slate-300">{t('Prueba de QoE (LL-GABR + VMAF)', 'QoE test (LL-GABR + VMAF)')}</h4>
           <Info className="w-3 h-3 text-slate-500" />
           <div className="pointer-events-none absolute z-10 left-0 top-full mt-1 w-96 hidden group-hover:block bg-slate-800 border border-slate-600 rounded-lg p-3 text-[11px] leading-snug text-slate-200 shadow-xl">
             {HINT}
@@ -298,7 +313,7 @@ export const QoEPanel: React.FC<{
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
           <label className="flex items-center gap-1.5">
-            Duración
+            {t('Duración', 'Duration')}
             <select
               value={durationS}
               disabled={running}
@@ -313,7 +328,7 @@ export const QoEPanel: React.FC<{
             </select>
           </label>
           <label className="flex items-center gap-1.5">
-            Margen
+            {t('Margen', 'Margin')}
             <input
               type="number"
               min={1}
@@ -325,12 +340,12 @@ export const QoEPanel: React.FC<{
             />
             s
           </label>
-          <label className="flex items-center gap-1.5" title="El VMAF solo se calcula con la emisión parada">
+          <label className="flex items-center gap-1.5" title={t('El VMAF solo se calcula con la emisión parada', 'VMAF is only computed with the stream stopped')}>
             <input type="checkbox" checked={stopAfter} disabled={running} onChange={(e) => setStopAfter(e.target.checked)} />
-            Detener la emisión para el VMAF y reanudarla después
+            {t('Detener la emisión para el VMAF y reanudarla después', 'Stop the stream for VMAF and resume it afterwards')}
           </label>
           <span className="text-slate-500">
-            {activePlayers.length ? PLAYERS.filter((p) => activePlayers.includes(p.id)).map((p) => p.label).join(' · ') : 'sin reproductores activos'}
+            {activePlayers.length ? PLAYERS.filter((p) => activePlayers.includes(p.id)).map((p) => p.label).join(' · ') : t('sin reproductores activos', 'no active players')}
           </span>
           <button
             onClick={start}
@@ -338,7 +353,7 @@ export const QoEPanel: React.FC<{
             className="flex items-center gap-1.5 px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-medium cursor-pointer disabled:cursor-not-allowed"
           >
             <Play className="w-3.5 h-3.5" />
-            Lanzar prueba
+            {t('Lanzar prueba', 'Run test')}
           </button>
         </div>
       </div>
@@ -346,14 +361,14 @@ export const QoEPanel: React.FC<{
       {running && (
         <p className="text-xs text-indigo-300">
           {phaseText[phase!.name] ?? phase!.name}
-          {remaining !== null && ` · ${remaining} s`} · no cambies de pestaña: el navegador detiene el muestreo
+          {remaining !== null && ` · ${remaining} s`} · {t('no cambies de pestaña: el navegador detiene el muestreo', "don't switch tabs: the browser stops sampling")}
         </p>
       )}
       {!streaming && !running && (
         <p className="text-xs text-slate-500">
-          La prueba necesita la emisión en marcha
-          {current?.stopped_after && !current.resumed ? ': se detuvo al terminar la última prueba y se reanudará al acabar su VMAF' : ''}
-          {current?.resumed && !current.resumed.ok ? `: no se pudo reanudar tras la última prueba (${current.resumed.reason})` : ''}.
+          {t('La prueba necesita la emisión en marcha', 'The test needs the stream running')}
+          {current?.stopped_after && !current.resumed ? t(': se detuvo al terminar la última prueba y se reanudará al acabar su VMAF', ': it was stopped at the end of the last test and will resume once its VMAF is done') : ''}
+          {current?.resumed && !current.resumed.ok ? t(`: no se pudo reanudar tras la última prueba (${current.resumed.reason})`, `: it could not be resumed after the last test (${current.resumed.reason})`) : ''}.
         </p>
       )}
       {error && <p className="text-xs text-red-400">{error}</p>}
@@ -361,7 +376,7 @@ export const QoEPanel: React.FC<{
       {recordings.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
           <label className="flex items-center gap-1.5">
-            Prueba
+            {t('Prueba', 'Test')}
             <select
               value={selected ?? ''}
               onChange={(e) => setSelected(e.target.value)}
@@ -369,8 +384,8 @@ export const QoEPanel: React.FC<{
             >
               {recordings.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.id} · {Math.round(r.duration_s)} s{r.source === 'camera' ? ' · cámara' : r.source === 'tos' ? ' · Tears of Steel' : ''}
-                  {r.qoe ? ' · QoE' : r.views || r.state !== 'ready' ? '' : ' · sin registros'}
+                  {r.id} · {Math.round(r.duration_s)} s{r.source === 'camera' ? t(' · cámara', ' · camera') : r.source === 'tos' ? ' · Tears of Steel' : ''}
+                  {r.qoe ? ' · QoE' : r.views || r.state !== 'ready' ? '' : t(' · sin registros', ' · no logs')}
                 </option>
               ))}
             </select>
@@ -379,10 +394,10 @@ export const QoEPanel: React.FC<{
           {current?.qoe && (
             <span className="ml-auto flex gap-2">
               <button onClick={exportCSV} className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 cursor-pointer">
-                <Download className="w-3 h-3" /> CSV por segundo
+                <Download className="w-3 h-3" /> {t('CSV por segundo', 'Per-second CSV')}
               </button>
               <button onClick={exportJSON} className="flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 cursor-pointer">
-                <Download className="w-3 h-3" /> JSON completo
+                <Download className="w-3 h-3" /> {t('JSON completo', 'Full JSON')}
               </button>
             </span>
           )}
@@ -395,11 +410,11 @@ export const QoEPanel: React.FC<{
             const q = current.qoe?.[p.id];
             const v = current.views![p.id]!;
             const warnings = [
-              v.hidden && 'pestaña oculta',
-              v.gaps > 0 && `${v.gaps} tramos sin muestreo`,
-              v.outside_recording > 0 && `${v.outside_recording} frames fuera de la grabación`,
-              v.unmatched > 0 && `${v.unmatched} sin emparejar`,
-              q && q.excluded_steps > 0 && `${q.excluded_steps} s excluidos`,
+              v.hidden && t('pestaña oculta', 'hidden tab'),
+              v.gaps > 0 && t(`${v.gaps} tramos sin muestreo`, `${v.gaps} unsampled gaps`),
+              v.outside_recording > 0 && t(`${v.outside_recording} frames fuera de la grabación`, `${v.outside_recording} frames outside the recording`),
+              v.unmatched > 0 && t(`${v.unmatched} sin emparejar`, `${v.unmatched} unmatched`),
+              q && q.excluded_steps > 0 && t(`${q.excluded_steps} s excluidos`, `${q.excluded_steps} s excluded`),
             ].filter(Boolean);
             return (
               <div key={p.id} className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3 text-xs space-y-2">
@@ -410,25 +425,25 @@ export const QoEPanel: React.FC<{
                 {q?.terms ? (
                   <table className="w-full font-mono text-[11px]">
                     <tbody>
-                      {TERMS.map((t) => (
-                        <tr key={t.key}>
-                          <td className="text-slate-400">{t.label}</td>
-                          <td className="text-right text-slate-200">{fmt(q.terms![t.key], 3)}</td>
+                      {TERMS.map((term) => (
+                        <tr key={term.key}>
+                          <td className="text-slate-400">{term.label}</td>
+                          <td className="text-right text-slate-200">{fmt(q.terms![term.key], 3)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 ) : (
-                  <p className="text-slate-500">Sin QoE todavía: falta el VMAF.</p>
+                  <p className="text-slate-500">{t('Sin QoE todavía: falta el VMAF.', 'No QoE yet: VMAF is missing.')}</p>
                 )}
                 {q?.inputs && (
                   <p className="text-[11px] text-slate-400 font-mono leading-relaxed">
-                    T={q.T} s · VMAF {fmt(q.inputs.vmaf_mean, 1)} · latencia {fmt(q.inputs.latency_mean_s * 1000, 0)} ms · parones{' '}
-                    {q.inputs.rebuffer_count} ({fmt(q.inputs.rebuffer_s, 2)} s) · velocidad {fmt(q.inputs.speed_mean, 3)}
+                    T={q.T} s · VMAF {fmt(q.inputs.vmaf_mean, 1)} · {t('latencia', 'latency')} {fmt(q.inputs.latency_mean_s * 1000, 0)} ms · {t('parones', 'stalls')}{' '}
+                    {q.inputs.rebuffer_count} ({fmt(q.inputs.rebuffer_s, 2)} s) · {t('velocidad', 'speed')} {fmt(q.inputs.speed_mean, 3)}
                   </p>
                 )}
                 <p className="text-[11px] text-slate-500 font-mono">
-                  {v.matched}/{v.frames} frames emparejados · {v.skipped} sin pintar · {v.rendition_switches} cambios de calidad
+                  {v.matched}/{v.frames} {t('frames emparejados', 'frames matched')} · {v.skipped} {t('sin pintar', 'not painted')} · {v.rendition_switches} {t('cambios de calidad', 'quality switches')}
                 </p>
                 {warnings.length > 0 && <p className="text-[11px] text-amber-300">{warnings.join(' · ')}</p>}
               </div>
@@ -443,9 +458,9 @@ export const QoEPanel: React.FC<{
             <div className="flex space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
               {(
                 [
-                  ['vmaf', 'VMAF por segundo'],
-                  ['latency', 'Latencia por segundo'],
-                  ['speed', 'Velocidad por segundo'],
+                  ['vmaf', t('VMAF por segundo', 'VMAF per second')],
+                  ['latency', t('Latencia por segundo', 'Latency per second')],
+                  ['speed', t('Velocidad por segundo', 'Speed per second')],
                 ] as const
               ).map(([key, label]) => (
                 <button

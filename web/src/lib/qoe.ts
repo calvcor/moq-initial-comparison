@@ -8,6 +8,7 @@
 
 import { getClockSync } from './clock';
 import type { GlassMeter, ViewLog } from './glass';
+import { t } from './i18n';
 
 export type PlayerId = 'dash' | 'moq' | 'rtc';
 
@@ -31,9 +32,9 @@ export interface QoETestResult {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function runQoETest({ durationS, prerollS = 5, players, stopAfter = false, onPhase }: QoETestOptions): Promise<QoETestResult> {
-  if (!getClockSync()) throw new Error('Sin sincronización de reloj con el servidor');
+  if (!getClockSync()) throw new Error(t('Sin sincronización de reloj con el servidor', 'No clock synchronisation with the server'));
   const active = players.filter((p) => meters[p]);
-  if (!active.length) throw new Error('No hay ningún reproductor activo');
+  if (!active.length) throw new Error(t('No hay ningún reproductor activo', 'No player is active'));
 
   // La grabación cubre el margen inicial, la prueba y 2 s más para los frames que se pintan al final
   const res = await fetch('/api/qoe/recordings', {
@@ -41,7 +42,7 @@ export async function runQoETest({ durationS, prerollS = 5, players, stopAfter =
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ duration_s: prerollS + durationS + 2, stop_after: stopAfter }),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? `No se pudo grabar (${res.status})`);
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? t(`No se pudo grabar (${res.status})`, `Could not record (${res.status})`));
   const { id } = await res.json();
   onPhase?.('recording', Date.now() + prerollS * 1000);
   await sleep(prerollS * 1000);
