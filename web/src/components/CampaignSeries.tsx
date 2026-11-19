@@ -683,6 +683,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
   const togglePlayer = (p: PlayerId) => setHiddenPlayers((all) => (all.includes(p) ? all.filter((x) => x !== p) : [...all, p]));
   const singleRun = singleId ? byId[singleId] : undefined;
   const notes = Object.entries(METRICS).filter(([k, m]) => metricKeys.includes(k) && m.note);
+  const columns = players.filter((p) => !hiddenPlayers.includes(p));
   const shown = (m: Metric) => players.filter((p) => (!m.only || m.only === p) && !hiddenPlayers.includes(p));
   const rangeOf = (m: Metric) => {
     const ys = chosen.flatMap((id) =>
@@ -859,9 +860,10 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
                     />
                   </div>
                 ) : (
-                  // Una columna por protocolo (las mismas en todas las filas, aunque la métrica no exista en alguno)
-                  <div className={`grid gap-2 ${players.length > 2 ? 'lg:grid-cols-3' : players.length > 1 ? 'lg:grid-cols-2' : ''}`}>
-                    {players.map((p) => (
+                  // Una columna por protocolo visible (las mismas en todas las filas, aunque la métrica no exista en
+                  // alguno); los ocultos en la leyenda no ocupan columna y el resto se reparte el ancho
+                  <div className={`grid gap-2 ${columns.length > 2 ? 'lg:grid-cols-3' : columns.length > 1 ? 'lg:grid-cols-2' : ''}`}>
+                    {columns.map((p) => (
                       <div key={p} className={shown(m).includes(p) ? '' : 'hidden lg:block'}>
                         <div className="text-[10px] mb-0.5" style={{ color: PLAYER_COLOR[p] }}>
                           {PLAYER_LABEL[p]}
