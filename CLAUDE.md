@@ -190,10 +190,11 @@ la vez y mide la latencia leyendo un timecode quemado en la imagen.
   (0.17.9 a 0.17.16): ~2 veces el enlace con retardo realista y decenas o cientos de veces con `delay_ms: 0` y el enlace holgado,
   así que elige 1080p donde no cabe. Viene del relay, no de cómo lo usamos; `main` de moq-dev ya usa la estimación de BBR
   (`../FINDINGS/moq_relay_probe_cwnd_overestimate.md`). Declara el retardo base de la red en cada comparación. Con el relay
-  de `main` (justbytes, `c19c723`) la cifra es `max_bw` de BBR, y con enlaces lentos se infla (3 veces el enlace a 2 Mbit/s):
-  el limitador `tbf` del router deja pasar sin esperar un paquete suelto tras un rato ocioso, y BBR lo toma como tasa de
-  entrega (medido dentro del relay el 19-11-2026, sección 6 de ese documento). Es una variable de confusión del banco:
-  declárala, y la calidad elegida que nunca se llega a pintar (`moq_selected_height` ≠ `moq_height`).
+  de `main` (justbytes, `c19c723`) la cifra es `max_bw` de BBR: con retardo base de 2,5 ms o más coincide con el enlace,
+  y solo sin retardo se infla (3 veces el enlace a 2 Mbit/s, con calidades elegidas que nunca se pintan,
+  `moq_selected_height` ≠ `moq_height`): el limitador `tbf` del router deja pasar sin esperar un paquete suelto tras un rato
+  ocioso y, con el RTT mínimo de BBR en 0,1 ms, su filtro no descarta esa muestra (medido dentro del relay el 19-11-2026,
+  sección 6 de ese documento). Con MoQ de `main`, usa retardo base o declara que no lo hay.
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
 - La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente del servidor se queda a ratos por detrás del tiempo real y los
