@@ -1,17 +1,94 @@
 import React, { useEffect, useState } from 'react';
-import { Languages, Server, Settings, X } from 'lucide-react';
+import { Image as ImageIcon, Languages, Server, Settings, X } from 'lucide-react';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { WorkersPanel } from './WorkersPanel';
+import { captureBackground, setCaptureBackground, type CaptureBackground } from '../lib/captureSettings';
 
-// Ajustes de la página, comunes al dashboard y a la página de campañas: el idioma de la interfaz (de este navegador)
-// y los trabajadores independientes de las campañas (del orquestador, compartidos por todos).
+// Ajustes de la página, comunes al dashboard y a la página de campañas: el idioma de la interfaz y el fondo de las
+// capturas de gráficas (de este navegador) y los trabajadores independientes de las campañas (del orquestador,
+// compartidos por todos).
 
-export type SettingsSection = 'language' | 'workers';
+export type SettingsSection = 'language' | 'captures' | 'workers';
 
 const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
   { id: 'language', label: t('Idioma', 'Language'), icon: <Languages className="w-4 h-4" /> },
+  { id: 'captures', label: t('Capturas', 'Screenshots'), icon: <ImageIcon className="w-4 h-4" /> },
   { id: 'workers', label: t('Trabajadores', 'Workers'), icon: <Server className="w-4 h-4" /> },
 ];
+
+// Cada opción con una muestra de cómo queda: el fondo y un texto y una línea con sus colores
+const BACKGROUNDS: { id: CaptureBackground; label: string; hint: string; swatch: React.CSSProperties; ink: string }[] = [
+  {
+    id: 'transparent',
+    label: t('Transparente', 'Transparent'),
+    hint: t('Sin fondo, con textos oscuros: para pegar sobre un documento o una diapositiva clara.', 'No background, dark text: to paste onto a light document or slide.'),
+    swatch: { backgroundImage: 'repeating-conic-gradient(#cbd5e1 0 25%, #f8fafc 0 50%)', backgroundSize: '12px 12px' },
+    ink: '#0f172a',
+  },
+  {
+    id: 'white',
+    label: t('Blanco', 'White'),
+    hint: t('Fondo blanco y textos oscuros, como al copiar con el botón derecho.', 'White background and dark text, as when copying with the right button.'),
+    swatch: { background: '#ffffff' },
+    ink: '#0f172a',
+  },
+  {
+    id: 'interface',
+    label: t('Azul de la interfaz', 'Interface blue'),
+    hint: t('Tal como se ve en la página: el fondo azul oscuro y los textos claros.', 'As seen on the page: the dark blue background and light text.'),
+    swatch: { background: '#020617' },
+    ink: '#cbd5e1',
+  },
+];
+
+const CapturesSection: React.FC = () => {
+  const [value, setValue] = useState<CaptureBackground>(captureBackground);
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="space-y-3 text-xs">
+      <p className="text-slate-400">
+        {t(
+          'Fondo de las imágenes que dan los botones de captura (copiar imagen y PNG) de cada gráfica y de cada bloque. Se recuerda en este navegador y se aplica a la siguiente captura, sin recargar.',
+          'Background of the images given by the capture buttons (copy image and PNG) of each chart and each block. It is remembered in this browser and applies to the next capture, without reloading.',
+        )}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {BACKGROUNDS.map((b) => (
+          <button
+            key={b.id}
+            onClick={() => {
+              setValue(b.id);
+              setFailed(!setCaptureBackground(b.id));
+            }}
+            title={b.hint}
+            className={`w-48 text-left p-2 rounded-lg border ${
+              b.id === value ? 'border-indigo-500 bg-indigo-900/40 text-white' : 'border-slate-700 bg-slate-950 text-slate-300 hover:text-white hover:border-slate-500'
+            }`}
+          >
+            <div className="h-14 rounded border border-slate-600 mb-2 flex flex-col justify-center gap-1.5 px-2" style={b.swatch}>
+              <span className="text-[10px] font-medium" style={{ color: b.ink }}>
+                {t('Objetivo 200 ms', 'Target 200 ms')}
+              </span>
+              <svg viewBox="0 0 100 12" className="w-full h-3" preserveAspectRatio="none">
+                <polyline points="0,10 20,6 40,8 60,3 80,5 100,2" fill="none" stroke="#3b82f6" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                <polyline points="0,11 100,11" fill="none" stroke={b.ink} strokeOpacity="0.4" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+              </svg>
+            </div>
+            <div className="font-medium">{b.label}</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">{b.hint}</div>
+          </button>
+        ))}
+      </div>
+      <p className="text-slate-500">
+        {t(
+          'El clic derecho → Copiar imagen sobre una gráfica no cambia: sigue dando solo el canvas, en blanco.',
+          'Right click → Copy image on a chart does not change: it still gives only the canvas, on white.',
+        )}
+      </p>
+      {failed && <p className="text-rose-300">{t('Este navegador no deja guardar la preferencia.', 'This browser does not allow saving the preference.')}</p>}
+    </div>
+  );
+};
 
 const LANGS: { id: Lang; label: string }[] = [
   { id: 'es', label: 'Español' },
@@ -101,7 +178,7 @@ export const SettingsModal: React.FC<{ initial?: SettingsSection; onClose: () =>
           </nav>
           <div className="flex-1 min-w-0 min-h-0 overflow-y-auto p-4">
             <h3 className="text-sm font-semibold text-slate-200 mb-3">{SECTIONS.find((s) => s.id === section)!.label}</h3>
-            {section === 'language' ? <LanguageSection /> : <WorkersPanel />}
+            {section === 'language' ? <LanguageSection /> : section === 'captures' ? <CapturesSection /> : <WorkersPanel />}
           </div>
         </div>
       </div>
@@ -113,7 +190,7 @@ export const SettingsModal: React.FC<{ initial?: SettingsSection; onClose: () =>
 export const SettingsButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <button
     onClick={onClick}
-    title={t('Ajustes: idioma y trabajadores', 'Settings: language and workers')}
+    title={t('Ajustes: idioma, capturas y trabajadores', 'Settings: language, screenshots and workers')}
     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300 hover:text-white hover:border-indigo-500"
   >
     <Settings className="w-4 h-4" />

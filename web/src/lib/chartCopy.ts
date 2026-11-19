@@ -15,6 +15,8 @@ const PAPER = '#ffffff';
 // La gráfica es la copia para papel: lo consultan los plugins propios (el cursor común de las franjas, la leyenda de
 // los protocolos), que dibujan con sus propios colores
 export const isPrinting = (chart: Chart) => chart.canvas?.dataset.paper === '1';
+// La gráfica es una copia (para papel o con los colores de la página, en las capturas): sin cursor ni tooltip
+export const isCopy = (chart: Chart) => chart.canvas?.dataset.copy === '1';
 
 // Fondo blanco solo en la copia para papel (en la página el canvas es transparente); antes de todo lo demás
 Chart.register({
@@ -40,28 +42,31 @@ function clone<T>(value: T): T {
 }
 
 /** La gráfica en colores para papel, dibujada en una copia aparte, en un canvas suelto; `pixelRatio` es la densidad de
- * píxeles (por defecto, la de la pantalla) y, con `transparent`, sin el fondo blanco. También la usa la captura de
- * bloques (`capture.ts`), que la quiere transparente. */
-export function paperCanvas(chart: Chart, pixelRatio = chart.currentDevicePixelRatio, transparent = false): HTMLCanvasElement {
+ * píxeles (por defecto, la de la pantalla) y, con `transparent`, sin el fondo blanco. Con `paper` a false, con los
+ * colores de la página (sin fondo), solo sin cursor ni tooltip. También la usa la captura de bloques (`capture.ts`). */
+export function paperCanvas(chart: Chart, pixelRatio = chart.currentDevicePixelRatio, transparent = false, paper = true): HTMLCanvasElement {
   const config = chart.config as unknown as { type: string; data: any; options: any; plugins: any[] };
   const options = clone(config.options ?? {});
-  options.color = INK;
-  for (const scale of Object.values(options.scales ?? {}) as any[]) {
-    scale.ticks = { ...scale.ticks, color: INK };
-    scale.title = { ...scale.title, color: INK };
-    if (scale.grid?.display !== false) scale.grid = { ...scale.grid, color: GRID };
-    scale.border = { ...scale.border, color: '#94a3b8' };
-  }
   options.plugins = { ...options.plugins };
-  options.plugins.legend = { ...options.plugins.legend, labels: { ...options.plugins.legend?.labels, color: INK } };
-  for (const key of ['title', 'subtitle']) if (options.plugins[key]) options.plugins[key] = { ...options.plugins[key], color: INK };
+  if (paper) {
+    options.color = INK;
+    for (const scale of Object.values(options.scales ?? {}) as any[]) {
+      scale.ticks = { ...scale.ticks, color: INK };
+      scale.title = { ...scale.title, color: INK };
+      if (scale.grid?.display !== false) scale.grid = { ...scale.grid, color: GRID };
+      scale.border = { ...scale.border, color: '#94a3b8' };
+    }
+    options.plugins.legend = { ...options.plugins.legend, labels: { ...options.plugins.legend?.labels, color: INK } };
+    for (const key of ['title', 'subtitle']) if (options.plugins[key]) options.plugins[key] = { ...options.plugins[key], color: INK };
+  }
   options.plugins.tooltip = { ...options.plugins.tooltip, enabled: false };
   Object.assign(options, { animation: false, responsive: false, maintainAspectRatio: false, events: [], devicePixelRatio: pixelRatio });
   // Los mismos datos, con los protocolos o pruebas ocultos desde la leyenda también ocultos
   const data = clone(config.data);
   data.datasets?.forEach((d: any, i: number) => (d.hidden = !chart.isDatasetVisible(i)));
   const canvas = document.createElement('canvas');
-  canvas.dataset.paper = '1';
+  canvas.dataset.copy = '1';
+  if (paper) canvas.dataset.paper = '1';
   if (transparent) canvas.dataset.transparent = '1';
   canvas.width = chart.width;
   canvas.height = chart.height;

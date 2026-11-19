@@ -58,7 +58,7 @@ export const CaptureButtons: React.FC<{ target: 'chart' | 'block'; name: string;
         className={btn}
         disabled={state === 'busy'}
         onClick={() => run(true)}
-        title={t(`Copiar ${what} como imagen (con leyenda, títulos y ejes, en colores para papel)`, `Copy ${what} as an image (with legend, titles and axes, in print colours)`)}
+        title={t(`Copiar ${what} como imagen (con leyenda, títulos y ejes; el fondo, en Ajustes → Capturas)`, `Copy ${what} as an image (with legend, titles and axes; background in Settings → Screenshots)`)}
       >
         {state === 'copied' ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
         {label && (state === 'copied' ? t('Copiada', 'Copied') : t('Copiar imagen', 'Copy image'))}

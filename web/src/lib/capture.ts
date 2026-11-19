@@ -1,6 +1,7 @@
 // Captura de gráficas como imagen (PNG), para copiarla al portapapeles o descargarla. Se captura un trozo de la página
-// tal como está maquetado (títulos, leyendas en HTML, textos, gráficas de Chart.js con sus ejes) en colores para papel:
-// fondo transparente, textos oscuros y las gráficas redibujadas con la copia para papel de `chartCopy.ts`. No se hace una
+// tal como está maquetado (títulos, leyendas en HTML, textos, gráficas de Chart.js con sus ejes). El fondo se elige en
+// Ajustes → Capturas (`captureSettings.ts`): transparente o blanco, en colores para papel (textos oscuros y las gráficas
+// redibujadas con la copia para papel de `chartCopy.ts`), o el azul de la interfaz, con los colores de la página. No se hace una
 // captura de la pantalla: se recorre el DOM del trozo y se dibuja en un canvas aparte cada fondo de color, borde,
 // texto, icono y gráfica en su sitio, así que sale igual aunque esté fuera de la vista y la página no se toca.
 //
@@ -13,6 +14,7 @@
 
 import { Chart } from 'chart.js';
 import { paperCanvas } from './chartCopy';
+import { captureBackground, type CaptureBackground } from './captureSettings';
 
 const INK = '#0f172a';
 const INK_SOFT = '#475569';
@@ -82,7 +84,8 @@ function loadImage(src: string): Promise<HTMLImageElement | null> {
 }
 
 /** Recorre un elemento y anota, en coordenadas de la ventana, lo que hay que dibujar y el rectángulo que ocupa. */
-async function layout(root: Element, ratio: number): Promise<Layer> {
+// Con `screen` (fondo de la interfaz), los colores de la página tal cual; si no, los de papel.
+async function layout(root: Element, ratio: number, screen: boolean): Promise<Layer> {
   const ops: Op[] = [];
   let box: Rect | null = null;
   const mark = (r: Rect, clip: Rect | null) => {
@@ -105,7 +108,7 @@ async function layout(root: Element, ratio: number): Promise<Layer> {
 
     // Fondo: los grises del tema oscuro se quedan en blanco; los de color (muestras de leyenda, botón activo), tal cual
     const bg = rgba(style.backgroundColor);
-    if (!isRoot && bg[3] > 0 && rect.w > 0 && rect.h > 0 && !neutral(bg)) {
+    if ((screen || !isRoot) && bg[3] > 0 && rect.w > 0 && rect.h > 0 && (screen || !neutral(bg))) {
       if (mark(rect, clip)) {
         const radius = Math.min(parseFloat(style.borderTopLeftRadius) || 0, rect.w / 2, rect.h / 2);
         const fill = style.backgroundColor;
@@ -128,7 +131,7 @@ async function layout(root: Element, ratio: number): Promise<Layer> {
         const css = style.getPropertyValue(`border-${side.toLowerCase()}-color`);
         const c = rgba(css);
         if (c[3] === 0) continue;
-        const color = neutral(c) ? RULE : css;
+        const color = neutral(c) && !screen ? RULE : css;
         const half = width / 2;
         const [x1, y1, x2, y2] =
           side === 'Top' ? [rect.x, rect.y + half, rect.x + rect.w, rect.y + half]
@@ -156,7 +159,7 @@ async function layout(root: Element, ratio: number): Promise<Layer> {
       let source: CanvasImageSource = el;
       if (chart) {
         try {
-          source = paperCanvas(chart, ratio, true);
+          source = paperCanvas(chart, ratio, true, !screen);
         } catch {
           /* la gráfica tal como se ve */
         }
@@ -260,7 +263,7 @@ async function layout(root: Element, ratio: number): Promise<Layer> {
     }
   }
 
-  await walk(root, null, 1, false, false, true);
+  await walk(root, null, 1, screen, false, true);
   const align = getComputedStyle(root).textAlign === 'center' ? 'center' : 'left';
   return { ops, box, align };
 }
@@ -280,9 +283,20 @@ function partsOf(target: Element): Element[] {
 }
 
 /** La imagen (PNG) de un bloque o de una gráfica marcados con data-capture, en colores para papel. */
-export async function captureBlob(target: Element): Promise<Blob> {
+// El fondo opaco sobre el que se ve el elemento en la página (el azul oscuro de la interfaz)
+function pageBackground(el: Element): string {
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    const css = getComputedStyle(e).backgroundColor;
+    if (rgba(css)[3] === 1) return css;
+  }
+  return '#020617';
+}
+
+/** La imagen (PNG) de un bloque o de una gráfica marcados con data-capture, con el fondo de Ajustes → Capturas. */
+export async function captureBlob(target: Element, background: CaptureBackground = captureBackground()): Promise<Blob> {
   const ratio = Math.max(2, window.devicePixelRatio || 1);
-  const layers = (await Promise.all(partsOf(target).map((el) => layout(el, ratio)))).filter((l) => l.box);
+  const screen = background === 'interface';
+  const layers = (await Promise.all(partsOf(target).map((el) => layout(el, ratio, screen)))).filter((l) => l.box);
   if (!layers.length) throw new Error('nothing to capture');
   const width = Math.max(...layers.map((l) => l.box!.w));
   const height = layers.reduce((sum, l) => sum + l.box!.h, 0) + GAP * (layers.length - 1);
@@ -290,6 +304,10 @@ export async function captureBlob(target: Element): Promise<Blob> {
   canvas.width = Math.ceil((width + 2 * PAD) * ratio);
   canvas.height = Math.ceil((height + 2 * PAD) * ratio);
   const ctx = canvas.getContext('2d')!;
+  if (background !== 'transparent') {
+    ctx.fillStyle = screen ? pageBackground(target) : '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
   let y = PAD;
   for (const { ops, box, align } of layers) {
     const b = box!;

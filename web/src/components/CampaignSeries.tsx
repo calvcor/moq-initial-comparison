@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Chart as ChartJS, LinearScale, PointElement, LineElement, Tooltip, Legend, type ChartDataset, type ChartOptions, type Plugin } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import type { Campaign, CampaignRun, PlayerId } from '../types';
-import { isPrinting } from '../lib/chartCopy';
+import { isCopy, isPrinting } from '../lib/chartCopy';
 import { CAPTURE_CORNER, CaptureButtons } from './CaptureButtons';
 import { multiStream, streamDifferences, streamName } from '../lib/campaignStreams';
 import { t } from '../lib/i18n';
@@ -212,8 +212,8 @@ const crosshair = (at: React.MutableRefObject<number | null>): Plugin<'line'> =>
   id: 'crosshair',
   afterDatasetsDraw(chart) {
     const x = at.current;
-    // En la imagen para copiar (lib/chartCopy.ts) no va el cursor
-    if (x === null || isPrinting(chart)) return;
+    // En la imagen para copiar o capturar (lib/chartCopy.ts) no va el cursor
+    if (x === null || isCopy(chart)) return;
     const { ctx, chartArea, scales } = chart;
     const px = scales.x.getPixelForValue(x);
     if (px < chartArea.left || px > chartArea.right) return;
