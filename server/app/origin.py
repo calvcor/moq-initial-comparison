@@ -28,24 +28,26 @@ ORIGIN_RE = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?")
 
 
 class LiveFile:
+    """Un segmento o manifiesto que se está escribiendo y se sirve a los clientes mientras llega."""
     def __init__(self):
-        self.chunks: list[bytes] = []
-        self.done = False
-        self.cond = asyncio.Condition()
+        self.chunks: list[bytes] = []   # trozos recibidos hasta ahora del segmento
+        self.done = False               # si ha acabado el segmento completo o no
+        self.cond = asyncio.Condition() # para avisar a los clientes que esperan a que llegue más contenido
 
     async def append(self, chunk: Optional[bytes]):
         async with self.cond:
-            if chunk is None:
+            if chunk is None:           # ha terminado el segmento
                 self.done = True
             else:
-                self.chunks.append(chunk)
-            self.cond.notify_all()
+                self.chunks.append(chunk)   # se añade un trozo más del segmento
+            self.cond.notify_all()      # despierta a los clientes que esperan a que llegue más contenido
 
     async def stream(self):
+        """Envía los trozos del segmento a medida que llegan, y termina cuando se completa el segmento."""
         sent = 0
         while True:
             async with self.cond:
-                await self.cond.wait_for(lambda: len(self.chunks) > sent or self.done)
+                await self.cond.wait_for(lambda: len(self.chunks) > sent or self.done) # Esperar a que llegue un trozo nuevo o a que se complete el segmento
                 pending, finished = self.chunks[sent:], self.done
             for chunk in pending:
                 yield chunk
@@ -246,4 +248,6 @@ async def get_file(name: str, request: Request):
         return Response(body, headers=headers, media_type=media_type)
     if live.done:
         return Response(b"".join(live.chunks), headers=headers, media_type=media_type)
+    # El servidor responde con Chunked Transfer Encoding y el cliente lo va leyendo a medida que llega
+    # No envía Content-Length, y el cliente no sabe cuándo termina hasta que se cierra la conexión.
     return StreamingResponse(live.stream(), headers=headers, media_type=media_type)

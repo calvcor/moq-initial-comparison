@@ -610,19 +610,19 @@ def pump_master_log(proc: subprocess.Popen):
     pending = b""
     with open("/tmp/ffmpeg_master.log", "wb") as log:
         while True:
-            chunk = os.read(proc.stderr.fileno(), 65536)
+            chunk = os.read(proc.stderr.fileno(), 65536) # Leer lo que FFmpeg ha escrito
             if not chunk:
-                return
+                return # FFmpeg ha terminado y cerrado stderr
             *lines, pending = re.split(rb"[\r\n]", pending + chunk)
             for line in lines:
-                if not PRINTED_VALUE.fullmatch(line):
+                if not PRINTED_VALUE.fullmatch(line): # Si no es una marca de frame, la escribimos en el log
                     if line:
                         log.write(line + b"\n")
                     continue
                 value = float(line)
-                if value > 1e11:
+                if value > 1e11: # Si el número es muy grande, es la marca de tiempo del frame (epoch en ms)
                     stamp_ms = value  # reloj de pared en ms: la marca quemada
-                elif stamp_ms is not None:
+                elif stamp_ms is not None: # Si no, es el número de frame (los primeros dígitos son el número de frame, y el último es el flujo de la calidad)
                     trace.frame_log.add_stamp(int(value) % 10, int(value) // 10, stamp_ms)
                     stamp_ms = None
             log.flush()

@@ -100,8 +100,8 @@ def main(port: int, branch: str, udp_target=None, first_video=False, keep_audio=
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)
-    sock.setsockopt(socket.SOL_SOCKET, SO_TIMESTAMPNS, 1)
-    sock.bind(("127.0.0.1", port))
+    sock.setsockopt(socket.SOL_SOCKET, SO_TIMESTAMPNS, 1) # Gracias a esto, el kernel apunta la hora de llegada de cada datagrama
+    sock.bind(("127.0.0.1", port)) # Se establece un socket UDP para recibir datagramas de cada uno de los puertos de salida de FFmpeg (5001, 5002, ...)
     trace = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     output = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) if udp_target else None
     pmt_cache: dict[bytes, tuple] = {}  # PMT original -> (PMT reducida, PIDs que conserva)
@@ -117,7 +117,7 @@ def main(port: int, branch: str, udp_target=None, first_video=False, keep_audio=
     finished: list = []                 # frames completos pendientes de comunicar: [pid, pts, kernel, lectura]
     last_report = 0.0
     while True:
-        data, ancillary, _, _ = sock.recvmsg(65536, 64)
+        data, ancillary, _, _ = sock.recvmsg(65536, 64) # Se recibe un datagrama UDP con 7 paquetes TS (un total de 1316 bytes), y sus marcas de tiempo de llegada
         now = time.time()
         arrived = now
         for level, kind, value in ancillary:
@@ -126,17 +126,17 @@ def main(port: int, branch: str, udp_target=None, first_video=False, keep_audio=
                 arrived = seconds + nanos / 1e9
         out = data
         kept_packets: list[bytes] = []  # con --first-video: lo que sale de este datagrama
-        for offset in range(0, len(data) - TS_PACKET + 1, TS_PACKET):
-            if data[offset] != 0x47:
+        for offset in range(0, len(data) - TS_PACKET + 1, TS_PACKET): # Se recorre cada paquete TS del datagrama UDP
+            if data[offset] != 0x47: # byte de sincronización: si no coincide, el datagrama está corrupto/desplazado y se ignora
                 continue
-            pid = ((data[offset + 1] & 0x1F) << 8) | data[offset + 2]
+            pid = ((data[offset + 1] & 0x1F) << 8) | data[offset + 2] # PID del paquete TS, indicando si es vídeo, audio, PMT, PAT, etc.
             flags = data[offset + 3]
             has_adaptation, has_payload = flags & 0x20, flags & 0x10
 
             packet = data[offset:offset + TS_PACKET]
-            if first_video and pid == PMT_PID:
+            if first_video and pid == PMT_PID: # Solo para WebRTC con MediaMTX
                 if packet not in pmt_cache:
-                    reduced = filter_pmt(packet, keep_audio)
+                    reduced = filter_pmt(packet, keep_audio) # Reescribe la PMT para que solo anuncie el primer vídeo (y el audio si keep_audio)
                     if reduced:
                         new_packet, pids, pcr_pid = reduced
                         pmt_cache[packet] = (new_packet, pids)

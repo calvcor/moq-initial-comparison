@@ -51,6 +51,7 @@ class FrameLog:
             marks.append(stamp_ms)
             numbers.append(number)
             offset = stamp_ms - number * self.frame_ms
+            # Apuntar al menor valor visto desde que arrancó la fuente, que es el ritmo más adelantado
             if stream not in self.lag_base or offset < self.lag_base[stream]:
                 self.lag_base[stream] = offset
             # Acortar la lista para no crecer indefinidamente: KEEP + 10 s de margen
@@ -110,6 +111,7 @@ class FrameLog:
             self.first_pts[branch] = {}
 
     def add(self, message: dict):
+        """Guarda la hora de llegada y reenvío de cada frame que envían las compuertas, por PTS y stream."""
         branch = message["b"]
         with self.lock:
             for pid, pts in message["first"].items():
