@@ -81,7 +81,8 @@ function sweep(param: SweepParam, values: number[], baseRttMs: number, queueMs: 
       label = `jitter ${v} ms`;
     }
     if (baseRttMs && param !== 'rtt') label += ` (RTT ${baseRttMs} ms)`;
-    if (shaper === 'netem') label += ' · netem rate';
+    // Solo donde actúa: con ancho de banda limitado
+    if (shaper === 'netem' && (down.rate_kbit || up.rate_kbit)) label += ' · netem rate';
     return { label, profile: { down, up } };
   });
 }
