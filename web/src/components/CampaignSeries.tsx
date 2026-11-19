@@ -841,7 +841,7 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
               </button>
             ))}
             {shade && stripOverlay && players.length > 1 && <span className="text-slate-500 text-[11px]">{t('arriba de cada franja, un carril de parones por protocolo, en este orden', 'at the top of each strip, one stall lane per protocol, in this order')}</span>}
-            <CaptureButtons target="block" name={singleId ?? 'series'} label className="ml-auto" />
+            <CaptureButtons target="block" name={singleId ?? 'series'} label caption={t('Todas las gráficas:', 'All charts:')} className="ml-auto" />
           </div>
           {!metricKeys.length && <p className="text-slate-500">{t('Elige al menos una métrica.', 'Choose at least one metric.')}</p>}
           {Object.entries(METRICS)
@@ -908,8 +908,8 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
       ) : (
         <div data-capture="block" className="space-y-3">
           {players.length > 1 && (
-            <div className="flex justify-end -mb-2">
-              <CaptureButtons target="block" name={`series-${metricKey}`} label />
+            <div className="flex justify-end">
+              <CaptureButtons target="block" name={`series-${metricKey}`} label caption={t('Todas las gráficas:', 'All charts:')} />
             </div>
           )}
           {players.map((p) => (

@@ -304,8 +304,8 @@ export const CampaignResults: React.FC<{
       </div>
 
       <div data-capture="block" className="space-y-3">
-      <div className="flex items-center justify-end -mb-1">
-        <CaptureButtons target="block" name={`${campaign.id}-${metricKey}`} label />
+      <div className="flex items-center justify-end">
+        <CaptureButtons target="block" name={`${campaign.id}-${metricKey}`} label caption={t('Todas las gráficas:', 'All charts:')} />
       </div>
       {/* Con las emisiones en el eje, la clave: lo que cambia entre ellas (la descripción entera, en el título) */}
       {xAxis === 'stream' && (

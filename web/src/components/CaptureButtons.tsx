@@ -4,13 +4,14 @@ import { copyCapture, downloadCapture } from '../lib/capture';
 import { t } from '../lib/i18n';
 
 // Botones para copiar o descargar como PNG la gráfica o el bloque que los contiene (`lib/capture.ts`). Buscan hacia
-// arriba el elemento marcado con data-capture="chart" o "block"; no salen en la imagen. Con `label`, llevan texto (los
-// de un bloque); sin él, solo iconos (los de cada gráfica, que aparecen al pasar el ratón: el contenedor lleva
-// `group/cap`).
-export const CaptureButtons: React.FC<{ target: 'chart' | 'block'; name: string; label?: boolean; className?: string }> = ({
+// arriba el elemento marcado con data-capture="chart" o "block"; no salen en la imagen. Con `label`, llevan texto y van
+// en una barra con borde, precedidos de `caption` (los de un bloque, para no confundirlos con los de una gráfica); sin
+// él, solo iconos (los de cada gráfica, que aparecen al pasar el ratón: el contenedor lleva `group/cap`).
+export const CaptureButtons: React.FC<{ target: 'chart' | 'block'; name: string; label?: boolean; caption?: string; className?: string }> = ({
   target,
   name,
   label = false,
+  caption,
   className = '',
 }) => {
   const ref = useRef<HTMLSpanElement>(null);
@@ -45,7 +46,12 @@ export const CaptureButtons: React.FC<{ target: 'chart' | 'block'; name: string;
   const what = target === 'chart' ? t('esta gráfica', 'this chart') : t('todo el bloque', 'the whole block');
   const btn = 'flex items-center gap-1 rounded px-1 py-0.5 text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-50';
   return (
-    <span ref={ref} data-capture-skip="" className={`inline-flex items-center gap-0.5 text-[11px] ${className}`}>
+    <span
+      ref={ref}
+      data-capture-skip=""
+      className={`inline-flex items-center gap-0.5 text-[11px] ${label ? 'bg-slate-900 border border-slate-800 rounded-md pl-2 pr-0.5 py-0.5' : ''} ${className}`}
+    >
+      {caption && <span className="text-slate-500 mr-1">{caption}</span>}
       {state === 'error' && <span className="text-amber-300 mr-1">{t('No se pudo copiar: descargada', 'Could not copy: downloaded')}</span>}
       <button
         type="button"
