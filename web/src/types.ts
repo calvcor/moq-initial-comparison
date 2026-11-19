@@ -94,6 +94,7 @@ export interface NetworkState {
   emulation_error?: string | null; // motivo por el que el servidor no puede emular la red, si es el caso
   clients?: Record<string, NetworkProfile>; // clientes con plaza propia: pruebas en paralelo
   tree?: RouterTree | null; // árbol de tc del router (README, sección 5)
+  shaper?: 'tbf' | 'netem'; // cómo se limita el caudal (ROUTER_SHAPER; netem es un experimento declarado); sin él, tbf
   stats: {
     dash_down: Counter;
     dash_up: Counter;
@@ -374,6 +375,7 @@ export interface SampleRow {
   pipeline_restarts: number | null; // reinicios automáticos del supervisor (fuente + DASH + MoQ)
   // Perfil de red activo en el router
   net_down_rate_kbit: number | null;
+  net_shaper: string | null; // cómo limita el caudal el router: tbf (por defecto) o netem (experimento; desde el 19-11-2026)
   net_down_delay_ms: number | null;
   net_down_jitter_ms: number | null;
   net_down_loss_pct: number | null;

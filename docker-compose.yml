@@ -46,6 +46,8 @@ services:
       - RTC_SERVER=${RTC_SERVER:-mediasoup}  # servidor de WebRTC al que va UDP 8189 (README, 3.4c)
       - MEDIAMTX_IP=172.30.50.12
       - SFU_IP=172.30.50.13
+      # Cómo se limita el caudal: tbf (por defecto) o netem (experimento declarado, README sección 5)
+      - ROUTER_SHAPER=${ROUTER_SHAPER:-tbf}
     ports:
       - "${MOQ_PORT:-4433}:4433/udp"   # MoQ / QUIC -> moq-relay:4433 (el navegador va directo)
       - "8189:8189/udp"                # WebRTC (ICE, DTLS, SRTP) -> servidor WebRTC:8189 (el navegador va directo)

@@ -29,6 +29,13 @@ NGINX_IP = os.environ["NGINX_IP"]
 RELAY_IP = os.environ["RELAY_IP"]
 # Servidor de WebRTC (RTC_SERVER): el SFU de mediasoup o MediaMTX. Recibe el 8189 en UDP (ICE, DTLS y SRTP) y en TCP (la
 # señalización WebSocket, que solo usa mediasoup: MediaMTX negocia por WHEP a través del punto de entrada)
+# Cómo se limita el caudal (ROUTER_SHAPER en el .env; README, sección 5). "tbf" (por defecto): un tbf con ráfaga de un
+# paquete fija el ritmo, como siempre; tras un rato ocioso deja pasar un paquete suelto sin esperar. "netem"
+# (experimento declarado, desde el 19-11-2026): el tbf va a 10 Gbit/s solo para trocear los superpaquetes GSO, y el
+# ritmo lo pone netem rate, que retrasa cada paquete lo que tarda en salir por un enlace de esa velocidad, haya habido
+# tráfico antes o no, como un enlace serie. Sirve para separar ese efecto en la estimación de BBR del relay de MoQ
+# (../FINDINGS/moq_relay_probe_cwnd_overestimate.md, sección 6).
+SHAPER = "netem" if os.environ.get("ROUTER_SHAPER", "tbf").strip().lower() == "netem" else "tbf"
 RTC_IP = os.environ["MEDIAMTX_IP"] if os.environ.get("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else os.environ["SFU_IP"]
 DASH_PORT, DASH_TLS_PORT, MOQ_PORT, RTC_PORT = 8080, 8443, 4433, 8189
 
@@ -181,13 +188,17 @@ def apply_queue(queue: str, link: dict, slot: int = GENERAL):
         # superpaquetes GSO/TSO, que netem descartaría enteros falseando la tasa de pérdida.
         rate_bps = (link["rate_kbit"] or 1_000_000) * 1000
         verb = "change" if shaped.get((queue, slot)) else "add"
-        run(f"tc qdisc {verb} dev {dev} parent {parent} handle {limiter}: tbf rate {rate_bps}bit burst 1600 latency 1s")
+        # Con SHAPER "netem", el tbf solo trocea (10 Gbit/s) y el ritmo va en netem, más abajo
+        tbf_bps = 10_000_000_000 if SHAPER == "netem" and link["rate_kbit"] else rate_bps
+        run(f"tc qdisc {verb} dev {dev} parent {parent} handle {limiter}: tbf rate {tbf_bps}bit burst 1600 latency 1s")
 
         # netem aplica retardo y pérdida, y su límite hace de cola del cuello de botella. El límite va en
         # paquetes: los que caben en tránsito durante el retardo más los de la cola pedida.
         hold_ms = link["delay_ms"] + link["jitter_ms"] + (link["queue_ms"] if link["rate_kbit"] else 1000)
         limit = max(20, math.ceil(rate_bps * hold_ms / 1000 / MTU_BITS))
         spec = f"limit {min(limit, 100000)}"
+        if SHAPER == "netem" and link["rate_kbit"]:
+            spec += f" rate {rate_bps}bit"
         if link["delay_ms"] or link["jitter_ms"]:
             spec += f" delay {link['delay_ms']}ms"
             if link["jitter_ms"]:

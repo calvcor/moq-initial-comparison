@@ -194,6 +194,8 @@ class Agent(BaseHTTPRequestHandler):
             # Sin emulación (faltan módulos del kernel) no hay árbol de tc que mostrar
             "tree": None if router.emulation_error else tree(st, netems, outputs),
             "emulation_error": router.emulation_error,
+            # Cómo se limita el caudal: "tbf" (por defecto) o "netem" (experimento; ROUTER_SHAPER, agent.py)
+            "shaper": router.SHAPER,
         }
 
     def do_GET(self):

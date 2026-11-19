@@ -81,6 +81,17 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, is
               {t('Emulación no disponible en este servidor', 'Emulation not available on this server')}
             </span>
           )}
+          {network?.shaper === 'netem' && (
+            <span
+              className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30"
+              title={t(
+                'Experimento declarado (ROUTER_SHAPER=netem; README, sección 5): el caudal lo limita netem rate, que retrasa cada paquete lo que tarda en salir a esa velocidad, en vez del tbf de siempre, que deja pasar un paquete suelto sin esperar tras un rato ocioso. Las medidas no son comparables con las de tbf.',
+                'Declared experiment (ROUTER_SHAPER=netem; README, section 5): the rate is limited by netem rate, which delays each packet by the time it takes to leave at that speed, instead of the usual tbf, which lets a lone packet through without waiting after an idle spell. Measurements are not comparable with those taken with tbf.',
+              )}
+            >
+              {t('Limitador: netem rate (experimento)', 'Limiter: netem rate (experiment)')}
+            </span>
+          )}
           {pending && (
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">{t('Cambios pendientes', 'Pending changes')}</span>
           )}
