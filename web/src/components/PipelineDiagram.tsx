@@ -52,7 +52,7 @@ const LANES: { id: LaneId; title: string; color: string; bar: string; stages: St
         name: t('Empaquetado CMAF', 'CMAF packaging'),
         nodes: ['FFmpeg dash', t('Origen', 'Origin')],
         includes:
-          t('Lectura del MPEG-TS en FFmpeg (retiene unos 2 frames: PROTOCOLOS, 6.4), espera a que se complete el fragmento CMAF que contiene el frame (hasta la duración de fragmento configurada) y su escritura en el origen.', 'MPEG-TS reading in FFmpeg (it holds about 2 frames: PROTOCOLOS, 6.4), wait for the CMAF fragment containing the frame to complete (up to the configured fragment duration) and its write to the origin.'),
+          t('Lectura del MPEG-TS en FFmpeg (retiene unos 2 frames: docs/limitations.md), espera a que se complete el fragmento CMAF que contiene el frame (hasta la duración de fragmento configurada) y su escritura en el origen.', 'MPEG-TS reading in FFmpeg (it holds about 2 frames: docs/limitations.md), wait for the CMAF fragment containing the frame to complete (up to the configured fragment duration) and its write to the origin.'),
         from: t('la entrega del frame a FFmpeg', 'the delivery of the frame to FFmpeg'),
         to: t('el instante en que su fragmento queda completo en el origen', 'the instant its fragment is complete at the origin'),
         uncertainty: 'server',
@@ -182,7 +182,7 @@ const RTC_RTP_STAGES: Record<string, Partial<Stage>> = {
   transport: {
     nodes: ['FFmpeg (RTP)', 'Relay', 'mediasoup', t('Router (emulación)', 'Router (emulation)'), t('Red SRTP', 'SRTP network')],
     includes:
-      t('Paso a RTP (FFmpeg retiene varios frames al leer el MPEG-TS: PROTOCOLOS, 6.4), relay, mediasoup y la red, juntos: no se pueden separar sin instrumentar mediasoup. Incluye las retransmisiones que pida el navegador si hay pérdidas.', 'Conversion to RTP (FFmpeg holds several frames when reading the MPEG-TS: PROTOCOLOS, 6.4), relay, mediasoup and the network, together: they cannot be separated without instrumenting mediasoup. Includes the retransmissions the browser requests if there is loss.'),
+      t('Paso a RTP (FFmpeg retiene varios frames al leer el MPEG-TS: docs/limitations.md), relay, mediasoup y la red, juntos: no se pueden separar sin instrumentar mediasoup. Incluye las retransmisiones que pida el navegador si hay pérdidas.', 'Conversion to RTP (FFmpeg holds several frames when reading the MPEG-TS: docs/limitations.md), relay, mediasoup and the network, together: they cannot be separated without instrumenting mediasoup. Includes the retransmissions the browser requests if there is loss.'),
     from: t('la entrega del frame al FFmpeg que lo pasa a RTP', 'the delivery of the frame to the FFmpeg that converts it to RTP'),
   },
 };

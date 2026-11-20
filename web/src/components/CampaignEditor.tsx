@@ -7,7 +7,7 @@ import type { RtcServer, CampaignNetwork, CampaignPlan, CampaignTarget, DashAbr,
 import { SettingsModal } from './SettingsModal';
 import { lang, t } from '../lib/i18n';
 
-// Editor de campañas (README, 4.8): emisiones, condiciones de red, latencias objetivo y diseño. El servidor
+// Editor de campañas (docs/campaigns.md): emisiones, condiciones de red, latencias objetivo y diseño. El servidor
 // sortea las pruebas al crearla; aquí solo se estima cuántas salen y cuánto tardan.
 
 type Stream = CampaignPlan['streams'][number];
@@ -155,8 +155,8 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
   );
   const [players, setPlayers] = useState<PlayerId[]>(initial?.players ?? [...PLAYER_IDS]);
   const [playerMode, setPlayerMode] = useState<'together' | 'each'>(initial?.player_mode ?? 'together');
-  // Quién monta los reproductores: la pestaña trabajador (un solo navegador, como hasta ahora) o un trabajador
-  // independiente por reproductor, elegido entre los que se han anunciado (README 4.8, trabajadores independientes)
+  // Quién monta los reproductores: la pestaña trabajador (un solo navegador) o un trabajador
+  // independiente por reproductor, elegido entre los que se han anunciado (docs/campaigns.md, trabajadores independientes)
   const [workerMode, setWorkerMode] = useState<'tab' | 'pool'>(initial?.workers || initial?.worker_pool ? 'pool' : 'tab');
   // Pruebas en paralelo: cada prueba toma un trabajador libre del grupo elegido
   const [parallel, setParallel] = useState(!!initial?.parallel);
@@ -331,7 +331,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                 </label>
                 {p === 'dash' && (
                   <div className="flex flex-wrap gap-3">
-                    <label className="flex flex-col gap-1" title={t('Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (README 6).', 'dash.js adaptation rules in Auto. Default: the stock ones (throughput and BOLA, insufficient buffer, switch history, request abandonment). L2A and LoL+: their low-latency rules, each on its own. L2A (bugfix): experiment, L2A with its dash.js 5 unit bug fixed (README 6).')}>
+                    <label className="flex flex-col gap-1" title={t('Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (docs/adaptation-and-experiments.md).', 'dash.js adaptation rules in Auto. Default: the stock ones (throughput and BOLA, insufficient buffer, switch history, request abandonment). L2A and LoL+: their low-latency rules, each on its own. L2A (bugfix): experiment, L2A with its dash.js 5 unit bug fixed (docs/adaptation-and-experiments.md).')}>
                       <span className={label}>ABR</span>
                       <select className={input} disabled={!on} value={options.dash_abr} onChange={(e) => setOption('dash_abr', e.target.value as DashAbr)}>
                         <option value="default">{t('Por defecto', 'Default')}</option>
@@ -348,13 +348,13 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                       <span className={label}>{t('Búfer mínimo (s)', 'Minimum buffer (s)')}</span>
                       <input className={input} disabled={!on} type="number" min={0} max={2} step={0.05} value={options.dash_playback_buffer_min_s} onChange={(e) => setOption('dash_playback_buffer_min_s', Number(e.target.value))} />
                     </label>
-                    {dashExperiment && <p className="text-amber-300 w-full">{t('No es dash.js tal como viene: L2A con su fallo de unidades corregido, un experimento declarado (README 6).', 'Not stock dash.js: L2A with its unit bug fixed, a declared experiment (README 6).')}</p>}
+                    {dashExperiment && <p className="text-amber-300 w-full">{t('No es dash.js tal como viene: L2A con su fallo de unidades corregido, un experimento declarado (docs/adaptation-and-experiments.md).', 'Not stock dash.js: L2A with its unit bug fixed, a declared experiment (docs/adaptation-and-experiments.md).')}</p>}
                   </div>
                 )}
                 {p === 'moq' && (
                   <>
                     <div className="flex flex-wrap gap-3">
-                      <label className="flex flex-col gap-1" title={t('Librería: decide @moq/watch (lo que se mide). Sondeo: el controlador propio con sondeo por prioridad de README 6.3, un experimento. Sondeo v2: su versión corregida (atraso acotado y subida si la siguiente llega a su ritmo).', 'Library: @moq/watch decides (what is measured). Probe: the custom controller with priority probing from README 6.3, an experiment. Probe v2: its corrected version (bounded lag, and switching up if the next rendition arrives at its rate).')}>
+                      <label className="flex flex-col gap-1" title={t('Librería: decide @moq/watch (lo que se mide). Sondeo: el controlador propio con sondeo por prioridad de docs/adaptation-and-experiments.md, un experimento. Sondeo v2: su versión corregida (atraso acotado y subida si la siguiente llega a su ritmo).', 'Library: @moq/watch decides (what is measured). Probe: the custom controller with priority probing from docs/adaptation-and-experiments.md, an experiment. Probe v2: its corrected version (bounded lag, and switching up if the next rendition arrives at its rate).')}>
                         <span className={label}>{t('Adaptación', 'Adaptation')}</span>
                         <select className={input} disabled={!on} value={options.moq_abr} onChange={(e) => setOption('moq_abr', e.target.value as MoqAbr)}>
                           <option value="watch">{t('Librería', 'Library')}</option>
@@ -362,7 +362,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                           <option value="probe2">{t('Sondeo v2 (experimento)', 'Probing v2 (experiment)')}</option>
                         </select>
                       </label>
-                      <label className="flex flex-col gap-1" title={t('Qué hacer al bajar de calidad (opción switching del parche de web/patches, README 6.1). Sin corte: el original de @moq/watch. Cancelar y Prioridad son el experimento. Sin el parche no tiene efecto.', 'What to do when switching down (switching option of the patch in web/patches, README 6.1). Seamless: the original @moq/watch behaviour. Cancel and Priority are the experiment. Without the patch it has no effect.')}>
+                      <label className="flex flex-col gap-1" title={t('Qué hacer al bajar de calidad (opción switching del parche de web/patches, docs/adaptation-and-experiments.md). Sin corte: el original de @moq/watch. Cancelar y Prioridad son el experimento. Sin el parche no tiene efecto.', 'What to do when switching down (switching option of the patch in web/patches, docs/adaptation-and-experiments.md). Seamless: the original @moq/watch behaviour. Cancel and Priority are the experiment. Without the patch it has no effect.')}>
                         <span className={label}>{t('Cambio', 'Switching')}</span>
                         <select className={input} disabled={!on} value={options.moq_switching} onChange={(e) => setOption('moq_switching', e.target.value as MoqSwitching)}>
                           <option value="seamless">{t('Sin corte', 'Seamless')}</option>
@@ -371,7 +371,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                         </select>
                       </label>
                     </div>
-                    {moqExperiment && <p className="text-amber-300">{t('No es el comportamiento de @moq/watch: la campaña es un experimento declarado (README 6.1 y 6.3).', 'Not the @moq/watch behaviour: the campaign is a declared experiment (README 6.1 and 6.3).')}</p>}
+                    {moqExperiment && <p className="text-amber-300">{t('No es el comportamiento de @moq/watch: la campaña es un experimento declarado (docs/adaptation-and-experiments.md).', 'Not the @moq/watch behaviour: the campaign is a declared experiment (docs/adaptation-and-experiments.md).')}</p>}
                   </>
                 )}
                 {p === 'rtc' && (
@@ -573,7 +573,7 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
               <input type="checkbox" checked={s.rtc_audio} onChange={(e) => setStream(i, { rtc_audio: e.target.checked })} />
               <span className="text-slate-300">{t('Audio en WebRTC', 'Audio in WebRTC')}</span>
             </label>
-            <label className="flex items-center gap-1.5 pb-1" title={t('Pacer en la ingesta de mediasoup: el relay reparte el RTP de cada calidad a 2,5 veces su bitrate (README, 3.4c). Con MediaMTX no hace nada', 'Pacer in the mediasoup ingest: the relay sends the RTP of each rendition at 2.5 times its bitrate (README, 3.4c). With MediaMTX it does nothing')}>
+            <label className="flex items-center gap-1.5 pb-1" title={t('Pacer en la ingesta de mediasoup: el relay reparte el RTP de cada calidad a 2,5 veces su bitrate (docs/architecture.md). Con MediaMTX no hace nada', 'Pacer in the mediasoup ingest: the relay sends the RTP of each rendition at 2.5 times its bitrate (docs/architecture.md). With MediaMTX it does nothing')}>
               <input type="checkbox" checked={Boolean(s.rtc_pacing)} onChange={(e) => setStream(i, { rtc_pacing: e.target.checked })} />
               <span className="text-slate-300">{t('Pacer en WebRTC', 'Pacer in WebRTC')}</span>
             </label>
@@ -752,14 +752,14 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
             {networks.some((n) => (['down', 'up'] as const).some((d) => n.profile[d].shaper === 'netem' && n.profile[d].rate_kbit)) && (
               <p className="text-amber-300 mt-1">
                 {t(
-                  'Hay condiciones con el limitador netem rate: es un experimento declarado y cambia la red de los tres protocolos; sus medidas no son comparables con las de tbf (README, sección 5). Queda en net_down_shaper y net_up_shaper.',
-                  'Some conditions use the netem rate limiter: it is a declared experiment and changes the network of all three protocols; its measurements are not comparable with those taken with tbf (README, section 5). It is recorded in net_down_shaper and net_up_shaper.',
+                  'Hay condiciones con el limitador netem rate: es un experimento declarado y cambia la red de los tres protocolos; sus medidas no son comparables con las de tbf (docs/network-emulation.md). Queda en net_down_shaper y net_up_shaper.',
+                  'Some conditions use the netem rate limiter: it is a declared experiment and changes the network of all three protocols; its measurements are not comparable with those taken with tbf (docs/network-emulation.md). It is recorded in net_down_shaper and net_up_shaper.',
                 )}
               </p>
             )}
           </div>
         )}
-        <p className="text-slate-500">{t('Las pruebas de control, sin restricción, se añaden solas (abajo). El jitter de netem desordena paquetes y castiga casi solo a QUIC (README, sección 5).', 'Unrestricted control runs are added automatically (below). netem jitter reorders packets and penalises almost only QUIC (README, section 5).')}</p>
+        <p className="text-slate-500">{t('Las pruebas de control, sin restricción, se añaden solas (abajo). El jitter de netem desordena paquetes y castiga casi solo a QUIC (docs/network-emulation.md).', 'Unrestricted control runs are added automatically (below). netem jitter reorders packets and penalises almost only QUIC (docs/network-emulation.md).')}</p>
       </section>
 
       {/* Latencias objetivo */}

@@ -87,7 +87,7 @@ function closeSession(id) {
 async function createSession(ws) {
 	const transport = await router.createWebRtcTransport({ webRtcServer });
 	const id = randomUUID();
-	// Diagnóstico (SFU_TRACE=1): estimación y sondeos de mediasoup, en una línea JSON por evento (README, 3.4c)
+	// Diagnóstico (SFU_TRACE=1): estimación y sondeos de mediasoup, en una línea JSON por evento (docs/architecture.md)
 	if (process.env.SFU_TRACE) {
 		await transport.enableTraceEvent(['bwe', 'probation']);
 		transport.on('trace', (t) => {

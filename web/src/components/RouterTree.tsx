@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, GitBranch } from 'lucide-react';
 import type { NetworkState, RouterBand, RouterSlot, RouterTree as Tree } from '../types';
 import { t } from '../lib/i18n';
 
-// Esquema del árbol de tc del router de emulación (README, sección 5): la raíz 1:, una banda por cola (protocolo y
+// Esquema del árbol de tc del router de emulación (docs/network-emulation.md): la raíz 1:, una banda por cola (protocolo y
 // sentido) y, en cada una, su prio con las plazas de los clientes de las pruebas en paralelo y la general, cada una con
 // su tbf y su netem. Plegado por defecto: abierto se repinta con cada lectura, y en la página de campañas solo entonces
 // pide el estado al servidor (cada 2 s), para no cargar la pestaña de un trabajador mientras mide.
@@ -33,7 +33,7 @@ function linkParts(slot: RouterSlot): string[] {
   if (l.delay_ms || l.jitter_ms) parts.push(t('retardo', 'delay') + ` ${l.delay_ms} ms${l.jitter_ms ? ` ±${l.jitter_ms}` : ''}`);
   if (l.loss_pct) parts.push(t(`pérdida ${l.loss_pct} %`, `loss ${l.loss_pct} %`));
   if (l.rate_kbit) parts.push(t(`cola ${l.queue_ms} ms`, `queue ${l.queue_ms} ms`));
-  // El limitador experimental (README, sección 5): el ritmo lo pone netem rate y el tbf solo trocea
+  // El limitador experimental (docs/network-emulation.md): el ritmo lo pone netem rate y el tbf solo trocea
   if (l.rate_kbit && l.shaper === 'netem') parts.push(t('ritmo con netem rate (experimento)', 'rate set by netem rate (experiment)'));
   parts.push(t(`${l.limit} paq.`, `${l.limit} pkts`)); // limit de netem
   return parts;

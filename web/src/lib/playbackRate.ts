@@ -1,6 +1,6 @@
 import type { PlayerId } from '../types';
 
-// Velocidad de reproducción del <video> (README, tabla de métricas). Solo cambia en DASH: dash.js acelera o
+// Velocidad de reproducción del <video> (docs/measurement.md, metrics). Solo cambia en DASH: dash.js acelera o
 // frena para acercarse a la latencia objetivo (liveCatchup) o, con LoL+, para rellenar el búfer. Se sigue con el
 // evento ratechange, sin muestrear: cada fila recibe la media ponderada por tiempo desde la anterior, el mínimo y
 // el máximo, y cuánto tiempo fue más lenta o más rápida que 1×. Es la velocidad pedida al <video>, no la de los

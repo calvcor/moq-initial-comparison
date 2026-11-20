@@ -1,10 +1,10 @@
-// Diferencias de API entre las dos versiones de @moq/watch y @moq/net que usa el banco (desde el 18-11-2026):
-// bc64b9c (21-10-2026; phd-testing, y por defecto) y c19c723 (18-11-2026; justbytes, MOQ_WATCH_COMMIT en su .env).
+// Diferencias de API entre las dos versiones de @moq/watch y @moq/net que usa el banco:
+// bc64b9c (por defecto) y c19c723 (con MOQ_WATCH_COMMIT en el .env).
 // Solo traduce cómo se conecta el reproductor y cómo se leen sus salidas: no cambia nada de lo que hace. Las dos se
 // conectan como el elemento oficial <moq-watch> de su versión (js/watch/src/element.ts).
 //
 // - Adaptación. En bc64b9c el reproductor recibe la estimación del relay (`probe: connection.probe`) y elige la
-//   calidad de mayor bitrate que quepa en su 80 %. En c19c723 ya no: reserva una parte de la estimación de la
+//   calidad de mayor bitrate que quepa en su 80 %. En c19c723 no: reserva una parte de la estimación de la
 //   conexión (`viewer: { viewers: connection.viewers }`), elige con lo que se le concede y, con la suma de lo que
 //   piden los reproductores, la conexión pide al relay hasta dónde sondear (PROBE). La estimación sigue en
 //   connection.probe (estimatedRecvRate), que es la que va al CSV.
@@ -28,7 +28,7 @@ export interface PlayerOptions {
   muted: unknown;
   delay: unknown;
   target: unknown;
-  /** Solo en bc64b9c con el parche de web/patches (README 6.1); en c19c723 no se pasa. */
+  /** Solo en bc64b9c con el parche de web/patches (docs/adaptation-and-experiments.md); en c19c723 no se pasa. */
   switching: unknown;
 }
 
@@ -38,7 +38,7 @@ export function playerProps(connection: any, o: PlayerOptions): any {
     return {
       origin: o.origin,
       name: o.name,
-      // Esperar al anuncio de la emisión antes de suscribirse (antes, `announced`)
+      // Esperar al anuncio de la emisión antes de suscribirse (en bc64b9c, `announced`)
       follow: true,
       delay: o.delay,
       video: { canvas: o.canvas, visible: 'always', target: o.target },

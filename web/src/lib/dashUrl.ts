@@ -5,8 +5,8 @@
 import { t } from './i18n';
 
 export const DASH_NEEDS_HOST = t(
-  'Esta página es HTTPS y el servidor no tiene DASH_HOST: DASH no tiene camino directo (README, sección 1)',
-  'This page is HTTPS and the server has no DASH_HOST: DASH has no direct path (README, section 1)',
+  'Esta página es HTTPS y el servidor no tiene DASH_HOST: DASH no tiene camino directo (docs/deployment.md)',
+  'This page is HTTPS and the server has no DASH_HOST: DASH has no direct path (docs/deployment.md)',
 );
 
 export function dashManifestUrl(

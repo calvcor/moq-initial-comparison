@@ -1,4 +1,4 @@
-"""Comparación en texto de dos campañas enteras (README 4.8, «Comparar dos campañas»).
+"""Comparación en texto de dos campañas enteras (docs/campaigns.md, «Comparar dos campañas»).
 
 Con las mismas reglas que el análisis de una campaña (analysis.py), pero emparejando condiciones de las dos. Una
 condición de A se empareja con una de B si coinciden el perfil de red (no el nombre), la latencia objetivo del protocolo
@@ -356,14 +356,14 @@ def warnings(A: Data, B: Data, smap: dict) -> list[str]:
     first = lambda d: min((local_day(r.get("started_ms")) for r in d.valid if r.get("started_ms")), default=None)
     fa, fb = first(A), first(B)
     if any(f and f < INVALID_BEFORE for f in (fa, fb)):
-        out.append(t("Una de las dos tiene pruebas anteriores al 9-10-2026: el lector de timecode de entonces degradaba MoQ y esas medidas están invalidadas.",
-                     "One of the two has runs before 9-10-2026: the timecode reader of that time degraded MoQ and those measurements are invalid."))
+        out.append(t("Una de las dos tiene pruebas medidas con el lector de timecode antiguo, que degradaba MoQ: esas medidas están invalidadas.",
+                     "One of the two has runs measured with the old timecode reader, which degraded MoQ: those measurements are invalid."))
     if fa and fb and (fa < STALL_FIX) != (fb < STALL_FIX):
-        out.append(t("Una campaña es anterior al 28-10-2026 y la otra no: el tiempo parado se medía distinto (antes no contaba los tramos sin imagen) y no se compara.",
-                     "One campaign predates 28-10-2026 and the other does not: stall time was measured differently (it did not count stretches without picture) and is not comparable."))
+        out.append(t("Una campaña se midió con el tiempo parado antiguo (sin los tramos sin imagen) y la otra no: el tiempo parado no se compara.",
+                     "One campaign was measured with the old stall time (without stretches without picture) and the other was not: stall time is not comparable."))
     elif fa and fb and fa < STALL_FIX:
-        out.append(t("Las dos son anteriores al 28-10-2026: su tiempo parado no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas).",
-                     "Both predate 28-10-2026: their stall time does not count stretches without picture (it greatly underestimates DASH under loss)."))
+        out.append(t("Las dos se midieron con el tiempo parado antiguo, que no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas).",
+                     "Both were measured with the old stall time, which does not count stretches without picture (it greatly underestimates DASH under loss)."))
     if len(A.plan["streams"]) == 1 and len(B.plan["streams"]) == 1 and json.dumps(A.plan["streams"][0], sort_keys=True) != json.dumps(B.plan["streams"][0], sort_keys=True):
         out.append(t("Las emisiones son distintas: se emparejan igualmente, así que cada diferencia mezcla ese cambio con los demás de la tabla.",
                      "The streams differ: they are matched anyway, so each difference mixes that change with the others in the table."))

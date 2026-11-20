@@ -1,15 +1,15 @@
 # Relay de MoQ. "release" (por defecto): la imagen publicada moqdev/moq-relay:MOQ_RELAY_VERSION, sin cambios.
 # "git": compilado desde el commit MOQ_RELAY_COMMIT de moq-dev/moq, para medir versiones aún no publicadas
-# (desde el 18-11-2026: la rama principal ya envía por PROBE la estimación de ancho de banda de BBR y no
-# cwnd/RTT; ../FINDINGS/moq_relay_probe_cwnd_overestimate.md). Docker solo construye la etapa que se elige, así
-# que con "release" no se compila nada. Se pasa desde docker-compose.yml (variables del .env).
+# (la rama principal envía por PROBE la estimación de ancho de banda de BBR y no cwnd/RTT, como la 0.17.9;
+# docs/limitations.md). Docker solo construye la etapa que se elige, así que con
+# "release" no se compila nada. Se pasa desde docker-compose.yml (variables del .env).
 ARG MOQ_RELAY_FROM=release
 ARG MOQ_RELAY_VERSION=0.17.9
 
 FROM moqdev/moq-relay:${MOQ_RELAY_VERSION} AS relay-release
 
 # Compilado con cargo, como moq-cli en server/Dockerfile, y no con el Dockerfile de moq-dev, que construye con
-# Nix. Toolchain: la de rust-toolchain.toml de moq en esa fecha. Perfil release con LTO thin, como moq-cli. Sin
+# Nix. Toolchain: la de rust-toolchain.toml de moq en ese commit. Perfil release con LTO thin, como moq-cli. Sin
 # features extra: las de por defecto del relay. Las cachés de Cargo persisten entre construcciones.
 FROM rust:1.98.1-bookworm AS relay-build
 ARG MOQ_RELAY_COMMIT=c19c723d90c6e8df60c9a656cc2a4d92ee358295

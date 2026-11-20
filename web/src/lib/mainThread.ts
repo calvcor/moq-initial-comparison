@@ -1,7 +1,7 @@
 // Carga del hilo principal de la página, para ver si lo que hace el navegador (los tres reproductores, el
 // medidor de timecode, el panel) interfiere con los protocolos. @moq/watch y dash.js trabajan en ese hilo: MoQ
 // pinta cada frame con setTimeout y requestAnimationFrame, así que un hilo ocupado le hace perder frames
-// (README, "Por qué los frames presentados bajan de 60"). El <video> de DASH y WebRTC presenta en el
+// (docs/measurement.md, "Why presented frames drop below 60"). El <video> de DASH y WebRTC presenta en el
 // compositor, fuera de él.
 //
 // Dos medidas pasivas, sin leer píxeles ni ejecutar trabajo propio salvo una vuelta vacía por refresco:

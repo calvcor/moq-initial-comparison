@@ -11,7 +11,7 @@ import { dashManifestUrl } from '../lib/dashUrl';
 import { t } from '../lib/i18n';
 import type { CampaignAssignment, PlayerId, PlayerMetrics, PlayerPreset, ServerStatus } from '../types';
 
-// Vista previa de una prueba (README, 4.8): el servidor ya ha aplicado su red y su emisión, y aquí se montan los
+// Vista previa de una prueba (docs/campaigns.md): el servidor ya ha aplicado su red y su emisión, y aquí se montan los
 // reproductores con sus ajustes, como los montaría el trabajador, pero sin subir filas ni contar como prueba.
 // Al cerrarla (o al cerrar la pestaña) el servidor deja la red y la emisión como estaban.
 

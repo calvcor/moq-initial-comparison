@@ -3,7 +3,7 @@ import { Check, Copy } from 'lucide-react';
 import type { PlayerId } from '../types';
 import { locale, t } from '../lib/i18n';
 
-// Tablas de la comparación de dos campañas (README 4.8, «Comparar dos campañas»): las mismas cifras que el texto, que
+// Tablas de la comparación de dos campañas (docs/campaigns.md, «Comparar dos campañas»): las mismas cifras que el texto, que
 // el orquestador manda en `tables`. Cada valor viene en unidades del resumen; `metrics` dice cómo presentarlo.
 
 const PLAYER_LABEL: Record<PlayerId, string> = { dash: 'LL-DASH', moq: 'MoQ', rtc: 'WebRTC' };

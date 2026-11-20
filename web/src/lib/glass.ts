@@ -3,9 +3,9 @@
 // método e incluyen codificación, empaquetado, red, búfer, decodificación y pintado.
 //
 // El timecode se lee del propio frame de vídeo (VideoFrame.copyTo), copiando solo dos filas de la franja
-// y de forma asíncrona. La versión anterior dibujaba el vídeo en un canvas y lo leía con getImageData en
-// cada frame: una copia síncrona de GPU a CPU por reproductor que saturaba el hilo principal, sobre todo
-// en Brave, y con ello degradaba al reproductor MoQ, que pinta en ese mismo hilo. Un medidor que altera
+// y de forma asíncrona. Dibujar el vídeo en un canvas y leerlo con getImageData en cada frame es una copia
+// síncrona de GPU a CPU por reproductor que satura el hilo principal, sobre todo en Brave, y con ello degrada
+// al reproductor MoQ, que pinta en ese mismo hilo. Un medidor que altera
 // lo que mide no sirve.
 
 import { serverNowMs } from './clock';
@@ -29,10 +29,10 @@ export function grabFromVideo(video: HTMLVideoElement | null): VideoFrame | null
 const WINDOW_MS = 1000;
 const FPS_WINDOW_MS = 2000;
 // Parón: STALL_MS o más sin frame nuevo, haya imagen en pantalla o no, desde que se crea el medidor (el arranque
-// cuenta: en las campañas cae en el calentamiento, que no entra en el resumen). Hasta el 28-10-2026
-// solo se contaba un timecode legible y repetido: el tiempo sin imagen que leer (un <video> con readyState < 2,
-// el búfer de MSE vacío o el reproductor recreándose) no contaba, y eso dejaba fuera la mayor parte de los
-// parones de DASH con pérdidas (README, 4.8).
+// cuenta: en las campañas cae en el calentamiento, que no entra en el resumen). Contar
+// solo un timecode legible y repetido dejaría fuera el tiempo sin imagen que leer (un <video> con readyState < 2,
+// el búfer de MSE vacío o el reproductor recreándose), que es la mayor parte de los parones de DASH con pérdidas
+// (docs/campaigns.md).
 const STALL_MS = 150; // ~9 frames a 60 fps sin imagen nueva
 const SAMPLER_GAP_MS = 250; // el propio muestreo se detuvo (pestaña oculta, hilo bloqueado)
 // Avance del contenido: un salto del timecode mayor que esto, o hacia atrás, es una discontinuidad (reproductor

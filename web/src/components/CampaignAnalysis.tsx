@@ -3,7 +3,7 @@ import { Check, Copy } from 'lucide-react';
 import type { Campaign } from '../types';
 import { lang, t } from '../lib/i18n';
 
-// Análisis en texto de una campaña (README 4.8, «Análisis de la campaña»): lo escribe el orquestador
+// Análisis en texto de una campaña (docs/campaigns.md, «Análisis de la campaña»): lo escribe el orquestador
 // (GET /api/campaigns/{id}/analysis) con reglas fijas a partir de las pruebas válidas; aquí solo se muestra. TextReport
 // pinta también la comparación de dos campañas (CampaignVersus), que tiene la misma forma.
 
@@ -153,8 +153,8 @@ export const CampaignAnalysis: React.FC<{ campaign: Campaign; busy: string | nul
       data={data}
       title={t(`Análisis de «${campaign.name}»`, `Analysis of “${campaign.name}”`)}
       method={t(
-        'Reglas fijas sobre las pruebas válidas: la unidad es la condición (emisión × red × objetivo), con la mediana de sus repeticiones. Una diferencia cuenta en una condición si supera la variación entre sus repeticiones; las tendencias usan solo las combinaciones medidas en todos los niveles. Es una lectura descriptiva, no un contraste estadístico (README 4.8).',
-        'Fixed rules over the valid runs: the unit is the condition (stream × network × target), with the median of its repetitions. A difference counts in a condition if it exceeds the variation between its repetitions; trends use only the combinations measured at every level. It is a descriptive reading, not a statistical test (README 4.8).',
+        'Reglas fijas sobre las pruebas válidas: la unidad es la condición (emisión × red × objetivo), con la mediana de sus repeticiones. Una diferencia cuenta en una condición si supera la variación entre sus repeticiones; las tendencias usan solo las combinaciones medidas en todos los niveles. Es una lectura descriptiva, no un contraste estadístico (docs/campaigns.md).',
+        'Fixed rules over the valid runs: the unit is the condition (stream × network × target), with the median of its repetitions. A difference counts in a condition if it exceeds the variation between its repetitions; trends use only the combinations measured at every level. It is a descriptive reading, not a statistical test (docs/campaigns.md).',
       )}
     />
   );

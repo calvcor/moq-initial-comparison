@@ -20,5 +20,9 @@ __pycache__/
 node_modules/
 dist/
 
-# Configuración local del despliegue (HTTP_PORT, MOQ_PORT, PUBLIC_HOST, MOQ_HOST, DASH_HOST, DUCKDNS_TOKEN)
+# Configuración local del despliegue; las variables posibles, en .env.template (que sí se sube)
 .env
+# Datos de los despliegues propios para Claude Code (CLAUDE.md, «Servidores desplegados»)
+CLAUDE.local.md
+# Historia del desarrollo con fechas y copias de la documentación anterior: solo en local
+local/

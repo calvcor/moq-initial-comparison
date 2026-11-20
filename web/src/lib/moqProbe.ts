@@ -1,8 +1,8 @@
-// Experimento (README 6.3): adaptación de calidad de MoQ con sondeo por prioridad, a la manera que sugiere MOQT
+// Experimento (docs/adaptation-and-experiments.md): adaptación de calidad de MoQ con sondeo por prioridad, a la manera que sugiere MOQT
 // (draft-ietf-moq-transport-22, 14.1.2). No es el comportamiento de @moq/watch: por defecto el banco deja decidir
 // a la librería. Aquí decide este controlador y se lo pide a @moq/watch por la vía pública (target.name).
 //
-// Idea: la calidad actual va con la prioridad de vídeo de siempre; a ratos se suscribe además la siguiente con la
+// Idea: la calidad actual va con la prioridad de vídeo normal; a ratos se suscribe además la siguiente con la
 // prioridad mínima. El relay solo le da lo que sobra del enlace, así que, mientras se queda atrás, lo que recibe es
 // la capacidad libre: capacidad ≈ lo que recibe la actual + lo que recibe la de sondeo. Mientras se sondea siempre
 // hay datos pendientes, así que el envío lo limita la red y no hay tiempos muertos que falseen la medida (lo que les
@@ -10,7 +10,7 @@
 // con su bitrate real (bytes por frame × cadencia de lo recibido), no con el del catálogo, que es el pico retenido.
 // Se baja cuando la actual deja de recibir frames al ritmo de su cadencia.
 //
-// Dos variantes (README 6.3). `probe` es la primera, y en la campaña del 4-11-2026 dejaba a MoQ en 360p con
+// Dos variantes (docs/adaptation-and-experiments.md). `probe` es la primera, y en una campaña dejó a MoQ en 360p con
 // enlaces de 4-10 Mbit/s: al suscribirse pedía hasta 10 s de atraso de la calidad siguiente, que llegaba de golpe y,
 // con límite de caudal, hundía a la calidad actual en la cola del router (el sondeo se cortaba); y los sondeos que
 // terminaban medían cuando el atraso ya se había vaciado, así que lo recibido era la suma de los bitrates de las dos
@@ -24,7 +24,7 @@ import { decodedFrame } from './moqApi';
  * perdió ritmo (cut) o se cerró el controlador a mitad (abort). */
 export type ProbeResult = 'up' | 'stay' | 'cut' | 'abort';
 
-// Registro de los sondeos para el CSV (desde el 6-11-2026), como los parones del medidor: los que terminaron desde la
+// Registro de los sondeos para el CSV, como los parones del medidor: los que terminaron desde la
 // última fila, con su inicio y su fin en reloj del servidor, y el inicio del que siga abierto. Solo se anota: no
 // cambia ninguna decisión del controlador. Hay un reproductor MoQ por página, así que basta un registro.
 let probeLog: { finished: [number, number, ProbeResult][]; openSince: number | null } | null = null;
@@ -68,7 +68,7 @@ interface VariantSettings {
 const VARIANTS: Record<ProbeVariant, VariantSettings> = {
   probe: { maxDelayMs: 10000, keepUp: false, graceMs: 0, healthGraceMs: 1000, resetAfterProbe: false },
   // ~2 s: con GOP de 1 s, el grupo en curso y como mucho el anterior. Durante el sondeo tolera ese retraso, que basta
-  // para que lleguen grupos enteros mientras la regla de capacidad pueda dejar subir (README 6.3)
+  // para que lleguen grupos enteros mientras la regla de capacidad pueda dejar subir (docs/adaptation-and-experiments.md)
   probe2: { maxDelayMs: 2000, keepUp: true, graceMs: 3000, healthGraceMs: 2500, resetAfterProbe: true },
 };
 /** Grupos completos necesarios para fiarse del bitrate real: un grupo suelto puede ser más ligero que la media. */
@@ -116,7 +116,7 @@ export interface ProbeState {
   downs: number;
   probes: number;
   /** Sondeos cortados porque la calidad actual perdió ritmo (los demás duran PROBE_MS). Solo se cuenta: no cambia
-   * ninguna decisión. Va al CSV para marcar los cortes en la gráfica (desde el 6-11-2026). */
+   * ninguna decisión. Va al CSV para marcar los cortes en la gráfica. */
   cuts: number;
 }
 
@@ -339,7 +339,7 @@ export class MoqProbeAbr {
     const content = p.fullGroups >= MIN_FULL_GROUPS ? (p.fullBytes / p.fullFrames) * p.rendition.fps * 8 : null; // bit/s
     const capacity = probeRate !== null && curRate !== null ? (probeRate + curRate) * 8 : null; // bit/s
     // Si la de sondeo llega a su cadencia, va al día: cabe junto a la actual, así que sola también. Lo que recibe es
-    // entonces su bitrate, no lo que sobra del enlace, y la regla de capacidad no sirve (README 6.3)
+    // entonces su bitrate, no lo que sobra del enlace, y la regla de capacidad no sirve (docs/adaptation-and-experiments.md)
     const probeFps = windowMs > 0 ? ratePerSecond(p.samples.frames, now, windowMs) : null;
     const keptUp = this.#settings.keepUp && probeFps !== null && probeFps >= HEALTHY_FPS * p.rendition.fps;
     this.state.probeFps = probeFps === null ? null : Math.round(probeFps);

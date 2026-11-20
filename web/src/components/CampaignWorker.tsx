@@ -10,11 +10,11 @@ import { dashManifestUrl } from '../lib/dashUrl';
 import { t } from '../lib/i18n';
 import type { CampaignAssignment, WorkerBrowser, PlayerId, PlayerMetrics, PlayerPreset, SampleRow, ServerStatus, VersionReport } from '../types';
 
-// Trabajador de las campañas (README, 4.8). El servidor decide qué prueba toca; esta pestaña monta los
+// Trabajador de las campañas (docs/campaigns.md). El servidor decide qué prueba toca; esta pestaña monta los
 // reproductores con sus ajustes, avisa al tenerlos y sube las filas de cada segundo, las mismas del CSV del
 // dashboard más la hora del servidor. Los reproductores son siempre nuevos en cada prueba.
 //
-// Con nombre (/campaign?worker=1&name=lxc-moq) es un trabajador independiente (README 4.8, trabajadores independientes): se anuncia, monta
+// Con nombre (/campaign?worker=1&name=lxc-moq) es un trabajador independiente (docs/campaigns.md, trabajadores independientes): se anuncia, monta
 // solo los reproductores que le asigna una campaña que lo haya elegido y los pinta a toda la ventana, del tamaño
 // que pide el servidor (la calidad más alta de la emisión). La ventana la ajusta quien lanza el navegador
 // (scripts/campaign-worker.mjs, leyendo window.__workerViewport); hasta que encaja, la pestaña no monta. Lo mismo
@@ -31,8 +31,8 @@ const MOUNTED_PHASES = new Set(['mounting', 'warmup', 'measuring', 'closing']);
 // Lo que un trabajador independiente espera a que su ventana tenga el tamaño pedido antes de montar igualmente
 const VIEWPORT_WAIT_MS = 10000;
 // Construcción de la web que se sirve ahora (/build.json, sin caché): si no es la de esta pestaña, la pestaña recarga
-// en cuanto no tenga prueba montada, y mientras tanto el servidor no le da ninguna (README 4.8). Sin esto, un
-// trabajador seguía con el código que cargó al arrancar: el 6-11-2026 se vio que medían con bundles de días antes.
+// en cuanto no tenga prueba montada, y mientras tanto el servidor no le da ninguna (docs/campaigns.md). Sin esto, un
+// trabajador seguiría con el código que cargó al arrancar y podría medir días con un bundle viejo.
 const RELOAD_KEY = 'testbed.workerReload';
 // Recargas seguidas hacia la misma construcción sin conseguirla (una caché que devuelve la página vieja): se deja de
 // intentar y queda a la vista como desactualizado
@@ -203,7 +203,7 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
             info: {
               user_agent: navigator.userAgent,
               hidden: document.hidden,
-              // El servidor no le da pruebas mientras no coincidan (o si no las dice: una pestaña de antes de esto)
+              // El servidor no le da pruebas mientras no coincidan (o si no las dice)
               build: __WEB_BUILD__,
               latest_build: latest,
               ...(name ? { viewport: `${window.innerWidth}x${window.innerHeight}`, dpr: window.devicePixelRatio, browser: BROWSER, display: HAS_DISPLAY, decode: DECODE } : {}),

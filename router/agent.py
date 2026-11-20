@@ -15,10 +15,10 @@ solo afecta al tramo servidor-cliente y lo hace igual para las dos ramas.
 Este módulo monta el reenvío y el árbol de tc y aplica los perfiles; el agente HTTP en :9000, con el que el orquestador
 aplica perfiles y lee contadores, y la lectura de esos contadores están en api.py, que es el que se ejecuta.
 
-Colas por cliente (desde el 6-11-2026): dentro de la cola de cada protocolo y sentido hay una plaza por cliente
+Colas por cliente: dentro de la cola de cada protocolo y sentido hay una plaza por cliente
 (hasta MAX_CLIENTS, por IP) además de la general. Un cliente con plaza tiene su propio limitador y su netem, con su
-perfil; el resto del tráfico va a la general, con el perfil de siempre. Así varios trabajadores de una campaña miden
-a la vez, cada uno con su red, sin repartirse un enlace (README 4.8, pruebas en paralelo).
+perfil; el resto del tráfico va a la general, con su propio perfil. Así varios trabajadores de una campaña miden
+a la vez, cada uno con su red, sin repartirse un enlace (docs/campaigns.md, pruebas en paralelo).
 """
 import math
 import os
@@ -36,7 +36,7 @@ DASH_PORT, DASH_TLS_PORT, MOQ_PORT, RTC_PORT = 8080, 8443, 4433, 8189
 # Cada protocolo tiene su propia cola por sentido, con el mismo perfil: los dos ven un enlace idéntico
 # en vez de competir entre sí por uno compartido. Número de la cola: su banda en la qdisc raíz (1:n) y la
 # primera cifra de los handles de debajo (prio n00:, limitador n<plaza>0: y netem n<plaza>1:).
-# Por protocolo, bajada y subida seguidas. Hasta el 12-11-2026 eran dash_down 1, moq_down 2, dash_up 3, moq_up 4 (README, sección 5)
+# Por protocolo, bajada y subida seguidas (docs/network-emulation.md)
 QUEUES = {"dash_down": 1, "dash_up": 2, "moq_down": 3, "moq_up": 4, "rtc_down": 5, "rtc_up": 6}
 # Plazas de cada cola: 1..MAX_CLIENTS para los clientes con perfil propio y GENERAL para el resto. El cliente de la
 # plaza s lleva la marca s (iptables, en FORWARD: ahí se ve su IP en los dos sentidos, antes del MASQUERADE de subida
@@ -67,12 +67,12 @@ DIRECTIONS = ("down", "up")
 #    "jitter_ms": float,       variación del retardo (±)
 #    "loss_pct": float,        pérdida aleatoria, en %
 #    "queue_ms": int,          cola del cuello de botella; solo cuenta con rate_kbit
-#    "shaper": str}            cómo se limita el caudal; solo cuenta con rate_kbit (README, sección 5). "tbf" (por defecto):
-#                              un tbf con ráfaga de un paquete fija el ritmo, como siempre; tras un rato ocioso deja pasar un
-#                              paquete suelto sin esperar. "netem" (experimento declarado, desde el 19-11-2026): el tbf va a
+#    "shaper": str}            cómo se limita el caudal; solo cuenta con rate_kbit (docs/network-emulation.md). "tbf" (por defecto):
+#                              un tbf con ráfaga de un paquete fija el ritmo; tras un rato ocioso deja pasar un
+#                              paquete suelto sin esperar. "netem" (experimento declarado): el tbf va a
 #                              10 Gbit/s solo para trocear los superpaquetes GSO y el ritmo lo pone netem rate, que retrasa cada
 #                              paquete lo que tarda en salir a esa velocidad, como un enlace serie
-#                              (../FINDINGS/moq_relay_probe_cwnd_overestimate.md, sección 6)
+#                              (docs/limitations.md)
 # Perfil de red: un perfil de enlace por sentido, {"down": perfil de enlace, "up": perfil de enlace}.
 EMPTY = {"rate_kbit": None, "delay_ms": 0, "jitter_ms": 0, "loss_pct": 0, "queue_ms": 300, "shaper": "tbf"}
 SHAPERS = ("tbf", "netem")

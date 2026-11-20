@@ -5,7 +5,7 @@ ARG MOQ_CLI_FROM=release
 
 # Herramienta vmaf de Netflix, compilada aparte: Debian no la empaqueta y el FFmpeg de Debian no trae
 # libvmaf. Así el FFmpeg que codifica la fuente no cambia. Solo se usa para la QoE (qoe.py), con la
-# emisión parada. v3.0.0 desde el 20 de octubre de 2026; el modelo vmaf_v0.6.1 va dentro del binario.
+# emisión parada. v3.0.0; el modelo vmaf_v0.6.1 va dentro del binario.
 FROM python:3.12-slim AS vmaf
 ARG VMAF_VERSION=3.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,11 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     && rm -rf /var/lib/apt/lists/*
 # Descargar e instalar el binario dinámico oficial de moq-cli para Linux (soporta amd64 y arm64). La versión se
 # puede cambiar con MOQ_CLI_VERSION en el .env, para probar otra publicada sin tocar este fichero.
-# 0.14.7 desde el 19 de octubre de 2026. Con un espectador, una calidad: entrada del publicador sin esperas (máx.
+# 0.14.7. Con un espectador, una calidad: entrada del publicador sin esperas (máx.
 # 37 ms) y MoQ sin congelados; tres calidades: sin retraso acumulado, con picos de hasta 2 s como con 0.14.3.
-# Antecedentes: con 0.14.4 el publicador lee su entrada más despacio que el ritmo de la fuente y
-# acumula retraso sin parar (14 de octubre de 2026: 16-18 s de espera al minuto y medio). Con 0.14.5 aguanta
-# sin espectadores, pero con uno se queda atrás (15 de octubre, tres calidades: 3 s de espera mediana y MoQ
+# Versiones descartadas: con 0.14.4 el publicador lee su entrada más despacio que el ritmo de la fuente y
+# acumula retraso sin parar (16-18 s de espera al minuto y medio). Con 0.14.5 aguanta
+# sin espectadores, pero con uno se queda atrás (tres calidades: 3 s de espera mediana y MoQ
 # a 2 s de latencia; con una calidad, 49 congelados en 85 s frente a 13 con 0.14.3).
 ARG MOQ_CLI_VERSION=0.14.7
 RUN ARCH=$(uname -m) && \
@@ -41,10 +41,10 @@ RUN ARCH=$(uname -m) && \
     mkdir -p /usr/local/share && : > /usr/local/share/moq-cli-build
 
 # moq-cli compilado desde un commit, con MOQ_CLI_FROM=git. Perfil release con LTO thin: el LTO completo del
-# proyecto no cupo en los 7,7 GB de la máquina virtual de Docker de un Mac (21-10-2026). Solo el transporte
+# proyecto no cabe en una máquina virtual de Docker con 7,7 GB de memoria. Solo el transporte
 # QUIC, que es el que usa el testbed hacia el relay; las demás funcionalidades por defecto (WebRTC, almacenes
-# en la nube, NVIDIA...) no se usan. En commits posteriores (p. ej. c19c723, 18-11-2026) el transporte QUIC ya no es
-# una feature, sino que va siempre: con MOQ_CLI_FEATURES=auto se pide la feature quic solo si el commit la define.
+# en la nube, NVIDIA...) no se usan. En commits posteriores (p. ej. c19c723) el transporte QUIC no es una
+# feature, sino que va siempre: con MOQ_CLI_FEATURES=auto se pide la feature quic solo si el commit la define.
 # Las cachés de Cargo persisten entre construcciones: cambiar de commit reutiliza las dependencias compiladas.
 # El binario se identifica como git@<commit> en el panel de versiones y en el CSV (ver versions.py).
 FROM rust:1.98.1-bookworm AS moqcli-git

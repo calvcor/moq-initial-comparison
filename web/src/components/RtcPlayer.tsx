@@ -24,14 +24,14 @@ interface RtcPlayerProps {
 }
 
 // Señalización de MediaMTX por WHEP, a través del punto de entrada. El vídeo va después directo por UDP.
-// El path depende de la ingesta del servidor: liveudp (MPEG-TS por UDP) o live (RTSP, la versión anterior).
+// El path depende de la ingesta del servidor: liveudp (MPEG-TS por UDP) o live (RTSP, con un FFmpeg intermedio).
 const whepUrl = (path: string) => `/rtc/${path}/whep`;
 
 // Tras un reinicio de la emisión no se conecta hasta que esta lleva unos segundos publicada. Una conexión
 // abierta en los primeros segundos recibe de golpe el último segundo de media y, con audio, el navegador
 // deja el vídeo sincronizado 45-55 ms por encima de lo que queda una conexión abierta más tarde, durante
-// toda la sesión (medido el 22-10-2026: README, sección 3.4b). Sin esta espera, aplicar un cambio sin
-// recargar la página medía ese caso y recargarla, el otro. El empaquetador tarda 1-2 s en publicar
+// toda la sesión (medido: docs/architecture.md). Sin esta espera, aplicar un cambio sin
+// recargar la página mediría ese caso y recargarla, el otro. El empaquetador tarda 1-2 s en publicar
 // (keyframe y sondeo de la entrada); desde ahí, 6 s bastan.
 const JOIN_AFTER_START_MS = 8000;
 
@@ -176,8 +176,8 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
     const interval = setInterval(async () => {
       if (isAborted || !session.connected()) return;
       try {
-        // Lo que decide mediasoup, cada segundo (cada 2 s hasta el 4-11-2026): es una petición al servidor, no algo
-        // que el navegador ya sepa; con filas de un segundo, cada 2 s repetía valor en la mitad de ellas
+        // Lo que decide mediasoup, cada segundo: es una petición al servidor, no algo
+        // que el navegador ya sepa; con filas de un segundo, cada 2 s repetiría valor en la mitad de ellas
         if (session.sfuStats && ticks++ % 2 === 0) session.sfuStats().then((stats) => (sfu = stats));
         const report = await session.getStats();
         let inbound: any = null;
@@ -331,7 +331,7 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
             title={
               ingest === 'udp'
                 ? t('MediaMTX lee el MPEG-TS de la fuente por UDP, sin FFmpeg intermedio (RTC_INGEST=udp).', 'MediaMTX reads the source MPEG-TS over UDP, with no intermediate FFmpeg (RTC_INGEST=udp).')
-                : t('Un FFmpeg remultiplexa el MPEG-TS y lo publica en MediaMTX por RTSP (RTC_INGEST=rtsp, la versión anterior).', 'An FFmpeg remuxes the MPEG-TS and publishes it to MediaMTX over RTSP (RTC_INGEST=rtsp, the previous version).')
+                : t('Un FFmpeg remultiplexa el MPEG-TS y lo publica en MediaMTX por RTSP (RTC_INGEST=rtsp, con un FFmpeg intermedio).', 'An FFmpeg remuxes the MPEG-TS and publishes it to MediaMTX over RTSP (RTC_INGEST=rtsp, with an intermediate FFmpeg).')
             }
           >
             MediaMTX · {ingest === 'udp' ? t('UDP directo', 'direct UDP') : t('vía RTSP', 'via RTSP')} · {whepUrl(mtxPath)}

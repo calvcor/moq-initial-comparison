@@ -43,7 +43,7 @@ services:
     environment:
       - NGINX_IP=172.30.50.10
       - RELAY_IP=172.30.50.11
-      - RTC_SERVER=${RTC_SERVER:-mediasoup}  # servidor de WebRTC al que va UDP 8189 (README, 3.4c)
+      - RTC_SERVER=${RTC_SERVER:-mediasoup}  # servidor de WebRTC al que va UDP 8189 (docs/architecture.md)
       - MEDIAMTX_IP=172.30.50.12
       - SFU_IP=172.30.50.13
     ports:
@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
 
   # 1. MoQ Relay: la imagen oficial publicada (moqdev/moq-relay, versión fijada) o, con MOQ_RELAY_FROM=git,
-  # compilado desde MOQ_RELAY_COMMIT (relay/Dockerfile; desde el 18-11-2026). Los valores por defecto repiten los
+  # compilado desde MOQ_RELAY_COMMIT (relay/Dockerfile). Los valores por defecto repiten los
   # de relay/Dockerfile.
   moq-relay:
     build:
@@ -98,7 +98,7 @@ services:
         ipv4_address: 172.30.50.13
     restart: unless-stopped
 
-  # Servidor WebRTC anterior (RTC_SERVER=mediamtx): recibe la calidad más alta, sin recodificar, y la sirve por WHEP
+  # Servidor WebRTC alternativo (RTC_SERVER=mediamtx): recibe la calidad más alta, sin recodificar, y la sirve por WHEP
   mediamtx:
     image: bluenviron/mediamtx:${MEDIAMTX_VERSION:-1.21.3}
     container_name: testbed-mediamtx
@@ -172,12 +172,12 @@ services:
       - DASH_HOST=${DASH_HOST:-}
       - DASH_PORT=${DASH_PORT:-8443}
       - DASH_HTTP_PORT=${DASH_HTTP_PORT:-8080}
-      # Cámara RTSP como fuente alternativa al bucle (README, 4.1b); la URL puede llevar credenciales
+      # Cámara RTSP como fuente alternativa al bucle (docs/measurement.md); la URL puede llevar credenciales
       - CAMERA_RTSP_URL=${CAMERA_RTSP_URL:-}
       - CAMERA_FPS=${CAMERA_FPS:-}
       - RTC_PUBLISH_URL=rtsp://172.30.50.12:8554/live
-      - RTC_SERVER=${RTC_SERVER:-mediasoup}  # mediasoup: SFU con simulcast; mediamtx: una calidad, sin adaptación (versión anterior)
-      - RTC_INGEST=${RTC_INGEST:-udp}  # solo con MediaMTX. udp: directo; rtsp: con el FFmpeg intermedio (versión anterior)
+      - RTC_SERVER=${RTC_SERVER:-mediasoup}  # mediasoup: SFU con simulcast; mediamtx: una calidad, sin adaptación
+      - RTC_INGEST=${RTC_INGEST:-udp}  # solo con MediaMTX. udp: directo; rtsp: con un FFmpeg intermedio que publica por RTSP
       # Solo para mostrarlas en el dashboard: deben coincidir con las etiquetas de imagen de arriba
       - MOQ_RELAY_VERSION=${MOQ_RELAY_VERSION:-0.17.9}
       # Con el relay compilado (MOQ_RELAY_FROM=git), el panel y el CSV lo muestran como git@<commit>

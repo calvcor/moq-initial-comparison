@@ -2,7 +2,7 @@
 # DASH directo (8443/tcp) y el relay de MoQ (4433/udp), para servidores sin proxy HTTPS delante. El vídeo de
 # WebRTC usa DTLS con huella propia; la señalización de mediasoup (8189/tcp, wss://) usa este mismo
 # certificado (lo monta docker-compose.yml) y la de MediaMTX pasa por el panel.
-# Se activa en el .env con COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml (README, sección 1).
+# Se activa en el .env con COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml (docs/deployment.md).
 services:
   edge:
     entrypoint: ["/bin/sh", "/tls-entrypoint.sh"]

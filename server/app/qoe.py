@@ -16,7 +16,7 @@ el espectador y compararlo con el original. La comprobación (check) mide por PS
 es correcto: el fotograma emparejado debe parecerse al codificado más que cualquiera de sus vecinos.
 
 Fase b: VMAF de cada fotograma grabado frente a su original. Comparar imágenes retrasa al codificador
-aunque vaya con nice 19 (medido: README, sección 4.7), así que el cálculo se encola al indexar y solo se
+aunque vaya con nice 19 (medido: docs/qoe.md), así que el cálculo se encola al indexar y solo se
 hace con la emisión parada; si vuelve a arrancar a medias, se interrumpe y vuelve a la cola. Lo mismo
 vale para la comprobación por PSNR.
 

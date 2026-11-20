@@ -11,8 +11,8 @@ import type { DashAbr, PlayerMetrics, PlayerPreset, Rendition, TimecodeLayout } 
 import { t } from '../lib/i18n';
 
 // Modo de corrección de latencia de dash.js: LoL+, que además de la latencia mira el búfer y frena por debajo
-// de playbackBufferMin (0,5 s). Hasta el 27-10-2026 aquí ponía 'liveCatchupModeLoLp', que dash.js no reconoce,
-// y se aplicaba su modo por defecto: las medidas de DASH anteriores y posteriores no son comparables.
+// de playbackBufferMin (0,5 s). Ojo con la mayúscula: 'liveCatchupModeLoLp' no lo reconoce dash.js, que aplica
+// entonces su modo por defecto sin avisar.
 const CATCHUP_MODE = 'liveCatchupModeLoLP';
 
 interface DashPlayerProps {
@@ -36,7 +36,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
 }) => {
   // El navegador conecta siempre al servidor de DASH a través del router, y su propia conexión TCP es la que sufre la
   // red emulada, como en MoQ y WebRTC. Sin URL (página HTTPS sin DASH_HOST) no hay camino directo y no se reproduce:
-  // desde el 12-11-2026 no se recurre al punto de entrada, que es un proxy.
+  // no se recurre al punto de entrada, que es un proxy y terminaría la conexión TCP antes de la red emulada.
   const url = manifestPath ?? '';
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLDivElement | null>(null); // zona de vídeo, la que pasa a pantalla completa
@@ -48,7 +48,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
   const playerRef = useRef<dashjs.MediaPlayerClass | null>(null);
   const [playerStatus, setPlayerStatus] = useState<'idle' | 'connecting' | 'playing' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string>('');
-  // En segundos. null (solo en campañas): no se fija liveDelay y dash.js usa el suyo (README, 4.8)
+  // En segundos. null (solo en campañas): no se fija liveDelay y dash.js usa el suyo (docs/campaigns.md)
   const [targetLatency, setTargetLatency] = useState<number | null>(() =>
     preset ? (preset.targetMs === null ? null : preset.targetMs / 1000) : 0.3,
   );
@@ -244,7 +244,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         playerRef.current = null;
       }
 
-      // L2A (bugfix): copia de dash.js con el fallo de unidades de L2A corregido (vite.config.ts, README 6). Solo se
+      // L2A (bugfix): copia de dash.js con el fallo de unidades de L2A corregido (vite.config.ts, docs/adaptation-and-experiments.md). Solo se
       // carga con esta opción; las demás usan dash.js tal cual
       const lib: typeof dashjs = abr === 'l2afix' ? await import('virtual:dashjs-l2afix') : dashjs;
       if (isCancelled || !videoRef.current) return;
@@ -333,7 +333,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         const liveLatency = p.getCurrentLiveLatency();
         const glass = meter.snapshot();
         // La representación actual es la que eligió el ABR y se está descargando; lo que se pinta es la del <video>,
-        // que cambia cuando el búfer llega a los segmentos nuevos (hasta el 4-11-2026, dash_height era la elegida)
+        // que cambia cuando el búfer llega a los segmentos nuevos
         const representation = p.getCurrentRepresentationForType('video');
         const height = representation?.height ?? null;
         const shown = videoRef.current?.videoHeight || null;
@@ -536,8 +536,8 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         <label
           className="flex items-center space-x-1.5 whitespace-nowrap"
           title={t(
-            'Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (README 6). Cambiarlo recrea el reproductor.',
-            'dash.js adaptation rules in Auto. Default: the stock ones (throughput and BOLA, insufficient buffer, switch history, request abandonment). L2A and LoL+: their low-latency rules, each on its own. L2A (bugfix): experiment, L2A with its dash.js 5 units bug fixed (README 6). Changing it recreates the player.',
+            'Reglas de adaptación de dash.js en Auto. Por defecto: las de fábrica (caudal y BOLA, búfer insuficiente, historial de cambios, abandono de peticiones). L2A y LoL+: sus reglas para baja latencia, cada una en solitario. L2A (bugfix): experimento, L2A con su fallo de unidades de dash.js 5 corregido (docs/adaptation-and-experiments.md). Cambiarlo recrea el reproductor.',
+            'dash.js adaptation rules in Auto. Default: the stock ones (throughput and BOLA, insufficient buffer, switch history, request abandonment). L2A and LoL+: their low-latency rules, each on its own. L2A (bugfix): experiment, L2A with its dash.js 5 units bug fixed (docs/adaptation-and-experiments.md). Changing it recreates the player.',
           )}
         >
           <span>ABR:</span>

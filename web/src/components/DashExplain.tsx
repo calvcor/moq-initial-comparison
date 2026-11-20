@@ -3,7 +3,7 @@ import type { DashAbr } from '../types';
 import { lang, t } from '../lib/i18n';
 
 // Explicación, en la propia página, de cómo elige calidad y cómo persigue la latencia el reproductor LL-DASH con las
-// opciones elegidas. Resume PROTOCOLOS 3.5 y 3.6, README 5 y 6 y lo leído del código de dash.js 5.2.1
+// opciones elegidas. Resume docs/protocols/ll-dash.md, docs/network-emulation.md, docs/adaptation-and-experiments.md y lo leído del código de dash.js 5.2.1
 // (AbrController, ABRRulesCollection, sus reglas y CatchupController): si cambia alguno de ellos, hay que cambiar
 // también este texto.
 
@@ -54,13 +54,13 @@ const THROUGHPUT = (
       <>
         <b>Caudal estimado:</b> dash.js mide cada fragmento CMAF desde su <code>moof</code> hasta el final de su{' '}
         <code>mdat</code> y promedia con medias exponenciales. Sin límite de red sale unas dos veces el bitrate que
-        descarga, no la capacidad (README 6); con 4 Mbit/s de bajada se midió ~4,45 Mbit/s en el servidor, un 11 % por
+        descarga, no la capacidad (docs/adaptation-and-experiments.md); con 4 Mbit/s de bajada se midió ~4,45 Mbit/s en el servidor, un 11 % por
         encima del enlace.
       </>,
       <>
         <b>Throughput estimate:</b> dash.js measures each CMAF fragment from its <code>moof</code> to the end of its{' '}
         <code>mdat</code> and averages with exponential moving averages. Without a bandwidth limit it comes out at about
-        twice the downloaded bitrate, not the capacity (README 6); with a 4 Mbit/s downlink ~4.45 Mbit/s was measured on
+        twice the downloaded bitrate, not the capacity (docs/adaptation-and-experiments.md); with a 4 Mbit/s downlink ~4.45 Mbit/s was measured on
         the server, 11 % above the link.
       </>,
     )}
@@ -80,12 +80,12 @@ function latencySection({ targetLatency, maxDrift, playbackBufferMin }: Props): 
         {L(
           <>
             <b>Objetivo fijo</b> ({s(targetLatency)}, el slider): dash.js se coloca a esa distancia del directo y no la
-            cambia por su cuenta, ni con la red lenta ni tras una parada (README 5). Todo lo que hay entre la reproducción
+            cambia por su cuenta, ni con la red lenta ni tras una parada (docs/network-emulation.md). Todo lo que hay entre la reproducción
             y el directo es búfer, así que la latencia nunca es menor que el búfer.
           </>,
           <>
             <b>Fixed target</b> ({s(targetLatency)}, the slider): dash.js places itself at that distance from the live
-            edge and does not change it on its own, neither with a slow network nor after a stall (README 5). Everything
+            edge and does not change it on its own, neither with a slow network nor after a stall (docs/network-emulation.md). Everything
             between the playhead and the live edge is buffer, so latency is never lower than the buffer.
           </>,
         )}
@@ -227,8 +227,8 @@ export const DashExplain: React.FC<Props> = (props) => {
               {' '}
               <b className="text-amber-300">{t('Experimento:', 'Experiment:')}</b>{' '}
               {t(
-                'una copia de dash.js con el fallo de unidades de L2A corregido (README 6); no es dash.js tal como viene.',
-                'a copy of dash.js with the L2A units bug fixed (README 6); not stock dash.js.',
+                'una copia de dash.js con el fallo de unidades de L2A corregido (docs/adaptation-and-experiments.md); no es dash.js tal como viene.',
+                'a copy of dash.js with the L2A units bug fixed (docs/adaptation-and-experiments.md); not stock dash.js.',
               )}
             </>
           )}
@@ -280,8 +280,8 @@ export const DashExplain: React.FC<Props> = (props) => {
               <>
                 {' '}
                 {t(
-                  'En dash.js 5 dos de sus cuentas mezclan bit/s y kbit/s, la distribución salta entera en cada segmento y queda una regla sin memoria: la calidad más alta que quepa en esa muestra (README 6).',
-                  'In dash.js 5 two of its computations mix bit/s and kbit/s, the whole distribution jumps at every segment and what remains is a memoryless rule: the highest rendition that fits in that sample (README 6).',
+                  'En dash.js 5 dos de sus cuentas mezclan bit/s y kbit/s, la distribución salta entera en cada segmento y queda una regla sin memoria: la calidad más alta que quepa en esa muestra (docs/adaptation-and-experiments.md).',
+                  'In dash.js 5 two of its computations mix bit/s and kbit/s, the whole distribution jumps at every segment and what remains is a memoryless rule: the highest rendition that fits in that sample (docs/adaptation-and-experiments.md).',
                 )}
               </>
             )}
@@ -338,8 +338,8 @@ export const DashExplain: React.FC<Props> = (props) => {
           {THROUGHPUT}
           <li>
             {t(
-              'Con el búfer lleno hasta el objetivo, cada segmento se descarga al ritmo del codificador y la estimación acaba siguiendo al bitrate que descarga: tras un rato en la mínima puede no subir aunque se alargue la latencia (README 6).',
-              'With the buffer filled up to the target, each segment downloads at the encoder pace and the estimate ends up following the downloaded bitrate: after a while at the lowest rendition it may not switch up even if latency grows (README 6).',
+              'Con el búfer lleno hasta el objetivo, cada segmento se descarga al ritmo del codificador y la estimación acaba siguiendo al bitrate que descarga: tras un rato en la mínima puede no subir aunque se alargue la latencia (docs/adaptation-and-experiments.md).',
+              'With the buffer filled up to the target, each segment downloads at the encoder pace and the estimate ends up following the downloaded bitrate: after a while at the lowest rendition it may not switch up even if latency grows (docs/adaptation-and-experiments.md).',
             )}
           </li>
         </Section>

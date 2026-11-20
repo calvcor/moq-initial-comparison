@@ -1,6 +1,6 @@
 """Idioma de los textos que redacta el orquestador para la página: el análisis de una campaña (analysis.py) y las
 comparaciones de dos pruebas (compare.py) y de dos campañas (campaign_versus.py). La página pide el suyo con
-?lang=en (README 4.4c); por defecto, español, como siempre.
+?lang=en (docs/measurement.md); por defecto, español, como siempre.
 
 Cada texto va como t("español", "English"), resuelto con el idioma de la petición en curso (una variable de contexto,
 fijada con `language()` alrededor del cálculo). Las constantes de módulo con texto usan `Localized`: un dict cuyos

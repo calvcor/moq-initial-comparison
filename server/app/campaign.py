@@ -11,7 +11,7 @@ la emisión y unos reproductores:
 1. preparing: el trabajador desmonta los reproductores; se aplica la emisión (solo si cambia, con un
    margen para que las ramas arranquen) y el perfil de red, y se deja un respiro para vaciar las colas.
 2. mounting: el trabajador crea reproductores nuevos con los ajustes de la prueba y avisa al tenerlos. Son
-   siempre nuevos: MoQ en auto calcula su objetivo del RTT solo al conectar (PROTOCOLOS, 4.11), y de paso
+   siempre nuevos: MoQ en auto calcula su objetivo del RTT solo al conectar (docs/protocols/moq.md), y de paso
    se mide el arranque.
 3. warmup: las filas se guardan, marcadas, pero no entran en el resumen.
 4. measuring: las filas que entran en el resumen.
@@ -24,11 +24,11 @@ Cada control_every pruebas se intercala una de control, sin restricción de red,
 
 La latencia objetivo de cada prueba se pasa a cada reproductor tal como lo entiende su implementación
 (liveDelay de dash.js, delay de @moq/watch, jitterBufferTarget de WebRTC): no significan lo mismo y se
-declara así. None es el valor de fábrica de la implementación (en DASH, sin liveDelay: unos 8 s, README 4.8).
+declara así. None es el valor de fábrica de la implementación (en DASH, sin liveDelay: unos 8 s, docs/campaigns.md).
 
 El trabajador es uno solo (la pestaña, o el script sin nombre) o, si el plan lo dice (workers), uno por
 reproductor: navegadores independientes que se anuncian por su nombre y montan cada uno los reproductores que
-la campaña le asigna, en una ventana del tamaño de la calidad más alta de la emisión (README 4.8, trabajadores independientes). La prueba
+la campaña le asigna, en una ventana del tamaño de la calidad más alta de la emisión (docs/campaigns.md, trabajadores independientes). La prueba
 espera entonces a todos, y cada uno sube sus filas: los resúmenes de un reproductor salen de las de su navegador.
 Con pruebas en paralelo (parallel, con un grupo de trabajadores en worker_pool), cada prueba toma un trabajador libre
 cualquiera y se ejecutan a la vez, en una tanda, las pendientes de la misma emisión, red y objetivo y de protocolos
@@ -61,7 +61,7 @@ PLAYERS = ("dash", "moq", "rtc")
 CAMPAIGN_ID = re.compile(r"^\d{8}-\d{6}$")
 # Sin noticias del trabajador durante este tiempo, la prueba en curso se da por perdida
 WORKER_TIMEOUT_S = 15
-# Nombre de un trabajador independiente (un navegador por reproductor, README 4.8, trabajadores independientes), p. ej. lxc-moq
+# Nombre de un trabajador independiente (un navegador por reproductor, docs/campaigns.md, trabajadores independientes), p. ej. lxc-moq
 WORKER_NAME = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$"
 # Modos de Chrome de un trabajador independiente: sin ventana, o una ventana en quiosco (necesita pantalla)
 WORKER_BROWSERS = ("headless", "kiosk")
@@ -90,7 +90,7 @@ IP_KEYS = tuple(f"{p}_{d}" for p in PLAYERS for d in ("down", "up"))
 IP_PERIOD_S = 1
 # Columnas de las filas del navegador leídas de los contadores globales del router (/api/status): son de la cola entera
 # de cada protocolo. Con pruebas en paralelo (cada trabajador en su propia cola, client_ips) suman las pruebas que iban a
-# la vez y no son de ninguna: al exportar quedan vacías, y lo de la prueba está en ip.csv (16-11-2026)
+# la vez y no son de ninguna: al exportar quedan vacías, y lo de la prueba está en ip.csv
 ROUTER_GLOBAL_COLUMNS = tuple(f"{p}_ip_{d}_kbps" for p in PLAYERS for d in ("down", "up")) + tuple(
     f"{p}_{d}_dropped" for p in PLAYERS for d in ("down", "up"))
 # Los campos del resumen que salen de esas columnas: con pruebas en paralelo quedan vacíos. Los exactos de la prueba son
@@ -165,7 +165,7 @@ def summarize_player(player: str, rows: list[dict], measure_s: float, target_ms:
         # Fracción del tiempo en la calidad más alta que llegó a reproducir en la prueba
         "top_height_share": rounded(sum(1 for h in heights if h == top) / len(heights), 3) if heights else None,
         # La más alta y la más baja reproducidas, y la fracción del tiempo en la más alta de la emisión: la anterior es
-        # relativa a lo que alcanzó la prueba (siempre en 360p da 1). Desde el 6-11-2026
+        # relativa a lo que alcanzó la prueba (siempre en 360p da 1)
         "height_max": top,
         "height_min": min(heights) if heights else None,
         "ladder_top_share": rounded(sum(1 for h in heights if h >= ladder_top) / len(heights), 3) if heights and ladder_top else None,
@@ -196,12 +196,12 @@ def summarize_ip(player: str, samples: list[dict]) -> dict:
         out[f"ip_{d}_kbps"] = rounded(sum(s[f"{player}_{d}_bytes"] for s in valid) * 8 / ms) if ms else None
         out[f"ip_{d}_kbps_p95"] = rounded(percentile([s[f"{player}_{d}_kbps"] for s in valid], 95))
         # Descartes de la cola en la medida, en número y sobre los paquetes que entraron (lecturas sin contador
-        # de descartes, anteriores al 3-11-2026, quedan fuera: vacío)
+        # de descartes quedan fuera: vacío)
         counted = [s for s in samples if s.get(f"{player}_{d}_dropped") is not None and s.get(f"{player}_{d}_packets") is not None]
         dropped = sum(s[f"{player}_{d}_dropped"] for s in counted)
         out[f"ip_{d}_dropped"] = dropped if counted else None
-        # El porcentaje, sobre los paquetes que entraron en la cola según tc, ya troceados como los descartes (desde el
-        # 18-11-2026). Las lecturas anteriores no los tienen: sobre los de iptables, que en DASH cuentan cada superpaquete
+        # El porcentaje, sobre los paquetes que entraron en la cola según tc, ya troceados como los descartes. En
+        # las lecturas que no los tienen, sobre los de iptables, que en DASH cuentan cada superpaquete
         # GSO como uno y dan entre 2 y 4 veces el porcentaje real. ip_<sentido>_drop_base dice cuál se usó
         if any(f"{player}_{d}_tc_packets" in s for s in samples):
             base, key = "tc", f"{player}_{d}_tc_packets"
@@ -329,7 +329,7 @@ class Campaigns:
                     run["state"] = "pending"
             # La tanda interrumpida (pruebas en paralelo) vuelve entera a la cola, como una prueba sola
             campaign["batch"] = None
-            # Hasta el 6-11-2026 una campaña en pausa retenía la cola; ahora sale de ella, como las canceladas
+            # Una campaña en pausa sale de la cola, como las canceladas (holds_queue puede venir de campañas guardadas)
             campaign.pop("holds_queue", None)
             self.campaigns[cid] = campaign
             if campaign["state"] == "running":
@@ -389,7 +389,7 @@ class Campaigns:
         if not plan.get("parallel"):
             restarts = len(pending) if self.restarts_each_run(plan) else len({r["stream"] for r in pending})
             return len(pending) * per_run + restarts * plan["stream_settle_s"]
-        # Con pruebas en paralelo, por tandas (desde el 6-11-2026; antes contaba las pruebas una tras otra): cada tanda es
+        # Con pruebas en paralelo, por tandas: cada tanda es
         # de una emisión y lleva tantas pruebas como quepan en los trabajadores. Cuentan los que pueden medir en paralelo
         # ahora (conectados y con IP propia) si está en marcha y alguno lo está; si no, todos los del grupo
         free = len(self.parallel_free(plan)) if campaign["state"] == "running" else 0
@@ -487,8 +487,8 @@ class Campaigns:
 
     def locked_by(self, name: str) -> Optional[str]:
         """La campaña que usa este trabajador independiente: la que está en marcha y, si no, la primera en pausa (None si
-        ninguna). Antes del 6-11-2026 devolvía la primera de las dos que encontrara, y la pestaña de trabajadores podía
-        nombrar una campaña en pausa mientras el trabajador medía para la que estaba en marcha."""
+        ninguna). Con la primera de las dos que se encontrara, la pestaña de trabajadores podría nombrar una campaña en
+        pausa mientras el trabajador mide para la que está en marcha."""
         holders = [c for c in self.campaigns.values()
                    if c["state"] in ("running", "paused") and name in self.pool_names(c["plan"])]
         running = next((c["id"] for c in holders if c["state"] == "running"), None)
@@ -594,7 +594,7 @@ class Campaigns:
 
     # Lo que una campaña gana al medir y se quita al borrar sus medidas
     MEASURED_FIELDS = ("restore", "versions", "worker_browsers", "reopened", "holds_queue", "current", "batch")
-    # Con el índice de las filas y el análisis guardado, que salen de ellas (README 4.8)
+    # Con el índice de las filas y el análisis guardado, que salen de ellas (docs/campaigns.md)
     MEASURED_FILES = ("samples.jsonl", "runs.jsonl", "ip.jsonl", "samples_index.json", "ip_index.json", "analysis.json", "analysis.en.json")
 
     def clear(self, cid: str) -> dict:
@@ -651,8 +651,8 @@ class Campaigns:
                 raise RuntimeError("La campaña está archivada: desarchívala antes de arrancarla")
             # Antes de anotar lo que habrá que restaurar, se deshace la vista previa que hubiera
             self.stop_preview()
-            # reopened: una campaña en pausa, o terminada o cancelada (antes del 6-11-2026) a la que se le ha pedido
-            # repetir una prueba; lo de entonces ya se restauró y puede haber cambiado
+            # reopened: una campaña en pausa, o terminada o cancelada, a la que se le ha pedido
+            # repetir una prueba; lo que había al empezar ya se restauró y puede haber cambiado
             if campaign["restore"] is None or campaign.pop("reopened", False):
                 # Cómo estaba todo al empezar, para dejarlo igual al terminar (sobrevive a reinicios)
                 snap = self.snapshot()
@@ -673,7 +673,7 @@ class Campaigns:
             self.wake.set()
 
     def pause(self, cid: str):
-        """Detiene la campaña como antes la cancelación: sale de la cola, la detiene si quedan otras (pausar es una
+        """Detiene la campaña: sale de la cola, la detiene si quedan otras (pausar es una
         intervención y no se sigue solo) y la red y la emisión vuelven a como estaban al empezar (lo hace el
         planificador al salir). Lo medido se conserva; al reanudarla se repite la prueba en curso y se anota de nuevo
         lo que habrá que restaurar."""
@@ -900,9 +900,10 @@ class Campaigns:
     @staticmethod
     def outdated(info: dict) -> bool:
         """El trabajador tiene una construcción de la web distinta de la que se sirve (build frente a latest_build, que
-        lee de /build.json en cada latido), o no la dice: una pestaña cargada antes del 6-11-2026, de la que no se sabe
-        con qué código mide. El 6-11-2026 se vio que los trabajadores medían con bundles de días antes, que no conocían
-        opciones del plan (README 4.8). La pestaña recarga sola entre pruebas; una de antes hay que reiniciarla a mano."""
+        lee de /build.json en cada latido), o no la dice: una pestaña con una web que no anuncia su construcción, de la que
+        no se sabe con qué código mide. Sin esta comprobación, un trabajador puede medir con un bundle viejo que no conoce
+        opciones del plan (docs/campaigns.md). La pestaña recarga sola entre pruebas; una que no dice su construcción hay que
+        reiniciarla a mano."""
         build = info.get("build")
         latest = info.get("latest_build")
         return build is None or (latest is not None and build != latest)
@@ -953,7 +954,7 @@ class Campaigns:
             target_label=target["label"],
             network_label="control (sin restricción)" if run["network"] is None else plan["networks"][run["network"]]["label"],
             quality=plan["quality"],
-            # Las campañas anteriores a estas opciones no las tienen: el trabajador usa entonces sus valores por defecto
+            # Las campañas sin estas opciones: el trabajador usa sus valores por defecto
             options=plan.get("player_options") or {},
             kind=run["kind"],
             rep=run["rep"],
@@ -1056,7 +1057,7 @@ class Campaigns:
                 else:
                     continue  # ya fuera de la prueba
                 # run_started_ms distingue la prueba repetida tras una pausa o un reinicio, que conserva su id
-                # El trabajador que la midió: el independiente o, desde el 4-11-2026, también el trabajador único
+                # El trabajador que la midió: el independiente o el trabajador único
                 who = worker or (None if self.independent(campaign["plan"]) else self.worker["id"])
                 kept.append({"campaign": cid, "run_id": run_id, "attempt": run["attempt"],
                              "run_started_ms": run["started_ms"], "phase": phase, **row, **({"worker": who} if who else {})})
@@ -1107,8 +1108,7 @@ class Campaigns:
     def pick_batch(self, campaign: dict) -> list[dict]:
         """La siguiente tanda: la primera prueba pendiente y, con pruebas en paralelo, las siguientes pendientes de su
         misma emisión (la fuente es una), de cualquier red, objetivo o protocolo, mientras quepan en los trabajadores
-        libres. Cada trabajador tiene en el router su propia cola con la red de su prueba (desde el 6-11-2026; antes solo
-        se juntaban protocolos distintos con la misma red y objetivo). Sin pruebas en paralelo, una sola."""
+        libres. Cada trabajador tiene en el router su propia cola con la red de su prueba. Sin pruebas en paralelo, una sola."""
         pending = [r for r in campaign["runs"] if r["state"] == "pending"]
         if not pending:
             return []
@@ -1254,7 +1254,7 @@ class Campaigns:
                     else:
                         stale = [self.worker["id"]] if self.worker_alive() and self.outdated(self.worker["info"]) else []
                 if stale and stale != outdated_logged:
-                    self.log(campaign, f"Esperando a que recarguen la web (desactualizada; una pestaña de antes del 6-11-2026 hay que reiniciarla): {', '.join(stale)}")
+                    self.log(campaign, f"Esperando a que recarguen la web (desactualizada; una pestaña que no dice su construcción hay que reiniciarla): {', '.join(stale)}")
                 outdated_logged = stale
                 if not self.wait(3600 * 24, campaign, lambda: self.enough_workers(campaign) and (self.independent(plan) or self.worker_ready())):
                     break
@@ -1488,7 +1488,7 @@ class Campaigns:
         """Repetición pedida a mano de una prueba terminada, válida o no: una copia al final de la cola.
 
         Si la original era válida, sigue contando hasta que la copia termine válida (supersede): así no se
-        pierde el resultado si la repetición falla. Una campaña terminada (o cancelada, antes del 6-11-2026) queda en pausa, para
+        pierde el resultado si la repetición falla. Una campaña terminada (o cancelada) queda en pausa, para
         reanudarla y medir lo pendiente."""
         with self.lock:
             campaign = self.campaigns[cid]
@@ -1534,13 +1534,11 @@ class Campaigns:
             "kind": run["kind"], "rep": run["rep"], "stream_idx": run["stream"],
             "network_label": network["label"], "target_label": target["label"],
             "players_run": "|".join(run["players"]),
-            # El trabajador de cada reproductor: el independiente que lo montó o el trabajador único (desde el 4-11-2026,
-            # en todos los modos; antes, solo con trabajadores independientes)
+            # El trabajador de cada reproductor: el independiente que lo montó o el trabajador único
             "workers": "|".join(f"{p}={w}" for p, w in self.player_workers(campaign, run).items()) or None,
             **({"worker_browsers": "|".join(f"{n}={self.browser_of(campaign, n)}" for n in sorted(self.pool_names(plan)))}
                if self.independent(plan) else {}),
-            # Pruebas en paralelo: la tanda y lo que se midió a la vez (misma emisión; cada una con su red desde el 6-11-2026,
-            # antes otros protocolos con la misma red y objetivo)
+            # Pruebas en paralelo: la tanda y lo que se midió a la vez (misma emisión, cada una con su red)
             "parallel": bool(plan.get("parallel")),
             "batch": run.get("batch"), "concurrent": "|".join(run.get("concurrent") or []) or None,
             "concurrent_players": "|".join(run.get("concurrent_players") or []) or None,
@@ -1650,15 +1648,15 @@ class Campaigns:
                         sample[f"{q}_bytes"] = size
                         sample[f"{q}_kbps"] = round(size * 8 / dt, 1) if size is not None else None
                         # Paquetes que entran en la cola (iptables cuenta antes de la emulación) y los que esta descarta,
-                        # por desbordamiento o por la pérdida aleatoria del perfil (desde el 3-11-2026). Mismo criterio
+                        # por desbordamiento o por la pérdida aleatoria del perfil. Mismo criterio
                         # ante un contador reiniciado: el router los pone a cero al cambiar la red
                         for counter in ("packets", "dropped", "out_packets"):
                             a = (old.get(q) or {}).get(counter)
                             b = (new.get(q) or {}).get(counter)
                             sample[f"{q}_{counter}"] = b - a if isinstance(a, int) and isinstance(b, int) and b >= a else None
-                        # Paquetes que entraron en la cola según tc (desde el 18-11-2026): los que salieron, los que se
+                        # Paquetes que entraron en la cola según tc: los que salieron, los que se
                         # descartaron y lo que creció la cola. Ya troceados, como los descartes: iptables cuenta un
-                        # superpaquete GSO de TCP como uno, y en DASH el porcentaje de descartes salía entre 2 y 4 veces el real
+                        # superpaquete GSO de TCP como uno, y en DASH el porcentaje de descartes saldría entre 2 y 4 veces el real
                         out_n, dropped_n = sample.pop(f"{q}_out_packets"), sample[f"{q}_dropped"]
                         qa, qb = (old.get(q) or {}).get("queued"), (new.get(q) or {}).get("queued")
                         sample[f"{q}_tc_packets"] = (out_n + dropped_n + qb - qa
@@ -1683,12 +1681,12 @@ class Campaigns:
         return {q: (per_client.get(owner.get(q.split("_")[0])) or {}).get(q) for q in IP_KEYS}
 
     # Columnas de cada reproductor que se devuelven en las series (las mismas del CSV de muestras)
-    # stall_spans y stall_open_since_ms: parones exactos, en reloj del servidor (desde el 28-10-2026)
+    # stall_spans y stall_open_since_ms: parones exactos, en reloj del servidor
     # selected_height y bw_estimate_kbps: la calidad que elige la adaptación y su estimación de ancho de banda
     SERIES_FIELDS = ("g2g_ms", "kbps", "height", "selected_height", "bw_estimate_kbps", "stall_ms", "frametime_p95_ms", "stall_spans", "stall_open_since_ms", "playback_rate", "content_speed", "content_skipped_ms")
-    # Columnas que solo tiene un reproductor: la capacidad que estima el sondeo de MoQ (README 6.3), la última medida,
+    # Columnas que solo tiene un reproductor: la capacidad que estima el sondeo de MoQ (docs/adaptation-and-experiments.md), la última medida,
     # vacía si no ha terminado ningún sondeo; y los sondeos, para dibujarlos: exactos con su resultado (probe_spans y
-    # probe_open_since_ms, desde el 6-11-2026) o, en filas anteriores, solo si había uno en curso en cada fila (probing)
+    # probe_open_since_ms) o, en filas que no los tienen, solo si había uno en curso en cada fila (probing)
     PLAYER_SERIES_FIELDS = {"moq": ("probe_capacity_kbps", "probing", "probe_spans", "probe_open_since_ms")}
     # Columnas de la página, comunes a los reproductores: se repiten en cada uno para dibujarlas junto a sus métricas
     PAGE_SERIES_FIELDS = ("main_refreshes_missed", "main_long_frame_ms")
@@ -1773,7 +1771,7 @@ class Campaigns:
                 run = runs.get(row.get("run_id"))
                 if run and run["state"] == "replaced" and row.get("state") == "done":
                     row.update(state="replaced", replaced_by=run.get("replaced_by"))
-                # También en los resúmenes escritos antes del 16-11-2026
+                # También en los resúmenes guardados sin vaciarlos
                 if run and run.get("client_ips"):
                     row.update(dict.fromkeys(f for f in SUMMARY_GLOBAL_FIELDS if f in row))
         if name in ("samples.jsonl", "ip.jsonl"):

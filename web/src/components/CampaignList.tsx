@@ -3,7 +3,7 @@ import { Archive, ArchiveRestore, ChevronDown, ChevronRight, PanelLeftClose, Pan
 import type { Campaign } from '../types';
 import { locale, t } from '../lib/i18n';
 
-// Lista de campañas (README, 4.8): vertical y plegable, agrupada por día de creación (de la más reciente a la más
+// Lista de campañas (docs/campaigns.md): vertical y plegable, agrupada por día de creación (de la más reciente a la más
 // antigua), con las archivadas aparte y plegadas. Plegar la lista y la sección de archivadas se recuerda en el navegador.
 
 const STATE_DOT: Record<string, string> = {

@@ -1,15 +1,15 @@
-"""Índice de las filas de una campaña (samples.jsonl) para el análisis y la comparación de pruebas (README 4.8).
+"""Índice de las filas de una campaña (samples.jsonl) para el análisis y la comparación de pruebas (docs/campaigns.md).
 
-Leer samples.jsonl entero era casi todo el tiempo de un análisis (medido el 8-11-2026 en el servidor: 1,2-1,3 s de
-1,5-1,6 s con las campañas de 208 pruebas, unos 100 MB). El índice guarda, por intento de prueba (id y run_started_ms) y
-reproductor, lo único que se necesita de las filas de su medida: cuántos segundos pasó en cada altura y unos campos de la
-primera fila (versiones, servidor WebRTC, sonido, cadencia). Va en disco junto a la campaña (samples_index.json), con
-hasta dónde se ha leído el fichero: como samples.jsonl solo crece, la siguiente vez se lee solo lo nuevo. Si el fichero
-encoge o es otro (las medidas se borraron), se rehace desde el principio.
+Leer samples.jsonl entero es casi todo el tiempo de un análisis (medido: 1,2-1,3 s de 1,5-1,6 s con las campañas de
+208 pruebas, unos 100 MB). El índice guarda, por intento de prueba (id y run_started_ms) y reproductor, lo único que
+se necesita de las filas de su medida: cuántos segundos pasó en cada altura y unos campos de la primera fila
+(versiones, servidor WebRTC, sonido, cadencia). Va en disco junto a la campaña (samples_index.json), con hasta dónde
+se ha leído el fichero: como samples.jsonl solo crece, la siguiente vez se lee solo lo nuevo. Si el fichero encoge o
+es otro (las medidas se borraron), se rehace desde el principio.
 
 Guarda además dónde están en el fichero las filas de cada intento (spans: el primer y el último byte), y lo mismo para
-ip.jsonl en ip_index.json, para que la gráfica segundo a segundo lea solo esos tramos. Hasta el 8-11-2026 la leía entera
-en cada petición: 11 s con los 1,5 GB de la campaña más grande de justbytes.
+ip.jsonl en ip_index.json, para que la gráfica segundo a segundo lea solo esos tramos: leerlo entero en cada petición
+cuesta 11 s con los 1,5 GB de la campaña más grande medida.
 """
 import json
 import os

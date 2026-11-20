@@ -74,7 +74,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
     mutedSignalRef.current.set(!audible);
   }, [audible]);
 
-  // Cambio de calidad hacia abajo (opción `switching` del parche de web/patches, README 6.1). 'seamless' es el
+  // Cambio de calidad hacia abajo (opción `switching` del parche de web/patches, docs/adaptation-and-experiments.md). 'seamless' es el
   // comportamiento original de @moq/watch; las otras dos son el experimento. Sin el parche (versión de npm) la
   // opción no existe, el selector se desactiva y el CSV la deja vacía.
   // Se recuerda en el navegador, como los reproductores activos: la opción solo actúa en el siguiente cambio y
@@ -94,7 +94,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
   }, [switching, switchingSupported]);
 
   // Adaptación: 'watch' deja decidir a @moq/watch (el comportamiento que se mide); 'probe' y 'probe2' son el experimento
-  // de README 6.3, un controlador propio con sondeo por prioridad que pide la calidad a la librería por target.name.
+  // de docs/adaptation-and-experiments.md, un controlador propio con sondeo por prioridad que pide la calidad a la librería por target.name.
   const [abr, setAbr] = useState<MoqAbr>(() => (preset ? (preset.options?.moq_abr ?? 'watch') : loadAbr()));
   const [showExplain, setShowExplain] = useState(false);
   const abrRef = useRef<MoqAbr>(abr);
@@ -249,7 +249,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         // @moq/net solo abre el canal PROBE con el relay mientras alguien observa connection.probe, y @moq/watch deja de
         // observarlo cuando se le pide una calidad por nombre (el sondeo o una calidad fijada a mano): sin esto, en esos
         // casos no llegaría ninguna estimación al panel ni al CSV. Observarla solo mantiene abierto ese canal, por el que
-        // el relay informa de su estimación de vez en cuando; no cambia qué calidad se elige ni cómo envía (README 6).
+        // el relay informa de su estimación de vez en cuando; no cambia qué calidad se elige ni cómo envía (docs/adaptation-and-experiments.md).
         stopProbeWatch = connection.probe.subscribe(() => {});
 
         // 3. Instanciar el reproductor oficial @moq/watch con jitter buffer y control reactivo
@@ -517,8 +517,8 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
         <label
           className="flex items-center space-x-1.5 whitespace-nowrap"
           title={t(
-            'Experimento, no el comportamiento de @moq/watch. Librería: decide @moq/watch (la estimación del relay y su regla del 80 %). Sondeo: decide un controlador del banco que, a ratos, pide la calidad siguiente con la prioridad mínima y sube si cabe en lo que reciben las dos; baja si la actual deja de llegar a su ritmo (README 6.3). Sondeo v2: el mismo, sin pedir 10 s de atraso de golpe y subiendo también si la siguiente llega a su ritmo. Solo actúa con Calidad en Auto. Se recuerda en este navegador.',
-            'Experiment, not the @moq/watch behaviour. Library: @moq/watch decides (the relay estimate and its 80 % rule). Probing: a testbed controller decides; every so often it requests the next rendition with the lowest priority and switches up if it fits in what both receive; it switches down if the current one stops keeping up with its frame rate (README 6.3). Probing v2: the same, without requesting a 10 s backlog at once and also switching up if the next one keeps up with its frame rate. Only acts with Rendition on Auto. Remembered in this browser.',
+            'Experimento, no el comportamiento de @moq/watch. Librería: decide @moq/watch (la estimación del relay y su regla del 80 %). Sondeo: decide un controlador del banco que, a ratos, pide la calidad siguiente con la prioridad mínima y sube si cabe en lo que reciben las dos; baja si la actual deja de llegar a su ritmo (docs/adaptation-and-experiments.md). Sondeo v2: el mismo, sin pedir 10 s de atraso de golpe y subiendo también si la siguiente llega a su ritmo. Solo actúa con Calidad en Auto. Se recuerda en este navegador.',
+            'Experiment, not the @moq/watch behaviour. Library: @moq/watch decides (the relay estimate and its 80 % rule). Probing: a testbed controller decides; every so often it requests the next rendition with the lowest priority and switches up if it fits in what both receive; it switches down if the current one stops keeping up with its frame rate (docs/adaptation-and-experiments.md). Probing v2: the same, without requesting a 10 s backlog at once and also switching up if the next one keeps up with its frame rate. Only acts with Rendition on Auto. Remembered in this browser.',
           )}
         >
           <span>ABR:</span>

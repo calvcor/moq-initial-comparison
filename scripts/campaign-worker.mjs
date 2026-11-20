@@ -1,24 +1,24 @@
 #!/usr/bin/env node
-// Trabajador de campañas en Chrome headless (README, 4.8), para dejar el equipo midiendo sin una pestaña a la
+// Trabajador de campañas en Chrome headless (docs/campaigns.md), para dejar el equipo midiendo sin una pestaña a la
 // vista. Abre /campaign?worker=1 y lo vigila: si Chrome se cae lo vuelve a lanzar, y si la página se cuelga o
 // deja de latir con una campaña en marcha, la recarga (la prueba interrumpida la repite el servidor).
 //
 //   node scripts/campaign-worker.mjs                                  # contra http://localhost
-//   node scripts/campaign-worker.mjs --url https://moq-dash.mininet.duckdns.org
-//   node scripts/campaign-worker.mjs --url http://10.20.40.90 --insecure
-//   node scripts/campaign-worker.mjs --url https://moq-dash.mininet.duckdns.org --name lxc-moq
+//   node scripts/campaign-worker.mjs --url https://testbed.ejemplo.org
+//   node scripts/campaign-worker.mjs --url http://10.0.0.5 --insecure
+//   node scripts/campaign-worker.mjs --url https://testbed.ejemplo.org --name lxc-moq
 //
 // Opciones: --url, --chrome (ruta del ejecutable; también CHROME), --port (depuración remota, 9400),
 // --insecure (trata como seguro el origen HTTP de --url: hace falta por IP sin HTTPS, no con localhost) y
 // --no-sandbox: Chrome sin su sandbox, solo si no arranca (p. ej. en un LXC sin privilegios y sin nesting=1).
 // --software-decode: Chrome decodifica el vídeo por software (--disable-accelerated-video-decode), en los tres
-// reproductores. Para equipos cuyo decodificador por hardware falla: el 3-11-2026, en un portátil con Linux Mint e
-// Intel HD 500 (VA-API, driver iHD), el VideoDecoder de WebCodecs de MoQ daba "Decoding error" tras el primer GOP,
+// reproductores. Para equipos cuyo decodificador por hardware falla: en un portátil con Linux Mint e Intel HD 500
+// (VA-API, driver iHD), el VideoDecoder de WebCodecs de MoQ daba "Decoding error" tras el primer GOP,
 // mientras el <video> de DASH y WebRTC, que pasa solo a software, reproducía. Cuesta más CPU: se anuncia y va a
 // cada fila (worker_decode).
-// --name: trabajador independiente con ese nombre (README 4.8, trabajadores independientes), que se anuncia y monta solo los reproductores
+// --name: trabajador independiente con ese nombre (docs/campaigns.md, trabajadores independientes), que se anuncia y monta solo los reproductores
 // que le asigne una campaña que lo elija; su ventana toma el tamaño que pide el servidor (la calidad más alta de
-// la emisión). Sin --name, el trabajador único de siempre. Varios en una máquina: un --port distinto cada uno.
+// la emisión). Sin --name, el trabajador único. Varios en una máquina: un --port distinto cada uno.
 // Un trabajador independiente abre Chrome headless y lo relanza en el modo que pida la campaña: headless o
 // ventana en quiosco (--kiosk, a pantalla completa y sin barras). Para la ventana hace falta pantalla: en macOS
 // la hay siempre; en Linux, la de DISPLAY (o WAYLAND_DISPLAY), p. ej. un Xvfb en el LXC. Lo anuncia al servidor.
@@ -67,7 +67,7 @@ let chromeExited = false;
 let profile = null;
 let ws = null;
 let stopping = false;
-// La pestaña ha desaparecido con Chrome vivo (visto el 3-11-2026: /json sin páginas). Recargar no sirve: se relanza
+// La pestaña ha desaparecido con Chrome vivo (/json sin páginas). Recargar no sirve: se relanza
 let pageLost = false;
 
 function cleanup() {
@@ -103,7 +103,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 process.on('exit', cleanup);
 
 if (process.platform === 'darwin') {
-  // Que el Mac no se duerma mientras viva este proceso
+  // Que el equipo (macOS) no se duerma mientras viva este proceso
   spawn('caffeinate', ['-i', '-s', '-w', String(process.pid)], { stdio: 'ignore' }).unref();
 }
 
@@ -112,8 +112,8 @@ const portInUse = () => fetch(`http://127.0.0.1:${PORT}/json/version`).then(() =
 
 async function launch() {
   // Con otro Chrome ya en este puerto (p. ej. otro trabajador en la misma máquina sin --port propio), este script
-  // tomaría su pestaña y le cambiaría la página: el 3-11-2026 un trabajador sin nombre convirtió así en anónimo a
-  // un trabajador independiente (mac-test). Se espera un poco por si es el Chrome anterior que aún se cierra
+  // tomaría su pestaña y le cambiaría la página: un trabajador sin nombre convertiría así en anónimo a uno
+  // independiente. Se espera un poco por si es el Chrome anterior que aún se cierra
   for (let i = 0; i < 20 && (await portInUse()); i++) await sleep(500);
   if (await portInUse()) throw new Error(`El puerto de depuración ${PORT} ya lo usa otro Chrome (¿otro trabajador en esta máquina?): elige otro con --port`);
   profile = mkdtempSync(join(tmpdir(), 'campaign-worker-'));
@@ -147,7 +147,7 @@ async function launch() {
   if (args['no-sandbox']) flags.push('--no-sandbox');
   if (SOFTWARE_DECODE) flags.push('--disable-accelerated-video-decode');
   // En un escritorio Linux, Chrome guarda sus secretos en el llavero de la sesión (gnome-keyring, KWallet) y, con un
-  // perfil nuevo, pide crear uno con contraseña (visto el 3-11-2026 en Linux Mint). El perfil es desechable y no
+  // perfil nuevo, pide crear uno con contraseña. El perfil es desechable y no
   // guarda nada que proteger: sin llavero
   if (process.platform === 'linux') flags.push('--password-store=basic');
   chrome = spawn(CHROME, [...flags, 'about:blank'], { stdio: 'ignore' });

@@ -20,7 +20,7 @@ import { t } from '../lib/i18n';
 
 ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, PointElement, LineElement, Tooltip, Legend);
 
-// Resultados de una campaña (README, 4.8): una gráfica por condición de red o por latencia objetivo, con un
+// Resultados de una campaña (docs/campaigns.md): una gráfica por condición de red o por latencia objetivo, con un
 // punto por prueba válida (cada repetición) y una línea por la mediana de las repeticiones. Solo pruebas
 // terminadas y válidas; las de control van aparte, en orden de ejecución, para ver la deriva del sistema. Con varias
 // emisiones, cada gráfica es de una sola (sus pruebas no se mezclan), salvo con las emisiones en el eje: entonces hay
@@ -48,29 +48,29 @@ const METRICS: Record<string, Metric> = {
   stall: { label: t('Tiempo parado', 'Stall time'), unit: '%', get: (s) => (s.stall_ratio == null ? null : s.stall_ratio * 100) },
   coverage: { label: t('Segundos con latencia medida', 'Seconds with measured latency'), unit: '%', get: (s) => (s.coverage == null ? null : s.coverage * 100) },
   kbps: { label: t('Bitrate de vídeo recibido', 'Received video bitrate'), unit: 'kbit/s', get: (s) => s.kbps_mean },
-  // Leído por el servidor en el router: cabeceras y retransmisiones incluidas (desde el 28-10-2026)
+  // Leído por el servidor en el router: cabeceras y retransmisiones incluidas
   ip_down: { label: t('Tráfico IP de bajada en el router', 'Downlink IP traffic at the router'), unit: 'kbit/s', get: (s) => s.ip_down_kbps },
   ip_up: { label: t('Tráfico IP de subida en el router', 'Uplink IP traffic at the router'), unit: 'kbit/s', get: (s) => s.ip_up_kbps },
-  // Leídos por el servidor en el router (desde el 3-11-2026)
-  drops_down: { label: t('Descartes en la cola de bajada', 'Drops in the downlink queue'), unit: t('paquetes', 'packets'), get: (s) => s.ip_down_dropped, note: t('Paquetes que descartó la cola de este protocolo en el router, de las lecturas del orquestador (desde el 3-11-2026). Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.', 'Packets dropped by this protocol\'s queue at the router, from the orchestrator\'s readings (since 3-11-2026). It combines queue overflow and the random loss of the network profile: they are only overflow in networks with a bandwidth limit and no loss. The queue is sized in 1500-byte packets, so its real duration is approximate.') },
-  drop_pct_down: { label: t('Descartes en la cola de bajada, sobre lo que entró', 'Drops in the downlink queue, over what entered'), unit: '%', get: (s) => s.ip_down_drop_pct, note: t('Paquetes que descartó la cola de este protocolo en el router, sobre los que entraron en ella, de las lecturas del orquestador (desde el 3-11-2026). Desde el 18-11-2026, los que entraron según tc, ya troceados como los descartes; en las pruebas anteriores, según iptables, que cuenta cada superpaquete TCP como uno: en DASH esas salen entre 2 y 4 veces el real (ip_down_drop_base en runs.csv dice cuál). Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.', 'Packets dropped by this protocol\'s queue at the router, over those that entered it, from the orchestrator\'s readings (since 3-11-2026). Since 18-11-2026, those that entered according to tc, already segmented like the drops; in earlier runs, according to iptables, which counts each TCP super-packet as one: in DASH those come out 2 to 4 times the real value (ip_down_drop_base in runs.csv says which). It combines queue overflow and the random loss of the network profile: they are only overflow in networks with a bandwidth limit and no loss. The queue is sized in 1500-byte packets, so its real duration is approximate.') },
-  // De la emisión, igual en los tres protocolos (desde el 30-10-2026)
+  // Leídos por el servidor en el router
+  drops_down: { label: t('Descartes en la cola de bajada', 'Drops in the downlink queue'), unit: t('paquetes', 'packets'), get: (s) => s.ip_down_dropped, note: t('Paquetes que descartó la cola de este protocolo en el router, de las lecturas del orquestador. Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.', 'Packets dropped by this protocol\'s queue at the router, from the orchestrator\'s readings. It combines queue overflow and the random loss of the network profile: they are only overflow in networks with a bandwidth limit and no loss. The queue is sized in 1500-byte packets, so its real duration is approximate.') },
+  drop_pct_down: { label: t('Descartes en la cola de bajada, sobre lo que entró', 'Drops in the downlink queue, over what entered'), unit: '%', get: (s) => s.ip_down_drop_pct, note: t('Paquetes que descartó la cola de este protocolo en el router, sobre los que entraron en ella, de las lecturas del orquestador. Según tc, ya troceados como los descartes; en las pruebas sin ese contador, según iptables, que cuenta cada superpaquete TCP como uno: en DASH esas salen entre 2 y 4 veces el real (ip_down_drop_base en runs.csv dice cuál). Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.', 'Packets dropped by this protocol\'s queue at the router, over those that entered it, from the orchestrator\'s readings. According to tc, already segmented like the drops; in runs without that counter, according to iptables, which counts each TCP super-packet as one: in DASH those come out 2 to 4 times the real value (ip_down_drop_base in runs.csv says which). It combines queue overflow and the random loss of the network profile: they are only overflow in networks with a bandwidth limit and no loss. The queue is sized in 1500-byte packets, so its real duration is approximate.') },
+  // De la emisión, igual en los tres protocolos
   source_lag: { label: t('Retraso máximo de la fuente', 'Maximum source lag'), unit: 'ms', get: (s) => s.source_lag_max_ms, note: t('Es de la emisión, el mismo en los tres protocolos: cuánto llegó a ir FFmpeg por detrás del tiempo real durante la medida. Los reproductores lo ven como esa misma cantidad de latencia de menos.', 'It belongs to the stream, the same in all three protocols: how far FFmpeg fell behind real time during the measurement. The players see it as that same amount of latency less.') },
   source_late: { label: t('Segundos con la fuente retrasada (> 50 ms)', 'Seconds with the source lagging (> 50 ms)'), unit: '%', get: (s) => (s.source_late_share == null ? null : s.source_late_share * 100) },
   height: { label: t('Altura media reproducida', 'Mean played height'), unit: 'p', get: (s) => s.height_mean },
-  // No es la misma magnitud en las tres ramas (README, tabla de métricas)
+  // No es la misma magnitud en las tres ramas (docs/measurement.md, metrics)
   buffer: {
     label: t('Búfer medio', 'Mean buffer'),
     unit: 'ms',
     get: (s) => (s.buffer_s_mean == null ? null : s.buffer_s_mean * 1000),
     note: t('No es la misma magnitud: en DASH, el vídeo descargado por delante del punto de reproducción; en MoQ y WebRTC, lo que espera de media cada frame en el reproductor (vacío si no sale ninguno, como en un parón).', 'Not the same quantity: in DASH, the video downloaded ahead of the playback position; in MoQ and WebRTC, how long each frame waits in the player on average (empty if none is output, as in a stall).'),
   },
-  // Desde el 6-11-2026; antes no está en el resumen (la comparación de dos pruebas sí la saca de sus filas)
+  // No está en todos los resúmenes (la comparación de dos pruebas sí la saca de sus filas)
   ladder_top: {
     label: t('Tiempo en la calidad más alta de la emisión', 'Time in the top rendition of the stream'),
     unit: '%',
     get: (s) => (s.ladder_top_share == null ? null : s.ladder_top_share * 100),
-    note: t('Fracción de los segundos medidos en la calidad más alta de la escalera (o en la fija de la campaña). Vacío en las pruebas anteriores al 6-11-2026.', 'Share of the measured seconds in the top rendition of the ladder (or in the campaign\'s fixed one). Empty in runs before 6-11-2026.'),
+    note: t('Fracción de los segundos medidos en la calidad más alta de la escalera (o en la fija de la campaña). Vacío en las pruebas cuyo resumen no lo tiene.', 'Share of the measured seconds in the top rendition of the ladder (or in the campaign\'s fixed one). Empty in runs whose summary lacks it.'),
   },
   height_max: { label: t('Altura más alta reproducida', 'Maximum played height'), unit: 'p', get: (s) => s.height_max },
   switches: { label: t('Cambios de calidad', 'Quality switches'), unit: '', get: (s) => s.quality_switches },

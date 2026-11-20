@@ -4,7 +4,7 @@
 # puerto ni que el servidor sea accesible desde Internet. La cuenta se registra sin correo electrónico. Se
 # renueva solo; nginx-dash y edge detectan el certificado nuevo y se recargan.
 if [ -z "$DASH_HOST" ] || { [ -z "$DUCKDNS_TOKEN" ] && [ -z "$CF_Token" ]; }; then
-    echo "Sin DASH_HOST o sin token de DNS: DASH sigue pasando por el punto de entrada y no se pide certificado."
+    echo "Sin DASH_HOST o sin token de DNS: no se pide certificado y DASH solo funciona desde páginas HTTP (puerto 8080)."
     exec sleep infinity
 fi
 if [ -n "$CF_Token" ]; then

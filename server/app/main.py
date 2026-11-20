@@ -53,15 +53,15 @@ STOPPED_MARKER = os.path.join(os.path.dirname(VIDEO_FILE), ".stopped")
 PACKAGERS = ("dash_pipeline", "moq_pipeline", "rtc_pipeline")
 RTC_PUBLISH_URL = os.getenv("RTC_PUBLISH_URL", "rtsp://172.30.50.12:8554/live")
 # Ingesta de la rama WebRTC. "udp" (por defecto): la compuerta envía el MPEG-TS por UDP directamente a MediaMTX,
-# que lo lee en el path liveudp. "rtsp": la versión anterior, con un FFmpeg que lo remultiplexa y lo publica por
-# RTSP en el path live. Para volver a ella basta RTC_INGEST=rtsp en el .env y recrear el orquestador.
+# que lo lee en el path liveudp. "rtsp": con un FFmpeg intermedio que lo remultiplexa y lo publica por
+# RTSP en el path live. Para usarla basta RTC_INGEST=rtsp en el .env y recrear el orquestador.
 RTC_INGEST = "rtsp" if os.getenv("RTC_INGEST", "udp").strip().lower() == "rtsp" else "udp"
 # MediaMTX fija las pistas de un path UDP la primera vez que lo lee y no las vuelve a leer: con y sin audio
 # van a paths distintos, cada uno en su puerto (ver docker-compose.yml).
 RTC_UDP_HOST = os.getenv("RTC_UDP_HOST", "172.30.50.12")
 # Servidor de la rama WebRTC. "mediasoup" (por defecto): SFU con simulcast, cada espectador recibe la capa que elige
-# mediasoup. "mediamtx": la versión anterior, una sola calidad sin adaptación. Para volver basta RTC_SERVER=mediamtx en
-# el .env y recrear el router y el orquestador (README, 3.4c): los dos servidores están siempre levantados.
+# mediasoup. "mediamtx": una sola calidad sin adaptación. Para usarlo basta RTC_SERVER=mediamtx en
+# el .env y recrear el router y el orquestador (docs/architecture.md): los dos servidores están siempre levantados.
 RTC_SERVER = "mediamtx" if os.getenv("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else "mediasoup"
 SFU_URL = os.getenv("SFU_URL", "http://172.30.50.13:8890")
 SFU_HOST = urlsplit(SFU_URL).hostname
@@ -96,7 +96,7 @@ DASH_HTTP_PORT = int(os.getenv("DASH_HTTP_PORT", "8080"))
 CAMERA_RTSP_URL = os.getenv("CAMERA_RTSP_URL", "").strip()
 CAMERA_FPS = os.getenv("CAMERA_FPS", "").strip()
 # Calidad de la referencia que se emite con la cámara para el VMAF (qoe.py). Medido sobre 5 s de Big Buck
-# Bunny el 22-10-2026: qp 10 da 99 Mbit/s y VMAF 98,8 frente a 99,3 de la copia sin pérdidas (qp 0,
+# Bunny: qp 10 da 99 Mbit/s y VMAF 98,8 frente a 99,3 de la copia sin pérdidas (qp 0,
 # 238 Mbit/s), con PSNR de luma de 51,5 dB.
 REFERENCE_QP = 10
 
@@ -151,11 +151,11 @@ class StreamConfig(BaseModel):
     # al arrancar: la de la cámara.
     fps: int = Field(60, ge=1, le=60)
     # Audio en la rama WebRTC (el Opus de la fuente, sin recodificar). Desactivado por defecto: el navegador
-    # sincroniza audio y vídeo y retrasa el vídeo (README, sección 3.4b)
+    # sincroniza audio y vídeo y retrasa el vídeo (docs/architecture.md)
     rtc_audio: bool = False
     # Pacer en la ingesta de mediasoup: el relay reparte el RTP de cada calidad a RTC_PACING_FACTOR veces su bitrate,
     # como un publicador WebRTC, en vez de soltar cada frame de golpe. Experimento declarado, desactivado por defecto
-    # (README, 3.4c); las campañas anteriores al 4-11-2026 no lo tienen y van sin él. Con MediaMTX no hace nada.
+    # (docs/architecture.md); las campañas que no lo indican van sin él. Con MediaMTX no hace nada.
     rtc_pacing: bool = False
     seg_duration: float = 2.0    # Segundos por segmento DASH
     # Duración de los fragmentos CMAF de LL-DASH, en segundos. 0 = un frame por fragmento (-frag_type every_frame):
@@ -182,8 +182,8 @@ class LinkProfile(BaseModel):
     jitter_ms: float = Field(0, ge=0, le=500)
     loss_pct: float = Field(0, ge=0, le=50)
     queue_ms: int = Field(300, ge=10, le=5000)  # cola del cuello de botella; solo actúa con rate_kbit. 300 ms, la de RFC 8867
-    # Cómo limita el caudal el router; solo actúa con rate_kbit (README, sección 5). tbf: el de siempre, cubo de fichas de un
-    # paquete; netem: experimento declarado (desde el 19-11-2026), netem rate retrasa cada paquete lo que tarda en salir
+    # Cómo limita el caudal el router; solo actúa con rate_kbit (docs/network-emulation.md). tbf (por defecto): cubo de fichas de un
+    # paquete; netem: experimento declarado, netem rate retrasa cada paquete lo que tarda en salir
     shaper: Literal["tbf", "netem"] = "tbf"
 
 class NetworkProfile(BaseModel):
@@ -206,8 +206,8 @@ class CampaignTarget(BaseModel):
 class PlayerOptions(BaseModel):
     """Ajustes de los reproductores, iguales en todas las pruebas de la campaña. Por defecto, los del dashboard al
     abrirse: reglas ABR de fábrica de dash.js y adaptación y cambio de calidad de @moq/watch. Los otros valores de
-    MoQ son los experimentos de README 6.1 y 6.3: una campaña con ellos es un experimento declarado."""
-    dash_abr: Literal["default", "l2a", "l2afix", "lolp"] = "default"  # l2afix: experimento (README 6)
+    MoQ son los experimentos de docs/adaptation-and-experiments.md: una campaña con ellos es un experimento declarado."""
+    dash_abr: Literal["default", "l2a", "l2afix", "lolp"] = "default"  # l2afix: experimento (docs/adaptation-and-experiments.md)
     # liveCatchup.maxDrift de dash.js: desvío a partir del cual salta al directo (0 = nunca)
     dash_max_drift_s: float = Field(1.5, ge=0, le=10)
     # liveCatchup.playbackBufferMin de dash.js (LoL+): 0 = no frenar nunca por búfer; 0,5 s es el de fábrica
@@ -229,13 +229,13 @@ class CampaignRequest(BaseModel):
     # together: los reproductores a la vez en cada prueba; each: una prueba por reproductor (control de la
     # interferencia entre ellos en el navegador)
     player_mode: Literal["together", "each"] = "together"
-    # None: un solo trabajador monta todos los reproductores (la pestaña, como hasta ahora). Si no, el trabajador
+    # None: un solo trabajador monta todos los reproductores (la pestaña o el script sin --name). Si no, el trabajador
     # independiente (por su nombre) que monta cada reproductor; cada uno reproduce uno solo a la vez, así que con
-    # player_mode together son distintos, y con each pueden repetirse (README 4.8, trabajadores independientes)
+    # player_mode together son distintos, y con each pueden repetirse (docs/campaigns.md, trabajadores independientes)
     workers: Optional[dict[Literal["dash", "moq", "rtc"], str]] = None
     # Pruebas en paralelo (en lugar de workers): los trabajadores independientes que puede usar la campaña. Cada prueba
     # toma uno libre cualquiera, y se ejecutan a la vez las pendientes de la misma emisión, red y objetivo, de
-    # protocolos distintos, mientras haya trabajadores libres (README 4.8, trabajadores independientes)
+    # protocolos distintos, mientras haya trabajadores libres (docs/campaigns.md, trabajadores independientes)
     worker_pool: Optional[list[str]] = Field(None, max_length=50)
     parallel: bool = False
     # None: la adaptación de cada reproductor; una altura fija la desactiva
@@ -498,7 +498,7 @@ def ensure_master_source(force_restart: bool = False):
                 f"fps={fps},scale=1920:1080:force_original_aspect_ratio=decrease,"
                 f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,setpts=N/({fps}*TB)"
             )
-            # Audio de la cámara, en su propio grafo, pasado a 48 kHz estéreo para el Opus de siempre. Con las
+            # Audio de la cámara, en su propio grafo, pasado a 48 kHz estéreo para el Opus de la escalera. Con las
             # marcas de tiempo de la cámara (async rellena o recorta si se desvían), como el vídeo, que pasa
             # por el filtro fps con las suyas. Si la cámara no tiene micrófono, silencio. La referencia lleva
             # su propio silencio (ver abajo).
@@ -578,15 +578,15 @@ def ensure_master_source(force_restart: bool = False):
             # Datagramas grandes (348 paquetes TS): pueden ser ~100 Mbit/s por loopback.
             # -tune zerolatency, como la escalera: sin él, x264 reparte los frames entre hilos y entrega cada
             # uno varios frames después, y FFmpeg, que hace avanzar todas las salidas a la par, retenía la
-            # escalera a su ritmo. Medido el 22-10-2026 con la cámara a 15 fps (marca quemada -> compuerta):
+            # escalera a su ritmo. Medido con la cámara a 15 fps (marca quemada -> compuerta):
             # p50 76-106 ms y p95 207-245 ms con la referencia sin zerolatency; 5,4-5,7 y 9,7-9,9 ms con él,
             # lo mismo que sin referencia (5,8-5,9 y 9,8-11,0 ms).
             # Lleva un audio Opus como el de la escalera solo para que sus PTS coincidan: FFmpeg desplaza cada
             # salida para que nada empiece en negativo, y el codificador de audio empieza unas muestras antes
-            # (Opus, 312; con AAC eran 1024, 1920 ticks, más de un frame a 60 fps). Sin audio, la referencia
-            # quedaba desplazada respecto al flujo.
+            # (Opus, 312; con AAC serían 1024, 1920 ticks, más de un frame a 60 fps). Sin audio, la referencia
+            # quedaría desplazada respecto al flujo.
             # Por lo mismo, sin muxdelay ni muxpreload: FFmpeg los suma a los PTS de una salida MPEG-TS
-            # (0,7 + 0,5 s), pero no a las del tee. Con ellos la referencia iba 36 frames por delante a 30 fps.
+            # (0,7 + 0,5 s), pero no a las del tee. Con ellos la referencia va 36 frames por delante a 30 fps.
             master_cmd += (
                 f" -map '[reference]' -map '[reference_audio]' "
                 f"-c:v libx264 -preset ultrafast -tune zerolatency -qp {REFERENCE_QP} -threads 4 "
@@ -657,7 +657,7 @@ def source_lag_now() -> Optional[float]:
 @app.get("/api/router")
 def get_router():
     """Estado del router de emulación (perfil, clientes con plaza, contadores y árbol de tc), sin el resto de /api/status:
-    lo lee el esquema del router de la página de campañas (README, sección 5)."""
+    lo lee el esquema del router de la página de campañas (docs/network-emulation.md)."""
     state = router_call()
     if state is None:
         raise HTTPException(status_code=503, detail="El router de red no responde")
@@ -684,7 +684,7 @@ def get_status():
         "restarts": restarts,
         # El navegador pide DASH siempre directamente a este servidor por el router: con DASH_HOST, por HTTPS a
         # dash_url; sin él, por HTTP a dash_http_port de moq_host o del host de la página (solo en páginas HTTP).
-        # Hasta el 12-11-2026, sin DASH_HOST iba por el punto de entrada, que es un proxy (dash_path "proxy").
+        # dash_path "proxy" (a través del punto de entrada, un proxy) solo puede venir de medidas guardadas con otra configuración.
         "dash_url": dash_url(),
         "dash_http_port": DASH_HTTP_PORT,
         "dash_path": "direct",
@@ -708,7 +708,7 @@ def get_status():
         "dash_availability_drift_ms": origin.drift_ms,
         "network": router_call(),
         "campaign": campaigns.running(),
-        # Vista previa de una prueba con su red y su emisión aplicadas (README, 4.8)
+        # Vista previa de una prueba con su red y su emisión aplicadas (docs/campaigns.md)
         "campaign_preview": campaigns.preview_view(),
     }
 
@@ -782,8 +782,8 @@ def start_moq():
         f"moq --connect '{MOQ_RELAY_URL}' --connect-tls-insecure --broadcast live.hang import ts"
     )
     logger.info("Iniciando Empaquetador MoQ hacia moq-relay...")
-    # Sin las variables MOQ_* del orquestador (MOQ_HOST, MOQ_RELAY_URL...): moq-cli de main (desde ffcb7cd,
-    # 4-11-2026) se niega a arrancar con variables MOQ_* que no lee. Las suyas no se usan: todo va en la orden.
+    # Sin las variables MOQ_* del orquestador (MOQ_HOST, MOQ_RELAY_URL...): moq-cli de main (desde ffcb7cd)
+    # se niega a arrancar con variables MOQ_* que no lee. Las suyas no se usan: todo va en la orden.
     env = {k: v for k, v in os.environ.items() if not k.startswith("MOQ_")}
     launch("moq_pipeline", moq_cmd, "/tmp/ffmpeg_moq.log", env)
     started_at["moq"] = time.time()
@@ -834,7 +834,7 @@ def start_rtc():
 
     El vídeo va tal cual. El audio, el Opus de la fuente, también tal cual, pero solo con rtc_audio; sin él,
     solo vídeo. Con RTC_INGEST=udp la compuerta filtra las pistas y envía el MPEG-TS por UDP a MediaMTX; con
-    RTC_INGEST=rtsp, un FFmpeg lo remultiplexa y lo publica por RTSP (la versión anterior).
+    RTC_INGEST=rtsp, un FFmpeg lo remultiplexa y lo publica por RTSP.
     """
     kill_proc(processes.get("rtc_pipeline"))
     trace.frame_log.reset("rtc")
@@ -1319,7 +1319,7 @@ def campaign_series(cid: str, runs: str):
 
 def no_campaign_running():
     """El análisis y la comparación leen ficheros de cientos de MB y ocupan CPU del orquestador: con una campaña en marcha
-    no se hacen, para no interferir en lo que mide (README 4.8)."""
+    no se hacen, para no interferir en lo que mide (docs/campaigns.md)."""
     running = campaigns.running()
     if running:
         raise HTTPException(status_code=409, detail=f"Hay una campaña en marcha («{running['name']}»): el análisis y la comparación "
@@ -1327,16 +1327,16 @@ def no_campaign_running():
 
 @app.get("/api/campaigns/{cid}/analysis")
 def analyze_campaign(cid: str, lang: str = "es"):
-    """Análisis en texto de una campaña (README 4.8, «Análisis de la campaña»): resumen, secciones (entre protocolos,
+    """Análisis en texto de una campaña (docs/campaigns.md, «Análisis de la campaña»): resumen, secciones (entre protocolos,
     entre emisiones, con la red, con el objetivo, deriva y casos a mirar), cada una con bloques de frases, y avisos.
-    lang=en, en inglés (README 4.4c). 409 con una campaña en marcha."""
+    lang=en, en inglés (docs/measurement.md). 409 con una campaña en marcha."""
     campaign_or_404(cid)
     no_campaign_running()
     return campaign_analysis.analyze(campaigns, cid, lang)
 
 @app.get("/api/campaigns-compare")
 def compare_campaigns(a: str, b: str, lang: str = "es"):
-    """Comparación en texto de dos campañas enteras (README 4.8, «Comparar dos campañas»): a y b son sus ids. Empareja
+    """Comparación en texto de dos campañas enteras (docs/campaigns.md, «Comparar dos campañas»): a y b son sus ids. Empareja
     condiciones por perfil de red, latencia objetivo y emisión, y dice cómo va B respecto a A: lo que cambia entre las dos
     (conditions), resumen, secciones y avisos, como el análisis. 409 con una campaña en marcha."""
     campaign_or_404(a)
@@ -1349,7 +1349,7 @@ def compare_campaigns(a: str, b: str, lang: str = "es"):
 
 @app.get("/api/compare")
 def compare_runs(a: str, b: str, lang: str = "es"):
-    """Comparación en texto de dos pruebas, de la misma campaña o de dos distintas (README 4.8, «Comparar dos pruebas»):
+    """Comparación en texto de dos pruebas, de la misma campaña o de dos distintas (docs/campaigns.md, «Comparar dos pruebas»):
     a y b son campaña/prueba/protocolo, p. ej. 20261029-105628/r0069/moq. Devuelve lo que cambia entre las dos, las
     métricas con su diferencia y la variación entre repeticiones, las frases y los avisos. 409 con una campaña en marcha."""
     no_campaign_running()
@@ -1363,8 +1363,8 @@ def compare_runs(a: str, b: str, lang: str = "es"):
 class WorkerBeat(BaseModel):
     """Latido del trabajador de campañas: quién es y qué prueba tiene montada (None si ninguna)."""
     worker_id: str = Field(..., min_length=1, max_length=80)
-    # Con nombre, un trabajador independiente (un navegador por reproductor, README 4.8, trabajadores independientes): se anuncia y espera a
-    # que una campaña lo elija. Sin nombre, el trabajador único de siempre (la pestaña o el script sin --name)
+    # Con nombre, un trabajador independiente (un navegador por reproductor, docs/campaigns.md, trabajadores independientes): se anuncia y espera a
+    # que una campaña lo elija. Sin nombre, el trabajador único (la pestaña o el script sin --name)
     name: Optional[str] = Field(None, pattern=WORKER_NAME)
     mounted: Optional[str] = None
     # Cuándo creó los reproductores de esa prueba, en reloj del servidor (para medir el arranque)
@@ -1383,7 +1383,7 @@ def campaign_worker(beat: WorkerBeat, request: Request):
     return campaigns.heartbeat(beat.worker_id, beat.mounted, beat.mounted_at_ms, beat.info, beat.name, client_ip(request))
 
 # El trabajador de campañas y su instalador (scripts/, montado en el contenedor), para instalar un trabajador
-# independiente en cualquier máquina con un comando (README 4.8, trabajadores independientes)
+# independiente en cualquier máquina con un comando (docs/campaigns.md, trabajadores independientes)
 SCRIPTS_DIR = "/app/scripts"
 
 def read_script(name: str) -> str:

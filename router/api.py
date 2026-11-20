@@ -20,8 +20,7 @@ def qdisc_counters() -> tuple[dict, dict]:
       el kernel; since_reset los cuenta desde el último perfil.
     - salidas: banda de plaza -> [bytes IP, paquetes] que han salido de ella, p. ej. {"300:9": [8662, 61]}: lo que deja
       pasar la qdisc que cuelga de la banda, el tbf o, sin restricciones, la pfifo que pone el kernel (invisible, por eso
-      "invisible"). Acumulados desde que se montó esa qdisc; sin la cabecera Ethernet, como los de iptables (desde el
-      18-11-2026)."""
+      "invisible"). Acumulados desde que se montó esa qdisc; sin la cabecera Ethernet, como los de iptables."""
     netems, outputs = {}, {}
     bands = {router.handles(queue, slot)[0] for queue in router.QUEUES for slot in range(1, router.GENERAL + 1)}
     for dev in router.interfaces():
@@ -43,7 +42,6 @@ def qdisc_counters() -> tuple[dict, dict]:
 # Descartes de cada netem (por handle) cuando se aplicó el último perfil de su plaza: se cuentan desde ahí, sin tocar tc
 # (borrar y volver a crear el netem vaciaría la cola). POST / reinicia los de la plaza general de las seis colas, y POST
 # /clients los de las plazas de los clientes: en una campaña, al empezar cada prueba; en el dashboard, al cambiar la red.
-# Desde el 12-11-2026; antes, acumulados desde que se montó cada netem.
 # Handle de netem -> descartes del kernel en ese momento, p. ej. {"391:": 27}
 drop_base: dict[str, int] = {}
 
@@ -68,13 +66,13 @@ def since_reset(netems: dict) -> dict:
 
 
 def stats(netems: dict, outputs: dict) -> dict:
-    """Contadores por cola (todo el tráfico, como siempre) y, en "clients", los de cada cliente con plaza. netems: la
+    """Contadores por cola (todo el tráfico) y, en "clients", los de cada cliente con plaza. netems: la
     salida de since_reset; outputs, las salidas de qdisc_counters. Devuelve:
         {"<cola>": {"packets": int, "bytes": int, "out_packets": int, "dropped": int, "queued": int}, ...   una por cola
          "clients": {"<IP>": {"<cola>": {"packets", "bytes", "out_packets", "dropped", "queued"}, ...}, ...}}
     packets y bytes: reenviados (iptables, acumulados desde que arrancó el router), antes de la emulación: un superpaquete
     GSO cuenta como uno. out_packets: los que han salido de las plazas (tc, acumulados desde que se montó cada qdisc), ya
-    troceados, como los que descarta netem (desde el 18-11-2026). dropped: desde el último perfil; queued: en la cola
+    troceados, como los que descarta netem. dropped: desde el último perfil; queued: en la cola
     ahora."""
     out = {queue: {"packets": 0, "bytes": 0} for queue in router.QUEUES}
     per_client = {ip: {queue: {"packets": 0, "bytes": 0} for queue in router.QUEUES} for ip in router.clients}
@@ -118,7 +116,7 @@ def describe(queue: str) -> str:
 def tree(st: dict, netems: dict, outputs: dict) -> dict:
     """El árbol de tc tal como lo ha montado el agente (el mismo en cada interfaz), con los contadores de cada plaza: raíz
     1:, una banda por cola y, dentro de cada una, su prio con las plazas de los clientes y la general. Para el esquema de
-    la página (README, sección 5). packets y bytes son los de iptables, lo que entra en la plaza (antes de la emulación);
+    la página (docs/network-emulation.md). packets y bytes son los de iptables, lo que entra en la plaza (antes de la emulación);
     out_packets y out_bytes, los de tc, lo que sale (None si no hay qdisc en la banda). st: la salida de stats; netems,
     la de since_reset; outputs, las salidas de qdisc_counters. Devuelve:
         {"root": "1:", "interfaces": ["eth0", ...],

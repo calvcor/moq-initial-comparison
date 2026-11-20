@@ -93,7 +93,7 @@ const HINT =
     <div className="space-y-1.5">
       <p>
         Records the encoded stream on the server and logs what each active player paints. From that, the server computes the VMAF of every
-        painted frame and the LL-GABR QoE (equation 6, 1 s steps). Details and decisions in the README, section 4.7.
+        painted frame and the LL-GABR QoE (equation 6, 1 s steps). Details and decisions in the docs/qoe.md.
       </p>
       <p>Logging starts after the margin, so that the first painted frames (encoded earlier, by as much as the latency) are already recorded.</p>
       <p className="text-amber-300">
@@ -106,7 +106,7 @@ const HINT =
   <div className="space-y-1.5">
     <p>
       Graba en el servidor el flujo codificado y anota lo que pinta cada reproductor activo. Con eso el servidor calcula el VMAF de cada frame
-      pintado y la QoE de LL-GABR (ecuación 6, pasos de 1 s). Detalle y decisiones en el README, sección 4.7.
+      pintado y la QoE de LL-GABR (ecuación 6, pasos de 1 s). Detalle y decisiones en el docs/qoe.md.
     </p>
     <p>
       El registro empieza tras el margen, para que los primeros frames pintados (codificados antes, tanto como la latencia) estén grabados.

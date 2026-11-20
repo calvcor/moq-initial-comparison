@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instala un trabajador independiente de campañas (README 4.8, trabajadores independientes) en una máquina con
+# Instala un trabajador independiente de campañas (docs/campaigns.md, trabajadores independientes) en una máquina con
 # Debian o Ubuntu (amd64) y systemd, p. ej. un LXC: Node 22, Google Chrome (fijado con apt-mark hold, como todo
 # lo demás del banco), el script del trabajador descargado del propio orquestador y un servicio de systemd que lo
 # arranca con la máquina y lo reinicia si cae. Con --display, también un Xvfb para la ventana en quiosco.
@@ -9,8 +9,8 @@
 # que arranca con su sesión gráfica y abre Chrome en su pantalla.
 #
 # El orquestador sirve este fichero en /api/worker/install.sh, con su dirección ya puesta:
-#   curl -fsSL https://moq-dash.mininet.duckdns.org/api/worker/install.sh | bash -s -- --name lxc-moq
-#   curl -fsSL https://moq-dash.mininet.duckdns.org/api/worker/install.sh | bash -s -- --name portatil --desktop
+#   curl -fsSL https://testbed.ejemplo.org/api/worker/install.sh | bash -s -- --name lxc-moq
+#   curl -fsSL https://testbed.ejemplo.org/api/worker/install.sh | bash -s -- --name portatil --desktop
 # Volver a ejecutarlo actualiza el script del trabajador y la configuración del servicio.
 #
 # Opciones:
@@ -61,7 +61,7 @@ done
 URL="${URL%/}"
 [ -n "$NAME" ] || die "falta --name (p. ej. --name lxc-moq)"
 [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$ ]] || die "--name no válido: $NAME"
-[[ "$URL" =~ ^https?://[^/]+$ ]] || die "--url no válida: $URL (p. ej. https://moq-dash.mininet.duckdns.org)"
+[[ "$URL" =~ ^https?://[^/]+$ ]] || die "--url no válida: $URL (p. ej. https://testbed.ejemplo.org)"
 [[ "$SCREEN" =~ ^[0-9]+x[0-9]+$ ]] || die "--screen no válido: $SCREEN"
 [ -z "$PORT" ] || [[ "$PORT" =~ ^[0-9]+$ ]] || die "--port no válido: $PORT"
 command -v apt-get > /dev/null || die "solo Debian o Ubuntu (apt-get)"

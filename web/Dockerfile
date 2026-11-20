@@ -3,7 +3,7 @@
 # versiones aún no publicadas. Docker solo construye la etapa que se elige. Se pasa desde docker-compose.yml.
 ARG MOQ_WATCH_FROM=release
 # Versión de bun con la que se instala y se compila moq. La 1.3.5 lee el lockfile de bc64b9c; el de commits
-# posteriores (c19c723, 18-11-2026) necesita una más nueva: la 1.4.4, la que instala la integración continua de moq.
+# posteriores (c19c723) necesita una más nueva: la 1.4.4, la que instala la integración continua de moq.
 ARG MOQ_WATCH_BUN=1.3.5
 
 FROM alpine:3.22 AS moqwatch-release
@@ -18,7 +18,7 @@ FROM oven/bun:${MOQ_WATCH_BUN} AS moqwatch-git
 ARG MOQ_WATCH_COMMIT=bc64b9c52561209322dcb8dec9992bf867f499f7
 # Parches de patches/: "1" (por defecto) los aplica todos y la versión sale como git@<commit>+switching; "0" no
 # aplica ninguno (git@<commit>). Están hechos para el commit fijado por defecto: con otro, o se rehacen o se
-# construye con MOQ_WATCH_PATCHES=0 (desde el 18-11-2026, justbytes con c19c723, que no tiene el parche).
+# construye con MOQ_WATCH_PATCHES=0 (p. ej. c19c723, que no tiene el parche).
 ARG MOQ_WATCH_PATCHES=1
 ADD https://codeload.github.com/moq-dev/moq/tar.gz/${MOQ_WATCH_COMMIT} /tmp/moq.tar.gz
 WORKDIR /moq
@@ -28,7 +28,7 @@ RUN tar -xzf /tmp/moq.tar.gz --strip-components=1 && \
     bun -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json")); \
       if (p.scripts?.postinstall === "bun run --cwd js/libav build") { delete p.scripts.postinstall; fs.writeFileSync("package.json", JSON.stringify(p, null, 2)); console.log("Sin el postinstall de @moq/libav"); }' && \
     bun install --frozen-lockfile
-# Parches del testbed sobre ese commit (patches/, README 6.1). Hoy, uno: la opción `switching` del cambio
+# Parches del testbed sobre ese commit (patches/, docs/adaptation-and-experiments.md). Uno: la opción `switching` del cambio
 # de calidad de MoQ, que por defecto deja el comportamiento original. Si se aplican y uno no entra, la
 # construcción falla en vez de compilar otra cosa.
 COPY patches/ /patches/
@@ -44,8 +44,8 @@ RUN set -e; \
     cp -r node_modules/@rolldown/. /moq/node_modules/@rolldown/ && \
     if [ -n "$pako" ]; then cp -r node_modules/pako /moq/node_modules/; fi
 # Los paquetes @moq/* que necesita @moq/watch, sacados de sus package.json (dependencias de dependencias, cada uno
-# después de los suyos), y no de una lista fija: cambian entre commits (c19c723 ya no tiene @moq/flate y añade
-# @moq/qmux y @moq/libav). Los que no están en js/ del commit (en bc64b9c, @moq/qmux) llegan de npm como siempre.
+# después de los suyos), y no de una lista fija: cambian entre commits (c19c723 no tiene @moq/flate y añade
+# @moq/qmux y @moq/libav). Los que no están en js/ del commit (en bc64b9c, @moq/qmux) llegan de npm.
 # @moq/libav (desde c19c723) solo se construye con Nix o se descarga de npm, donde aún no está publicado: va
 # vacío, un módulo que da error si se carga, y un fichero de marca con .wasm. en el nombre para el plugin de vite
 # de @moq/watch, que copia a sus assets el worker y el wasm de libav y falla si no hay ninguno. @moq/hang solo lo

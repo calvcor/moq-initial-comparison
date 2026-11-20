@@ -1,4 +1,4 @@
-"""Análisis en texto de una campaña (README 4.8, «Análisis de la campaña»): diferencias entre protocolos y entre
+"""Análisis en texto de una campaña (docs/campaigns.md, «Análisis de la campaña»): diferencias entre protocolos y entre
 emisiones, tendencias con la red y con la latencia objetivo, deriva en las pruebas de control y casos a mirar.
 
 Como la comparación de dos pruebas (compare.py), con reglas fijas a partir de los resúmenes de las pruebas válidas y de
@@ -89,8 +89,8 @@ class Data:
         self.controls: list[tuple[dict, str, dict]] = []
         for run in self.valid:
             for p, s in run["summary"]["players"].items():
-                # La altura más alta y el tiempo en la más alta de la emisión: del resumen (desde el 6-11-2026) o, en los
-                # anteriores, del índice de las filas
+                # La altura más alta y el tiempo en la más alta de la emisión: del resumen o, en los
+                # que no las traen, del índice de las filas
                 stats = samples_index.height_stats(samples_index.player_entry(idx, run, p), self.tops[run["stream"]])
                 full = {**s, **{k: v for k, v in stats.items() if s.get(k) is None}}
                 if run["kind"] == "control":
@@ -582,11 +582,11 @@ def warnings(data: Data) -> list[str]:
     out = []
     days = sorted(d for d in (local_day(r.get("started_ms")) for r in data.valid) if d)
     if days and days[0] < INVALID_BEFORE:
-        out.append(t("Hay pruebas anteriores al 9-10-2026: el lector de timecode de entonces degradaba MoQ y esas medidas están invalidadas.",
-                     "There are runs from before 2026-10-09: the timecode reader of that time degraded MoQ and those measurements are invalid."))
+        out.append(t("Hay pruebas medidas con el lector de timecode antiguo, que degradaba MoQ: esas medidas están invalidadas.",
+                     "There are runs measured with the old timecode reader, which degraded MoQ: those measurements are invalid."))
     elif days and days[0] < STALL_FIX:
-        out.append(t("Hay pruebas anteriores al 28-10-2026: su tiempo parado no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas).",
-                     "There are runs from before 2026-10-28: their stall time does not count stretches without picture (it greatly underestimates DASH under loss)."))
+        out.append(t("Hay pruebas medidas con el tiempo parado antiguo, que no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas).",
+                     "There are runs measured with the old stall time, which does not count stretches without picture (it greatly underestimates DASH under loss)."))
     reps = [len(v) for cell in data.cells.values() for v in cell.values()]
     if reps and min(reps) < 3:
         out.append(t("Hay condiciones con menos de tres repeticiones válidas: la variación entre repeticiones se queda corta y el recuento de condiciones a favor de uno u otro es orientativo.",

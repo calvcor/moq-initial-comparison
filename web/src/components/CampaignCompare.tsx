@@ -3,7 +3,7 @@ import { ArrowLeftRight, Check, Copy, GitCompare, X } from 'lucide-react';
 import type { PlayerId } from '../types';
 import { lang, locale, t } from '../lib/i18n';
 
-// Comparación en texto de dos pruebas, de la misma campaña o de dos distintas (README 4.8, «Comparar dos pruebas»).
+// Comparación en texto de dos pruebas, de la misma campaña o de dos distintas (docs/campaigns.md, «Comparar dos pruebas»).
 // El texto lo escribe el orquestador (GET /api/compare) con reglas fijas a partir del resumen y las filas de cada
 // prueba; aquí solo se elige el protocolo de cada lado y se muestra.
 

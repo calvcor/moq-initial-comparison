@@ -12,7 +12,7 @@ const gitLabel = existsSync(new URL('./moq-pkgs/label', import.meta.url))
   : ''
 const moq = (name: string): string => gitLabel || installed(name)
 
-// L2A (bugfix), experimento declarado (README 6, ../FINDINGS/dashjs_l2a_units_bug.md): una copia de dash.js en la
+// L2A (bugfix), experimento declarado (docs/adaptation-and-experiments.md, docs/adaptation-and-experiments.md): una copia de dash.js en la
 // que la fase estable de L2A usa kbit/s en el multiplicador Q y en la subida prudente, como dash.js 4.x. En dash.js 5
 // esas dos cuentas toman rep.bandwidth (bit/s) frente a un caudal en kbit/s. El cambio es una sola expresión del
 // build minificado: si no aparece exactamente una vez (otra versión de dash.js), la construcción falla en vez de
@@ -35,7 +35,7 @@ function dashjsL2aFix(): Plugin {
 
 // Identificador de esta construcción de la web: la hora en que se construyó (en desarrollo, "dev"). Va dentro del
 // código (__WEB_BUILD__) y en /build.json, que se sirve sin caché: un trabajador de campañas compara los dos y, si la
-// web ha cambiado, recarga entre pruebas (README 4.8). Sin él, un trabajador seguía días con el código que cargó.
+// web ha cambiado, recarga entre pruebas (docs/campaigns.md). Sin él, un trabajador seguía días con el código que cargó.
 function webBuild(id: string): Plugin {
   return {
     name: 'web-build',

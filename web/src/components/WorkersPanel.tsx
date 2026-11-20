@@ -3,7 +3,7 @@ import { Check, ChevronDown, ChevronRight, Copy, Monitor, MonitorOff, Trash2 } f
 import type { PoolWorker, WorkerBrowser } from '../types';
 import { locale, t } from '../lib/i18n';
 
-// Gestión de los trabajadores independientes de las campañas (README 4.8, trabajadores independientes): su
+// Gestión de los trabajadores independientes de las campañas (docs/campaigns.md, trabajadores independientes): su
 // estado, lo que están midiendo, su modo de Chrome (headless o ventana en quiosco, si tienen pantalla) y el
 // borrado de los que ya no existen. Quedan registrados en el orquestador hasta que se borran aquí. Es una
 // sección del modal de ajustes (SettingsModal.tsx).
@@ -303,8 +303,8 @@ export const WorkersPanel: React.FC = () => {
     <div className="flex flex-col gap-3 text-xs min-h-0">
       <p className="text-slate-400">
         {t(
-          'Un navegador por reproductor, lanzado con scripts/campaign-worker.mjs --name (README 4.8). Las campañas los usan con workers o worker_pool en el plan.',
-          'One browser per player, launched with scripts/campaign-worker.mjs --name (README 4.8). Campaigns use them through workers or worker_pool in the plan.',
+          'Un navegador por reproductor, lanzado con scripts/campaign-worker.mjs --name (docs/campaigns.md). Las campañas los usan con workers o worker_pool en el plan.',
+          'One browser per player, launched with scripts/campaign-worker.mjs --name (docs/campaigns.md). Campaigns use them through workers or worker_pool in the plan.',
         )}
       </p>
       {workers && workers.length > 0 && (
@@ -381,13 +381,13 @@ export const WorkersPanel: React.FC = () => {
                         <div
                           className="text-amber-300"
                           title={t(
-                            'No recibe pruebas hasta tener la web que se sirve. Recarga sola entre pruebas; si es de antes del 6-11-2026, hay que reiniciarla (README 4.8)',
-                            'It gets no runs until it has the web build being served. It reloads by itself between runs; if it predates 6-11-2026, it has to be restarted (README 4.8)',
+                            'No recibe pruebas hasta tener la web que se sirve. Recarga sola entre pruebas; si no dice su construcción, hay que reiniciarla (docs/campaigns.md)',
+                            'It gets no runs until it has the web build being served. It reloads by itself between runs; if it does not report its build, it has to be restarted (docs/campaigns.md)',
                           )}
                         >
                           {w.info.build
                             ? t(`Web desactualizada (${String(w.info.build)})`, `Outdated web build (${String(w.info.build)})`)
-                            : t('Web anterior al 6-11-2026: reinícialo', 'Web build older than 6-11-2026: restart it')}
+                            : t('Web sin construcción conocida: reinícialo', 'Web build unknown: restart it')}
                         </div>
                       )}
                     </td>

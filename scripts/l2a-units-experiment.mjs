@@ -1,20 +1,20 @@
 #!/usr/bin/env node
-// Experimento declarado (README, sección 6): L2A de dash.js 5.2.1 en su fase estable, tal como viene frente a una
+// Experimento declarado (docs/adaptation-and-experiments.md): L2A de dash.js 5.2.1 en su fase estable, tal como viene frente a una
 // copia con las unidades corregidas. No cambia nada del banco: el reproductor del dashboard sigue con dash.js tal
 // cual. Aquí se descarga dash.js 5.2.1 sin minificar, se preparan dos variantes y se sirven, junto con una página
 // de prueba con solo DASH, en el origen del banco (interceptando las peticiones con CDP), para que el MPD, la
-// sincronización de reloj y la red emulada sean los de siempre.
+// sincronización de reloj y la red emulada sean los del banco.
 //
 // El fallo: en la fase estable de L2ARule (desde dash.js 5.0.0), el multiplicador Q y la subida prudente comparan
 // rep.bandwidth (bit/s) con el caudal (kbit/s). En 4.7.4 los bitrates se pasaban a kbit/s antes. La variante
 // corregida cambia ese único `return rep.bandwidth;` por `return rep.bitrateInKbit;`. Las dos llevan la misma
 // traza (Q, w, caudal, velocidad y calidad elegida en cada decisión de la fase estable), en window.__l2aTrace.
 //
-// Cada pasada fuerza la fase estable como en el experimento del 5-11-2026: objetivo de 2 s hasta que L2A ha decidido
+// Cada pasada fuerza la fase estable: objetivo de 2 s hasta que L2A ha decidido
 // tres veces en ella (lo dice la traza, que solo se escribe ahí), después el objetivo pedido, sin saltos al directo (maxDrift 0: una búsqueda
 // devuelve L2A a su arranque), y se mide. Las variantes se alternan. Al acabar se deja la red como estaba.
 //
-//   node scripts/l2a-units-experiment.mjs --url https://moq-dash.mininet.duckdns.org --rates 4000,3000 --reps 2
+//   node scripts/l2a-units-experiment.mjs --url https://testbed.ejemplo.org --rates 4000,3000 --reps 2
 //
 // Opciones: --url, --rates (bajadas en kbit/s, cola de 300 ms, sin pérdida), --reps (por variante y red),
 // --target (s, 0,5), --measure (s de medida, 60), --out (JSON con todo, l2a-units.json), --chrome, --port (9453).

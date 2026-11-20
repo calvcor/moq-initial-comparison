@@ -241,7 +241,7 @@ async def get_file(name: str, request: Request):
         body = AST_RE.sub(f'availabilityStartTime="{origin.format_ast()}"'.encode(), live.chunks[0])
         # Con DASH directo el manifiesto llega desde otro origen, y una URL de UTCTiming relativa haría que
         # dash.js sincronizara su reloj a través del router, con el retardo emulado. Se le da la del origen
-        # de la página, que es el camino de siempre y no está degradado.
+        # de la página, que no pasa por la red emulada.
         page = request.headers.get("origin", "")
         if ORIGIN_RE.fullmatch(page):
             body = body.replace(UTC_VALUE, f'value="{page}/api/utc"'.encode())

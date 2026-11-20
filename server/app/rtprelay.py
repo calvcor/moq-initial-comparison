@@ -6,7 +6,7 @@ calidades de un simulcast y sus Sender Reports tienen que salir todas del mismo 
 mediasoup no puede cambiar de capa. Por defecto es todo lo que hace: no mira el contenido, no reordena y no retiene
 nada.
 
-Con --pace F (opción rtc_pacing de la emisión, un experimento declarado: README, 3.4c) además reparte en el tiempo
+Con --pace F (opción rtc_pacing de la emisión, un experimento declarado: docs/architecture.md) además reparte en el tiempo
 el RTP de cada calidad, como el pacer de libwebrtc en un publicador WebRTC: cada puerto marcado con su bitrate
 (PUERTO:KBPS) sale a F veces ese bitrate, y lo que no cabe espera en su cola, en orden. Sin él, FFmpeg suelta cada
 frame de golpe y mediasoup lo reenvía igual (una keyframe de 1080p, más de 100 paquetes en menos de 1 ms). El RTCP y

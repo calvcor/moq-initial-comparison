@@ -12,7 +12,7 @@ interface NetworkPanelProps {
 
 export const CLEAR: LinkProfile = { rate_kbit: null, delay_ms: 0, jitter_ms: 0, loss_pct: 0, queue_ms: 300, shaper: 'tbf' };
 
-// Cómo limita el caudal el router (README, sección 5); netem es un experimento declarado
+// Cómo limita el caudal el router (docs/network-emulation.md); netem es un experimento declarado
 export const SHAPERS: { value: Shaper; label: string; hint: string }[] = [
   {
     value: 'tbf',
@@ -32,8 +32,8 @@ export const SHAPERS: { value: Shaper; label: string; hint: string }[] = [
   },
 ];
 export const SHAPER_HINT = t(
-  'Cómo limita el router el ancho de banda; solo actúa con ancho de banda limitado (README, sección 5)',
-  'How the router limits the bandwidth; only acts with a bandwidth limit (README, section 5)',
+  'Cómo limita el router el ancho de banda; solo actúa con ancho de banda limitado (docs/network-emulation.md)',
+  'How the router limits the bandwidth; only acts with a bandwidth limit (docs/network-emulation.md)',
 );
 
 // Perfiles orientativos para arrancar una prueba; no reproducen ninguna red medida
@@ -59,7 +59,7 @@ const FIELDS: { key: Exclude<keyof LinkProfile, 'shaper'>; label: string; unit: 
   { key: 'queue_ms', label: t('Cola', 'Queue'), unit: 'ms', step: 50, hint: t('Búfer del cuello de botella; solo actúa con ancho de banda limitado', 'Bottleneck buffer; only acts with a bandwidth limit') },
 ];
 
-// Sin limitador explícito, tbf (perfiles anteriores al 19-11-2026)
+// Sin limitador explícito, tbf (perfiles guardados sin el campo)
 const norm = (l: LinkProfile) => ({ ...l, shaper: l.shaper ?? 'tbf' });
 const same = (a: NetworkProfile, b: NetworkProfile) =>
   JSON.stringify({ down: norm(a.down), up: norm(a.up) }) === JSON.stringify({ down: norm(b.down), up: norm(b.up) });
@@ -114,8 +114,8 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({ network, ipRates, is
             <span
               className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30"
               title={t(
-                'Experimento declarado (README, sección 5): el caudal lo limita netem rate, que retrasa cada paquete lo que tarda en salir a esa velocidad, en vez del tbf de siempre, que deja pasar un paquete suelto sin esperar tras un rato ocioso. Las medidas no son comparables con las de tbf.',
-                'Declared experiment (README, section 5): the rate is limited by netem rate, which delays each packet by the time it takes to leave at that speed, instead of the usual tbf, which lets a lone packet through without waiting after an idle spell. Measurements are not comparable with those taken with tbf.',
+                'Experimento declarado (docs/network-emulation.md): el caudal lo limita netem rate, que retrasa cada paquete lo que tarda en salir a esa velocidad, en vez del tbf de siempre, que deja pasar un paquete suelto sin esperar tras un rato ocioso. Las medidas no son comparables con las de tbf.',
+                'Declared experiment (docs/network-emulation.md): the rate is limited by netem rate, which delays each packet by the time it takes to leave at that speed, instead of the usual tbf, which lets a lone packet through without waiting after an idle spell. Measurements are not comparable with those taken with tbf.',
               )}
             >
               {t('Limitador: netem rate (experimento)', 'Limiter: netem rate (experiment)')}

@@ -3,7 +3,7 @@ import type { MoqAbr, MoqSwitching } from '../types';
 import { lang, t } from '../lib/i18n';
 
 // Explicación, en la propia página, de cómo sube y baja de calidad el reproductor MoQ con las opciones elegidas.
-// Resume README 6, 6.1 y 6.3 y lo leído del código de @moq/watch (git@bc64b9c) y de web/src/lib/moqProbe.ts: si
+// Resume docs/adaptation-and-experiments.md y lo leído del código de @moq/watch (git@bc64b9c) y de web/src/lib/moqProbe.ts: si
 // cambia alguno de ellos, hay que cambiar también este texto.
 
 interface Props {
@@ -86,13 +86,13 @@ function downHandover(switching: MoqSwitching, supported: boolean | null): React
             <>
               <b>Relevo (Cambio = Sin corte, el original):</b> se suscribe a la nueva calidad y sigue descargando la
               anterior, con la misma prioridad, hasta que la nueva alcanza la imagen en pantalla. Con el enlace lleno, la
-              nueva puede no alcanzarla nunca: se sigue viendo la anterior, con congelados (README 6.1).
+              nueva puede no alcanzarla nunca: se sigue viendo la anterior, con congelados (docs/adaptation-and-experiments.md).
             </>,
             <>
               <b>Handover (Switching = Seamless, the original):</b> it subscribes to the new rendition and keeps
               downloading the previous one, with the same priority, until the new one catches up with the frame on
               screen. With a full link, the new one may never catch up: the previous one keeps showing, with freezes
-              (README 6.1).
+              (docs/adaptation-and-experiments.md).
             </>,
           )}
         </li>
@@ -147,8 +147,8 @@ export const MoqExplain: React.FC<Props> = ({ abr, switching, quality, switching
         <p>
           <b className="text-amber-300">
             {t(
-              'Experimento (README 6.3), no el comportamiento de @moq/watch.',
-              'Experiment (README 6.3), not the @moq/watch behaviour.',
+              'Experimento (docs/adaptation-and-experiments.md), no el comportamiento de @moq/watch.',
+              'Experiment (docs/adaptation-and-experiments.md), not the @moq/watch behaviour.',
             )}
           </b>{' '}
           {t(
@@ -282,12 +282,12 @@ export const MoqExplain: React.FC<Props> = ({ abr, switching, quality, switching
           <>
             <b>Comportamiento de @moq/watch</b> (lo que mide el banco). La estimación de ancho de banda la hace el relay y
             la envía en los mensajes PROBE: es su ventana de congestión entre el RTT, que con RTT pequeños sale muy por
-            encima del enlace (README 6, PROTOCOLOS 4.10).
+            encima del enlace (docs/adaptation-and-experiments.md, docs/protocols/moq.md).
           </>,
           <>
             <b>@moq/watch behaviour</b> (what the testbed measures). The bandwidth estimate is made by the relay and sent
             in PROBE messages: it is its congestion window divided by the RTT, which with small RTTs comes out far above
-            the link (README 6, PROTOCOLOS 4.10).
+            the link (docs/adaptation-and-experiments.md, docs/protocols/moq.md).
           </>,
         )}
       </p>

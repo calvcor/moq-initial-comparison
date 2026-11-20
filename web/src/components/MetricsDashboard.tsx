@@ -285,7 +285,7 @@ const rtcQualityHint = (server: RtcServer) =>
     <>
       <p>
         Height of the video reaching the browser and nominal bitrate of that rendition. <b>The server chooses it</b>, mediasoup, and the browser only receives that one, so
-        it cannot be set by hand here (README, 3.4c).
+        it cannot be set by hand here (docs/architecture.md).
       </p>
       <p>
         It moves up to a layer if the estimate covers its bitrate measured at ingest plus 20 %, and if not even the lowest is covered it stops sending video. Each switch waits for the next keyframe:
@@ -296,7 +296,7 @@ const rtcQualityHint = (server: RtcServer) =>
     <>
       <p>
         Altura del vídeo que llega al navegador y bitrate nominal de esa calidad. <b>La elige el servidor</b>, mediasoup, y el navegador solo recibe esa, así que
-        aquí no se puede fijar a mano (README, 3.4c).
+        aquí no se puede fijar a mano (docs/architecture.md).
       </p>
       <p>
         Sube a una capa si la estimación cubre su bitrate medido en la entrada más un 20 %, y sin cubrir ni la más baja deja de enviar vídeo. Cada cambio espera al siguiente keyframe:
@@ -322,12 +322,12 @@ const rtcEstimateHint = (server: RtcServer) =>
   server === 'mediasoup' ? lang === 'en' ? (
     <p>
       What mediasoup estimates fits towards this viewer, from the browser's TWCC feedback (delay, loss and probes), and what it uses to choose the layer. It is measured
-      by the server and polled every 2 s. It can stay far below the actual capacity for a long time: after a drop it grows slowly (README, 3.4c).
+      by the server and polled every 2 s. It can stay far below the actual capacity for a long time: after a drop it grows slowly (docs/architecture.md).
     </p>
   ) : (
     <p>
       Lo que mediasoup estima que cabe hacia este espectador, a partir de la realimentación TWCC del navegador (retardo, pérdidas y sondeos), y con lo que elige la capa. Lo mide
-      el servidor y se le pregunta cada 2 s. Puede quedarse muy por debajo de la capacidad real durante mucho tiempo: tras una bajada crece despacio (README, 3.4c).
+      el servidor y se le pregunta cada 2 s. Puede quedarse muy por debajo de la capacidad real durante mucho tiempo: tras una bajada crece despacio (docs/architecture.md).
     </p>
   ) : lang === 'en' ? (
     <p>Not applicable with MediaMTX: it does not estimate bandwidth to choose a rendition, because there is only one. With mediasoup (<code>RTC_SERVER=mediasoup</code>) its estimate is shown here.</p>
@@ -381,14 +381,14 @@ const Telemetry: React.FC<{
         <Stat
           label={t(`Capacidad por sondeo${metrics.probing ? ' (sondeando)' : ''}`, `Probed capacity${metrics.probing ? ' (probing)' : ''}`)}
           value={fmt(metrics.probeCapacityKbps ?? null, 'kbps')}
-          hint={t('Experimento (README 6.3): lo que recibían la calidad actual y la de sondeo en el último sondeo. Con él decide el controlador del banco, no @moq/watch.', 'Experiment (README 6.3): what the current rendition and the probe rendition received in the last probe. The testbed controller decides with it, not @moq/watch.')}
+          hint={t('Experimento (docs/adaptation-and-experiments.md): lo que recibían la calidad actual y la de sondeo en el último sondeo. Con él decide el controlador del banco, no @moq/watch.', 'Experiment (docs/adaptation-and-experiments.md): what the current rendition and the probe rendition received in the last probe. The testbed controller decides with it, not @moq/watch.')}
         />
       )}
       {(metrics.moqAbr === 'probe' || metrics.moqAbr === 'probe2') && (
         <Stat
           label={t('Sondeos (cortados)', 'Probes (cut)')}
           value={metrics.probeCount == null ? '--' : `${metrics.probeCount} (${metrics.probeCuts ?? 0})`}
-          hint={t('Sondeos empezados desde que arrancó el controlador y, entre paréntesis, cuántos se cortaron porque la calidad actual perdió ritmo (README 6.3). En el CSV, moq_probe_count, moq_probe_cuts y cada sondeo con su inicio, fin y resultado en moq_probe_spans.', 'Probes started since the controller started and, in brackets, how many were cut because the current rendition fell behind (README 6.3). In the CSV, moq_probe_count, moq_probe_cuts and each probe with its start, end and result in moq_probe_spans.')}
+          hint={t('Sondeos empezados desde que arrancó el controlador y, entre paréntesis, cuántos se cortaron porque la calidad actual perdió ritmo (docs/adaptation-and-experiments.md). En el CSV, moq_probe_count, moq_probe_cuts y cada sondeo con su inicio, fin y resultado en moq_probe_spans.', 'Probes started since the controller started and, in brackets, how many were cut because the current rendition fell behind (docs/adaptation-and-experiments.md). In the CSV, moq_probe_count, moq_probe_cuts and each probe with its start, end and result in moq_probe_spans.')}
         />
       )}
       <Stat label={t('Bitrate vídeo recibido', 'Received video bitrate')} value={fmt(metrics.bitrateKbps, 'kbps')} hint={VIDEO_HINT} />

@@ -1,4 +1,4 @@
-"""Comparación en texto de dos pruebas de campaña, de la misma o de campañas distintas (README 4.8, «Comparar dos pruebas»).
+"""Comparación en texto de dos pruebas de campaña, de la misma o de campañas distintas (docs/campaigns.md, «Comparar dos pruebas»).
 
 Cada lado es una prueba con uno de sus reproductores (campaña/prueba/protocolo). La comparación sale del resumen de
 cada prueba (el de runs.csv) y de sus filas de cada segundo, con reglas fijas: las mismas cifras dan el mismo texto, y
@@ -105,8 +105,8 @@ def load_side(store, ref: tuple[str, str, str], campaign: Optional[dict]) -> dic
     top = plan["quality"] if plan.get("quality") else ladder[0]
 
     def full(r: dict) -> dict:
-        # El resumen y, del índice de las filas, la altura máxima y el tiempo en la más alta (no están en los resúmenes
-        # antiguos; en los nuevos salen igual)
+        # El resumen y, del índice de las filas, la altura máxima y el tiempo en la más alta (no están en todos los
+        # resúmenes; donde están, salen igual)
         return {**r["summary"]["players"][player], **samples_index.height_stats(samples_index.player_entry(idx, r, player), top)}
 
     return {"ref": ref, "campaign": campaign, "plan": plan, "run": run, "player": player, "stream": stream,
@@ -448,16 +448,16 @@ def warnings(A: dict, B: dict, rows: list[dict]) -> list[str]:
         if x["run"]["state"] != "done":
             out.append(t(f"{name} no es una prueba válida vigente ({x['run']['state']}).", f"{name} is not a currently valid run ({x['run']['state']})."))
         if day and day < INVALID_BEFORE:
-            out.append(t(f"{name} es anterior al 9-10-2026: el lector de timecode de entonces degradaba MoQ y esas medidas están invalidadas.",
-                         f"{name} predates 2026-10-09: the timecode reader of that time degraded MoQ and those measurements are invalidated."))
+            out.append(t(f"{name} se midió con el lector de timecode antiguo, que degradaba MoQ: esas medidas están invalidadas.",
+                         f"{name} was measured with the old timecode reader, which degraded MoQ: those measurements are invalidated."))
         elif day and day < STALL_FIX:
-            out.append(t(f"{name} es anterior al 28-10-2026: su tiempo parado no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas) y no se compara con el posterior.",
-                         f"{name} predates 2026-10-28: its stall time does not count stretches without picture (it greatly underestimates DASH under loss) and is not compared with later runs."))
-        # Porcentaje de descartes de DASH sobre los paquetes de iptables (resúmenes anteriores al 18-11-2026): cuenta cada
+            out.append(t(f"{name} se midió con el tiempo parado antiguo, que no cuenta los tramos sin imagen (infravalora mucho a DASH con pérdidas) y no se compara con el posterior.",
+                         f"{name} was measured with the old stall time, which does not count stretches without picture (it greatly underestimates DASH under loss) and is not compared with later runs."))
+        # Porcentaje de descartes de DASH sobre los paquetes de iptables (resúmenes sin ip_down_drop_base "tc"): cuenta cada
         # superpaquete GSO de TCP como uno y sale entre 2 y 4 veces el real
         if x["player"] == "dash" and x["s"].get("ip_down_drop_pct") is not None and x["s"].get("ip_down_drop_base") != "tc":
-            out.append(t(f"{name} tiene el porcentaje de descartes de DASH calculado sobre los paquetes de iptables (anterior al 18-11-2026): cuenta cada superpaquete TCP como uno y sale entre 2 y 4 veces el real.",
-                         f"{name} has the DASH drop percentage computed over iptables packets (before 2026-11-18): it counts each TCP superpacket as one and comes out 2 to 4 times the real value."))
+            out.append(t(f"{name} tiene el porcentaje de descartes de DASH calculado sobre los paquetes de iptables (ip_down_drop_base distinto de tc): cuenta cada superpaquete TCP como uno y sale entre 2 y 4 veces el real.",
+                         f"{name} has the DASH drop percentage computed over iptables packets (ip_down_drop_base other than tc): it counts each TCP superpacket as one and comes out 2 to 4 times the real value."))
         if x["stream"].get("source") == "camera":
             out.append(t(f"{name} es con la cámara: el contenido no se repite y la latencia no incluye el tramo cámara → servidor.",
                          f"{name} uses the camera: the content does not repeat and the latency does not include the camera → server leg."))

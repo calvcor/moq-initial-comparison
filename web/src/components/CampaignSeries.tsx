@@ -9,7 +9,7 @@ import { t } from '../lib/i18n';
 
 ChartJS.register(LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-// Segundo a segundo de varias pruebas superpuestas (README, 4.8): una gráfica por protocolo y una línea por
+// Segundo a segundo de varias pruebas superpuestas (docs/campaigns.md): una gráfica por protocolo y una línea por
 // prueba, cada una a todo el ancho (la evolución en el tiempo necesita eje horizontal); o, superpuestos, todos
 // los protocolos en una sola, con el color de cada protocolo y todas sus pruebas en ese color. Con el contenido
 // reiniciado en cada prueba el eje es el segundo del vídeo, el mismo en todas; si no, los segundos desde el
@@ -44,11 +44,11 @@ const METRICS: Record<string, Metric> = {
     field: 'ip_down_dropped',
     source: 'ip',
     note: t(
-      'Paquetes que descartó la cola de este protocolo en el router, de las lecturas del orquestador (desde el 3-11-2026). Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.',
-      'Packets dropped by this protocol’s queue at the router, from the orchestrator’s readings (since 3-11-2026). It combines queue overflow and the network profile’s random loss: they are only overflow on networks with a bandwidth limit and no loss. The queue is sized in 1500-byte packets, so its actual duration is approximate.',
+      'Paquetes que descartó la cola de este protocolo en el router, de las lecturas del orquestador. Junta el desbordamiento de la cola y la pérdida aleatoria del perfil de red: solo son desbordamiento en redes con límite de caudal y sin pérdida. La cola se mide en paquetes de 1500 bytes, así que su duración real es aproximada.',
+      'Packets dropped by this protocol’s queue at the router, from the orchestrator’s readings. It combines queue overflow and the network profile’s random loss: they are only overflow on networks with a bandwidth limit and no loss. The queue is sized in 1500-byte packets, so its actual duration is approximate.',
     ),
   },
-  // Lo lee el servidor cada segundo (desde el 30-10-2026); es de la emisión, el mismo en las tres ramas
+  // Lo lee el servidor cada segundo; es de la emisión, el mismo en las tres ramas
   source_lag: {
     label: t('Retraso de la fuente', 'Source lag'),
     unit: 'ms',
@@ -61,7 +61,7 @@ const METRICS: Record<string, Metric> = {
   },
   height: { label: t('Altura reproducida', 'Rendered height'), unit: 'p', field: 'height' },
   // La que eligió la adaptación: la reproducida la sigue cuando llega (DASH, al consumir el búfer; WebRTC, en el
-  // siguiente keyframe; MoQ, según su modo de cambio). Vacía en DASH antes del 4-11-2026 (su altura era la elegida)
+  // siguiente keyframe; MoQ, según su modo de cambio). Vacía en las filas de DASH en que su altura era la elegida
   selected: {
     label: t('Calidad elegida', 'Selected rendition'),
     unit: 'p',
@@ -76,19 +76,19 @@ const METRICS: Record<string, Metric> = {
     unit: 'kbit/s',
     field: 'bw_estimate_kbps',
     note: t(
-      'cada protocolo el suyo, y no significan lo mismo: DASH, el caudal medio de sus descargas (sin límite de red sigue al bitrate descargado, README 6); MoQ, la estimación del relay que usa su adaptación; WebRTC, la de mediasoup hacia el espectador (vacía con MediaMTX).',
-      'each protocol its own, and they do not mean the same: DASH, the mean throughput of its downloads (without a bandwidth limit it follows the downloaded bitrate, README 6); MoQ, the relay estimate its adaptation uses; WebRTC, mediasoup’s estimate towards the viewer (empty with MediaMTX).',
+      'cada protocolo el suyo, y no significan lo mismo: DASH, el caudal medio de sus descargas (sin límite de red sigue al bitrate descargado, docs/adaptation-and-experiments.md); MoQ, la estimación del relay que usa su adaptación; WebRTC, la de mediasoup hacia el espectador (vacía con MediaMTX).',
+      'each protocol its own, and they do not mean the same: DASH, the mean throughput of its downloads (without a bandwidth limit it follows the downloaded bitrate, docs/adaptation-and-experiments.md); MoQ, the relay estimate its adaptation uses; WebRTC, mediasoup’s estimate towards the viewer (empty with MediaMTX).',
     ),
   },
-  // Experimento de README 6.3: solo con el ABR de MoQ en Sondeo o Sondeo v2 (moq_abr probe o probe2)
+  // Experimento de docs/adaptation-and-experiments.md: solo con el ABR de MoQ en Sondeo o Sondeo v2 (moq_abr probe o probe2)
   probe: {
     label: t('Capacidad estimada por el sondeo', 'Capacity estimated by probing'),
     unit: 'kbit/s',
     field: 'probe_capacity_kbps',
     only: 'moq',
     note: t(
-      'Solo MoQ con el ABR en Sondeo o Sondeo v2 (README 6.3): lo que recibían la calidad actual y la de sondeo en los últimos segundos del último sondeo, completo o cortado. Se mantiene hasta el siguiente, así que la línea va a escalones; queda vacía hasta el primero, y también si un sondeo se corta en su arranque. En la calidad más alta no se sondea. No es la estimación del relay, que va en Ancho de banda estimado. Las bandas son los sondeos, de su inicio a su fin, del color de cómo terminaron (exactos desde el 6-11-2026; antes, cada fila con sondeo como un segundo entero, sin resultado).',
-      'Only MoQ with the ABR in Probe or Probe v2 (README 6.3): what the current rendition and the probed one received in the last seconds of the last probe, complete or cut. It holds until the next one, so the line is stepped; it stays empty until the first, and also if a probe is cut at its start. The highest rendition is not probed. It is not the relay estimate, which is under Estimated bandwidth. The bands are the probes, from start to end, coloured by how they ended (exact since 6-11-2026; before, each row with a probe as a whole second, with no outcome).',
+      'Solo MoQ con el ABR en Sondeo o Sondeo v2 (docs/adaptation-and-experiments.md): lo que recibían la calidad actual y la de sondeo en los últimos segundos del último sondeo, completo o cortado. Se mantiene hasta el siguiente, así que la línea va a escalones; queda vacía hasta el primero, y también si un sondeo se corta en su arranque. En la calidad más alta no se sondea. No es la estimación del relay, que va en Ancho de banda estimado. Las bandas son los sondeos, de su inicio a su fin, del color de cómo terminaron (exactos con probe_spans; en filas sin ellos, cada fila con sondeo como un segundo entero, sin resultado).',
+      'Only MoQ with the ABR in Probe or Probe v2 (docs/adaptation-and-experiments.md): what the current rendition and the probed one received in the last seconds of the last probe, complete or cut. It holds until the next one, so the line is stepped; it stays empty until the first, and also if a probe is cut at its start. The highest rendition is not probed. It is not the relay estimate, which is under Estimated bandwidth. The bands are the probes, from start to end, coloured by how they ended (exact with probe_spans; in rows without them, each row with a probe as a whole second, with no outcome).',
     ),
   },
   // DASH: vídeo descargado por delante en el instante de la fila; MoQ y WebRTC: espera media de los frames
@@ -109,7 +109,7 @@ const METRICS: Record<string, Metric> = {
   skipped: { label: t('Contenido no reproducido en cada segundo', 'Content not played, per second'), unit: 'ms', field: 'content_skipped_ms' },
   // Media de cada segundo; solo DASH cambia la velocidad del vídeo
   rate: { label: t('Velocidad de reproducción', 'Playback rate'), unit: '×', field: 'playback_rate', only: 'dash' },
-  // De la página del trabajador (lib/mainThread.ts, desde el 3-11-2026), la misma para todos sus reproductores
+  // De la página del trabajador (lib/mainThread.ts), la misma para todos sus reproductores
   main_missed: {
     label: t('Refrescos perdidos en el hilo principal', 'Missed refreshes on the main thread'),
     unit: t('por s', 'per s'),
@@ -138,7 +138,7 @@ interface Series {
 }
 
 // Sombreado de los parones: cada parón como una franja vertical del color de su línea, de su inicio a su fin
-// exactos (stall_spans, que el medidor anota desde el 28-10-2026). En pruebas anteriores solo está el contador
+// exactos (stall_spans, que anota el medidor). En pruebas sin ellos solo está el contador
 // de cada fila: entonces se sombrea cada segundo con tiempo parado, más opaco cuanto mayor la fracción del
 // segundo parada, porque no se sabe en qué parte del segundo fue. Con los
 // protocolos superpuestos, franjas de alto completo de tres colores se mezclarían: cada protocolo va entonces en
@@ -229,9 +229,9 @@ const crosshair = (at: React.MutableRefObject<number | null>): Plugin<'line'> =>
   },
 });
 
-// Sondeos de MoQ (experimento de README 6.3) en la franja de su capacidad: cada uno de su inicio a su fin, del color
-// de cómo terminó. Exactos desde el 6-11-2026 (probe_spans, en reloj del servidor, como los parones); en filas
-// anteriores solo se sabe si había uno en curso en cada fila (probing), así que se dibuja cada fila con sondeo como un
+// Sondeos de MoQ (experimento de docs/adaptation-and-experiments.md) en la franja de su capacidad: cada uno de su inicio a su fin, del color
+// de cómo terminó. Exactos con probe_spans (en reloj del servidor, como los parones); en filas
+// sin ellos solo se sabe si había uno en curso en cada fila (probing), así que se dibuja cada fila con sondeo como un
 // segundo entero y sin resultado.
 type ProbeOutcome = 'up' | 'stay' | 'cut' | 'abort' | 'open' | null;
 type ProbeSpan = [number, number, ProbeOutcome];
@@ -242,7 +242,7 @@ const PROBE_LABEL: Record<string, string> = {
   cut: t('cortado (la calidad actual perdió ritmo)', 'cut (the current rendition fell behind)'),
   abort: t('cerrado a mitad', 'closed midway'),
   open: t('en curso al acabar las filas', 'in progress when the rows end'),
-  unknown: t('sondeo, sin resultado (filas anteriores al 6-11-2026)', 'probe, no outcome (rows before 6-11-2026)'),
+  unknown: t('sondeo, sin resultado (filas sin probe_spans)', 'probe, no outcome (rows without probe_spans)'),
 };
 
 function probeSpans(series: Series | undefined): { spans: ProbeSpan[]; exact: boolean } | null {
@@ -767,8 +767,8 @@ export const CampaignSeries: React.FC<{ campaign: Campaign; runs: CampaignRun[];
           </>
         )}
         <label className="flex items-center gap-1.5 pb-1 text-slate-300" title={t(
-            'Cada parón como una franja vertical del color de su línea, de su inicio a su fin exactos (con los protocolos superpuestos, un carril por protocolo en lo alto de la gráfica). En pruebas medidas antes del 28-10-2026 no hay intervalos: se sombrea cada segundo con tiempo parado, más opaco cuanto más del segundo estuvo parado',
-            'Each stall as a vertical band in the colour of its line, from its exact start to its exact end (with the protocols overlaid, one lane per protocol at the top of the chart). Runs measured before 28-10-2026 have no intervals: each second with stall time is shaded, more opaque the more of the second was stalled',
+            'Cada parón como una franja vertical del color de su línea, de su inicio a su fin exactos (con los protocolos superpuestos, un carril por protocolo en lo alto de la gráfica). En pruebas sin intervalos exactos (stall_spans) se sombrea cada segundo con tiempo parado, más opaco cuanto más del segundo estuvo parado',
+            'Each stall as a vertical band in the colour of its line, from its exact start to its exact end (with the protocols overlaid, one lane per protocol at the top of the chart). In runs without exact intervals (stall_spans), each second with stall time is shaded, more opaque the more of the second was stalled',
           )}>
           <input type="checkbox" checked={shade} onChange={(e) => setShade(e.target.checked)} />
           {t('Sombrear los parones', 'Shade the stalls')}

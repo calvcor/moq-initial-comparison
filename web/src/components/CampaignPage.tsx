@@ -15,7 +15,7 @@ import type { Campaign, CampaignPlan, CampaignQueue, CampaignRun, PlayerId, Serv
 import { RouterTreePanel } from './RouterTree';
 import { lang, locale, t } from '../lib/i18n';
 
-// Página de campañas de medida (/campaign; README, 4.8): editor, monitor y, en la misma pestaña o en otra
+// Página de campañas de medida (/campaign; docs/campaigns.md): editor, monitor y, en la misma pestaña o en otra
 // (/campaign?worker=1), el trabajador que monta los reproductores. Con el trabajador activo el monitor se
 // consulta menos y la tabla de pruebas va plegada, para no cargar el navegador que mide.
 
@@ -653,7 +653,7 @@ const Monitor: React.FC<{
               </span>
             ))
           ) : plan.workers ? (
-            // Trabajadores independientes: uno por reproductor (README 4.8, trabajadores independientes)
+            // Trabajadores independientes: uno por reproductor (docs/campaigns.md, trabajadores independientes)
             PLAYER_IDS.filter((p) => plan.players.includes(p)).map((p) => {
               const name = plan.workers![p]!;
               const w = campaign.workers?.find((x) => x.name === name);
@@ -730,7 +730,7 @@ const Monitor: React.FC<{
   );
 };
 
-// Cola de campañas (README, 4.8): al terminar la que está en marcha, el servidor arranca la primera. Pausar la que
+// Cola de campañas (docs/campaigns.md): al terminar la que está en marcha, el servidor arranca la primera. Pausar la que
 // está en marcha la saca de la cola y la detiene hasta reanudarla
 const QueuePanel: React.FC<{ queue: CampaignQueue; onChanged: () => void; onSelect: (id: string) => void }> = ({ queue, onChanged, onSelect }) => {
   const [error, setError] = useState<string | null>(null);
@@ -806,7 +806,7 @@ const QueuePanel: React.FC<{ queue: CampaignQueue; onChanged: () => void; onSele
 };
 
 export const CampaignPage: React.FC = () => {
-  // Trabajador independiente (?worker=1&name=...): solo el trabajador, sin monitor ni editor (README 4.8, trabajadores independientes)
+  // Trabajador independiente (?worker=1&name=...): solo el trabajador, sin monitor ni editor (docs/campaigns.md, trabajadores independientes)
   const workerName = new URLSearchParams(window.location.search).get('name');
   if (workerName && new URLSearchParams(window.location.search).get('worker') === '1') {
     return (
@@ -842,7 +842,7 @@ const CampaignMonitorPage: React.FC = () => {
       setPreviewError((e as Error).message);
     }
   };
-  // Comparación de dos pruebas (README 4.8, «Comparar dos pruebas»): la A se elige en una campaña y la B en la misma o
+  // Comparación de dos pruebas (docs/campaigns.md, «Comparar dos pruebas»): la A se elige en una campaña y la B en la misma o
   // en otra. La A se recuerda en el navegador, para elegirla y volver más tarde a por la B
   const [compareFrom, setCompareFrom] = useState<CompareSide | null>(() => {
     try {
@@ -951,7 +951,7 @@ const CampaignMonitorPage: React.FC = () => {
 
   return (
     // En escritorio la página ocupa la ventana: la cabecera queda fija y la lista y el contenido se desplazan cada uno
-    // por su cuenta, para que la lista llegue siempre al borde de abajo (si no, dependía del alto del contenido)
+    // por su cuenta, para que la lista llegue siempre al borde de abajo (si no, dependería del alto del contenido)
     <div className="min-h-screen md:h-screen md:flex md:flex-col bg-slate-950 text-slate-100 p-6 font-sans">
       <div className="w-full space-y-4 md:space-y-0 md:flex md:flex-col md:gap-4 md:flex-1 md:min-h-0">
         <header className="flex flex-wrap items-center gap-4 pb-4 border-b border-slate-800">
@@ -964,7 +964,7 @@ const CampaignMonitorPage: React.FC = () => {
             </span>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-white">{t('Campañas de medida', 'Measurement campaigns')}</h1>
-              <p className="text-xs text-slate-400">{t('Pruebas desatendidas por condición de red y latencia objetivo (README, 4.8)', 'Unattended runs by network condition and target latency (README, 4.8)')}</p>
+              <p className="text-xs text-slate-400">{t('Pruebas desatendidas por condición de red y latencia objetivo (docs/campaigns.md)', 'Unattended runs by network condition and target latency (docs/campaigns.md)')}</p>
             </div>
           </div>
           <button

@@ -5,7 +5,7 @@ import { BUSY_NOTE, TextReport, type TextAnalysis } from './CampaignAnalysis';
 import { CampaignVersusTables, type VersusTables } from './CampaignVersusTables';
 import { lang, t } from '../lib/i18n';
 
-// Comparación en texto de dos campañas enteras (README 4.8, «Comparar dos campañas»): la que se está viendo y otra que
+// Comparación en texto de dos campañas enteras (docs/campaigns.md, «Comparar dos campañas»): la que se está viendo y otra que
 // se elige. La escribe el orquestador (GET /api/campaigns-compare) emparejando condiciones por perfil de red, latencia
 // objetivo y emisión; aquí solo se elige la otra y se muestra.
 
@@ -82,8 +82,8 @@ export const CampaignVersus: React.FC<{ campaign: Campaign; busy: string | null 
           data={data}
           title={t(`Comparación de «${name(a)}» (A) y «${name(b)}» (B)`, `Comparison of “${name(a)}” (A) and “${name(b)}” (B)`)}
           method={t(
-            'Reglas fijas sobre las pruebas válidas de las dos: se emparejan las condiciones con el mismo perfil de red, la misma latencia objetivo (en ms) y la misma emisión (con una sola en cada campaña, aunque difieran). Una diferencia cuenta en una condición si supera la variación entre repeticiones de las dos; las tendencias usan solo los niveles medidos en las dos. Es una lectura descriptiva, no un contraste estadístico (README 4.8).',
-            'Fixed rules over the valid runs of both: conditions are paired by the same network profile, the same target latency (in ms) and the same stream (with a single stream in each campaign, even if they differ). A difference counts in a condition if it exceeds the variation between repetitions of both; trends use only the levels measured in both. This is a descriptive reading, not a statistical test (README 4.8).',
+            'Reglas fijas sobre las pruebas válidas de las dos: se emparejan las condiciones con el mismo perfil de red, la misma latencia objetivo (en ms) y la misma emisión (con una sola en cada campaña, aunque difieran). Una diferencia cuenta en una condición si supera la variación entre repeticiones de las dos; las tendencias usan solo los niveles medidos en las dos. Es una lectura descriptiva, no un contraste estadístico (docs/campaigns.md).',
+            'Fixed rules over the valid runs of both: conditions are paired by the same network profile, the same target latency (in ms) and the same stream (with a single stream in each campaign, even if they differ). A difference counts in a condition if it exceeds the variation between repetitions of both; trends use only the levels measured in both. This is a descriptive reading, not a statistical test (docs/campaigns.md).',
           )}
         />
       )}

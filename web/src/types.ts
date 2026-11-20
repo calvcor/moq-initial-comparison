@@ -23,7 +23,7 @@ export interface StreamConfig {
   gop_size: number;
   fps: number; // con el bucle, la del vídeo (60 o 24); con la cámara la fija el servidor (la de la cámara)
   rtc_audio: boolean; // audio Opus en la rama WebRTC (sin recodificar); desactivado por defecto
-  // pacer en la ingesta de mediasoup (README, 3.4c); falta en las campañas anteriores al 4-11-2026, que van sin él
+  // pacer en la ingesta de mediasoup (docs/architecture.md); sin él, desactivado
   rtc_pacing?: boolean;
   renditions: Rendition[]; // de mayor a menor; una sola = sin adaptación
   seg_duration: number;
@@ -41,8 +41,8 @@ export interface TimecodeLayout {
 }
 
 // Condiciones de un sentido del enlace emulado por el router
-// Cómo limita el caudal el router (README, sección 5): tbf, el de siempre (cubo de fichas de un paquete), o netem, el
-// experimento declarado del 19-11-2026 (netem rate retrasa cada paquete lo que tarda en salir, como un enlace serie)
+// Cómo limita el caudal el router (docs/network-emulation.md): tbf, por defecto (cubo de fichas de un paquete), o netem, un
+// experimento declarado (netem rate retrasa cada paquete lo que tarda en salir, como un enlace serie)
 export type Shaper = 'tbf' | 'netem';
 
 export interface LinkProfile {
@@ -51,7 +51,7 @@ export interface LinkProfile {
   jitter_ms: number;
   loss_pct: number;
   queue_ms: number;
-  shaper?: Shaper; // solo actúa con rate_kbit; sin él, tbf (perfiles anteriores al 19-11-2026)
+  shaper?: Shaper; // solo actúa con rate_kbit; sin él, tbf
 }
 
 export interface NetworkProfile {
@@ -74,7 +74,7 @@ export interface RouterSlot {
   packets: number; // los que entran en la plaza (iptables, antes de la emulación)
   bytes: number;
   out_packets?: number | null; // los que salen (tc: el tbf o, sin restricciones, la pfifo de la banda); null sin qdisc
-  out_bytes?: number | null; // bytes IP, sin la cabecera Ethernet, como los de iptables. Desde el 18-11-2026
+  out_bytes?: number | null; // bytes IP, sin la cabecera Ethernet, como los de iptables
   dropped: number; // descartes de netem (pérdida aleatoria y cola llena) desde el último perfil aplicado a la plaza
   queued: number; // paquetes en la cola de netem ahora
 }
@@ -98,7 +98,7 @@ export interface NetworkState {
   profile: NetworkProfile;
   emulation_error?: string | null; // motivo por el que el servidor no puede emular la red, si es el caso
   clients?: Record<string, NetworkProfile>; // clientes con plaza propia: pruebas en paralelo
-  tree?: RouterTree | null; // árbol de tc del router (README, sección 5)
+  tree?: RouterTree | null; // árbol de tc del router (docs/network-emulation.md)
   stats: {
     dash_down: Counter;
     dash_up: Counter;
@@ -123,7 +123,7 @@ export interface ServerStatus {
   rtc_server?: RtcServer;
   rtc_ingest?: 'udp' | 'rtsp' | 'rtp'; // rtp: mediasoup; udp: MediaMTX lee el MPEG-TS por UDP; rtsp: con el FFmpeg intermedio
   rtc_path?: string; // path de MediaMTX para WHEP
-  dash_path?: 'direct' | 'proxy'; // direct: el navegador va al servidor de DASH por el router (siempre desde el 12-11-2026); proxy: a través del punto de entrada
+  dash_path?: 'direct' | 'proxy'; // direct: el navegador va al servidor de DASH por el router (siempre); proxy: a través del punto de entrada (solo en medidas guardadas con otra configuración)
   moq_port?: number;
   moq_host?: string | null; // dirección directa para MoQ; null = el host de la página
   rtc_signal_port?: number; // con mediasoup, puerto TCP de la señalización WebSocket (directa, por el router)
@@ -145,8 +145,8 @@ export interface ServerStatus {
   source?: VideoState;
   sources?: Record<LoopVideo, VideoState>;
   camera?: CameraState;
-  campaign?: CampaignBrief | null; // campaña en marcha (README, 4.8)
-  campaign_preview?: { campaign: string; run: string; started_ms: number } | null; // vista previa de una prueba (README, 4.8)
+  campaign?: CampaignBrief | null; // campaña en marcha (docs/campaigns.md)
+  campaign_preview?: { campaign: string; run: string; started_ms: number } | null; // vista previa de una prueba (docs/campaigns.md)
 }
 
 // Cámara RTSP (GET /api/camera y /api/status): nunca incluye la URL, que puede llevar credenciales
@@ -215,11 +215,11 @@ export interface PlayerMetrics {
 // Cambio de calidad hacia abajo en MoQ (opción `switching` del parche de web/patches)
 export type MoqSwitching = 'seamless' | 'cancel' | 'priority';
 
-// Quién decide la calidad en MoQ: @moq/watch, o el controlador del experimento de sondeo (README 6.3)
+// Quién decide la calidad en MoQ: @moq/watch, o el controlador del experimento de sondeo (docs/adaptation-and-experiments.md)
 export type MoqAbr = 'watch' | 'probe' | 'probe2';
 
 // Reglas de adaptación de dash.js: las de fábrica, o L2A o LoL+ en solitario. l2afix: experimento, L2A con su fallo
-// de unidades de dash.js 5 corregido (README 6)
+// de unidades de dash.js 5 corregido (docs/adaptation-and-experiments.md)
 export type DashAbr = 'default' | 'l2a' | 'l2afix' | 'lolp';
 
 // Latencia glass-to-glass repartida por etapas, medida sobre frames concretos del último segundo
@@ -231,14 +231,14 @@ export interface StageBreakdown {
 
 export type PlayerId = 'dash' | 'moq' | 'rtc';
 
-// Ajustes con los que arranca un reproductor en una prueba de campaña (README, 4.8). Sin ellos, los de la página.
+// Ajustes con los que arranca un reproductor en una prueba de campaña (docs/campaigns.md). Sin ellos, los de la página.
 export interface PlayerPreset {
   targetMs: number | null; // latencia objetivo en el mando del reproductor; null = la de fábrica de su implementación
   quality: number | 'auto';
   options?: Partial<PlayerOptions>; // lo que falte, como el dashboard al abrirse
 }
 
-// Ajustes de los reproductores de una campaña, iguales en todas sus pruebas (README, 4.8)
+// Ajustes de los reproductores de una campaña, iguales en todas sus pruebas (docs/campaigns.md)
 export interface PlayerOptions {
   dash_abr: DashAbr;
   dash_max_drift_s: number; // salto al directo (liveCatchup.maxDrift); 0 = nunca
@@ -252,11 +252,11 @@ export interface SampleRow {
   time_iso: string;
   epoch: number; // se incrementa en cada reconfiguración del pipeline o de la red, o al activar o apagar un reproductor
   players: string; // reproductores activos en esa muestra, p. ej. dash|moq
-  web_build: string; // construcción de la web que la midió (la hora en que se construyó, o dev; desde el 6-11-2026)
+  web_build: string; // construcción de la web que la midió (la hora en que se construyó, o dev)
   fullscreen: string | null; // reproductor a pantalla completa en ese momento (dash, moq o rtc), o vacío
   audio: string | null; // reproductor con el sonido activado (dash, moq o rtc), o vacío si todos van silenciados
   rtc_audio: boolean | null; // la rama WebRTC lleva audio (opción del servidor)
-  rtc_pacing: boolean | null; // la ingesta de mediasoup reparte el RTP en el tiempo (opción del servidor, README 3.4c)
+  rtc_pacing: boolean | null; // la ingesta de mediasoup reparte el RTP en el tiempo (opción del servidor, docs/architecture.md)
   elapsed_s: number; // segundos desde el inicio del epoch
   source: SourceKind | null; // fuente de la emisión: file (bucle) o camera
   fps: number | null; // cadencia de la emisión
@@ -264,7 +264,7 @@ export interface SampleRow {
   ladder: string | null; // escalera codificada, p. ej. 1080p@4000|720p@2000
   rtc_server: string | null; // mediasoup o mediamtx: servidor de la rama WebRTC
   rtc_ingest: string | null; // rtp (mediasoup), udp o rtsp (MediaMTX): cómo le llega el flujo al servidor
-  dash_path: string | null; // direct o proxy: si la conexión del navegador atraviesa la red emulada (proxy solo hasta el 12-11-2026)
+  dash_path: string | null; // direct o proxy: si la conexión del navegador atraviesa la red emulada
   seg_duration: number | null;
   frag_duration: number | null;
   dash_g2g_ms: number | null;
@@ -277,7 +277,7 @@ export interface SampleRow {
   dash_frametime_max_ms: number | null;
   dash_buffer_s: number | null;
   // Velocidad del <video> que pone dash.js, desde la fila anterior: media ponderada por tiempo, mínimo, máximo y
-  // ms por debajo y por encima de 1× (README, tabla de métricas)
+  // ms por debajo y por encima de 1× (docs/measurement.md, metrics)
   dash_playback_rate: number | null;
   dash_playback_rate_min: number | null;
   dash_playback_rate_max: number | null;
@@ -291,7 +291,7 @@ export interface SampleRow {
   dash_stall_open_since_ms: number | null; // inicio del parón en curso, si lo hay
   dash_player_restarts: number;
   dash_target_ms: number | null;
-  dash_height: number | null; // la que se pinta (videoHeight); hasta el 4-11-2026, la elegida
+  dash_height: number | null; // la que se pinta (videoHeight)
   dash_selected_height: number | null; // la que eligió el ABR y se descarga
   dash_rendition_kbps: number | null;
   dash_quality_switches: number;
@@ -324,10 +324,10 @@ export interface SampleRow {
   moq_bw_estimate_kbps: number | null;
   moq_quality_mode: string;
   moq_switching: string | null;
-  moq_abr: string; // watch (la librería), probe o probe2 (experimento de sondeo y su versión corregida, README 6.3)
+  moq_abr: string; // watch (la librería), probe o probe2 (experimento de sondeo y su versión corregida, docs/adaptation-and-experiments.md)
   moq_probing: number | null; // 1 si había un sondeo en curso en la muestra
   moq_probe_capacity_kbps: number | null; // capacidad estimada en el último sondeo // seamless (original), cancel o priority; vacío sin el parche
-  // Sondeos exactos desde la fila anterior (desde el 6-11-2026): "inicio-fin-resultado;..." en ms del reloj del servidor;
+  // Sondeos exactos desde la fila anterior: "inicio-fin-resultado;..." en ms del reloj del servidor;
   // resultado up (subió), stay (terminó y no cabía), cut (cortado: la actual perdió ritmo) o abort (se cerró a mitad)
   moq_probe_spans: string | null;
   moq_probe_open_since_ms: number | null; // inicio del sondeo en curso, si lo hay
@@ -335,8 +335,8 @@ export interface SampleRow {
   moq_probe_cuts: number | null; // de ellos, cortados (acumulado)
   // Desglose de la latencia por etapas (ms); la suma de las de cada rama es su glass-to-glass
   dash_stage_encode_ms: number | null;
-  dash_stage_ingest_ms: number | null; // desde el 16-11-2026; antes iba dentro de dash_stage_package_ms
-  dash_stage_package_ms: number | null; // desde el 16-11-2026, sin la entrada (dash_stage_ingest_ms)
+  dash_stage_ingest_ms: number | null; // entrada al empaquetador (aparte de dash_stage_package_ms)
+  dash_stage_package_ms: number | null; // sin la entrada (dash_stage_ingest_ms)
   dash_stage_deliver_ms: number | null;
   dash_stage_player_ms: number | null;
   moq_stage_encode_ms: number | null;
@@ -383,7 +383,7 @@ export interface SampleRow {
   net_down_jitter_ms: number | null;
   net_down_loss_pct: number | null;
   net_down_queue_ms: number | null;
-  net_down_shaper: string | null; // cómo limita el caudal el router: tbf o netem (experimento); desde el 19-11-2026
+  net_down_shaper: string | null; // cómo limita el caudal el router: tbf o netem (experimento)
   net_up_rate_kbit: number | null;
   net_up_delay_ms: number | null;
   net_up_jitter_ms: number | null;
@@ -415,7 +415,7 @@ export interface SampleRow {
   versions: string | null; // componentes de terceros desplegados, p. ej. moq-relay=0.17.2;moq-cli=0.14.2
 }
 
-// --- Campañas de medida (README, 4.8; server/app/campaign.py) ---
+// --- Campañas de medida (docs/campaigns.md; server/app/campaign.py) ---
 
 export interface CampaignNetwork {
   label: string;
@@ -432,7 +432,7 @@ export interface CampaignTarget {
 
 export interface CampaignPlan {
   name: string;
-  description?: string; // texto libre; falta en las campañas anteriores al 6-11-2026
+  description?: string; // texto libre, opcional
   streams: Omit<StreamConfig, 'fps'>[];
   networks: CampaignNetwork[];
   targets: CampaignTarget[];
@@ -444,7 +444,7 @@ export interface CampaignPlan {
   // opción; se juntan las pruebas de misma emisión, red y objetivo, de protocolos distintos
   worker_pool?: string[] | null;
   parallel?: boolean;
-  worker_browser?: WorkerBrowser; // solo campañas de prueba del 3-11-2026; ahora es de cada trabajador
+  worker_browser?: WorkerBrowser; // solo en campañas guardadas con un modo para todos; el modo es de cada trabajador
   quality: number | null; // null = la adaptación de cada reproductor
   player_options: PlayerOptions;
   repetitions: number;
@@ -519,10 +519,10 @@ export interface PoolWorker {
   locked: string | null; // una campaña en marcha o en pausa lo usa: no se borra ni cambia de modo
   task: { campaign: string; campaign_name: string; run: string; phase: string; players: PlayerId[] | null } | null;
   // Conectado con otra construcción de la web que la que se sirve (info.build frente a info.latest_build) o sin
-  // decirla (una pestaña de antes del 6-11-2026): no recibe pruebas hasta recargar (README 4.8)
+  // decirla: no recibe pruebas hasta recargar (docs/campaigns.md)
   outdated?: boolean;
   // Otros navegadores con el mismo nombre que laten mientras este lo tiene: esperan sin medir y, si este se desconecta,
-  // uno de ellos ocupa su sitio con el mismo nombre (desde el 6-11-2026)
+  // uno de ellos ocupa su sitio con el mismo nombre
   rivals?: { id: string; ip: string | null; user_agent: string | null; seen_ms: number }[];
 }
 
@@ -531,7 +531,7 @@ export interface Campaign {
   name: string;
   state: CampaignState;
   created_ms: number;
-  archived?: boolean; // archivada: se lista aparte, plegada; no se arranca ni se encola (desde el 6-11-2026)
+  archived?: boolean; // archivada: se lista aparte, plegada; no se arranca ni se encola
   plan: CampaignPlan;
   runs?: CampaignRun[];
   events?: { t_ms: number; message: string }[];
