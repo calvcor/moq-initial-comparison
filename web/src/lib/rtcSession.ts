@@ -57,13 +57,19 @@ export function openWhep(url: string, withAudio: boolean, callbacks: RtcCallback
   };
 }
 
-// Señalización de mediasoup: WebSocket directo al SFU por el router (8189/tcp), sin pasar por el proxy de la página.
-// En una página HTTPS, wss:// con el nombre del certificado de DASH directo (rtc_tls_host); en HTTP, ws:// a la
-// dirección directa (moq_host) o a la de la página.
-export function sfuSignalUrl(status: { rtc_signal_port?: number; rtc_tls_host?: string | null; moq_host?: string | null } | null | undefined) {
+// Señalización de la rama WebRTC, directa al servidor por el router (8189/tcp, en la cola de WebRTC), sin pasar por
+// nginx-web: el WebSocket de mediasoup o el WHEP de MediaMTX. En una página HTTPS, con TLS y el nombre del certificado
+// (rtc_tls_host, SERVER_HOST); en HTTP, sin TLS a moq_host o al host de la página. Devuelve la dirección con http(s)://
+// Con mediasoup, la del WebSocket (ws:// o wss://); con MediaMTX, la URL WHEP del path de la emisión (rtc_path).
+type SignalStatus = {
+  rtc_server?: string; rtc_path?: string; rtc_signal_port?: number; rtc_tls_host?: string | null; moq_host?: string | null;
+} | null | undefined;
+export function rtcSignalUrl(status: SignalStatus) {
   const port = status?.rtc_signal_port ?? 8189;
-  if (window.location.protocol === 'https:') return `wss://${status?.rtc_tls_host || window.location.hostname}:${port}`;
-  return `ws://${status?.moq_host || window.location.hostname}:${port}`;
+  const base = window.location.protocol === 'https:'
+    ? `https://${status?.rtc_tls_host || window.location.hostname}:${port}`
+    : `http://${status?.moq_host || window.location.hostname}:${port}`;
+  return status?.rtc_server === 'mediamtx' ? `${base}/${status.rtc_path ?? 'liveudp'}/whep` : base.replace(/^http/, 'ws');
 }
 
 // Peticiones sobre una conexión: { id, method, data } y su respuesta { id, result } o { id, error }

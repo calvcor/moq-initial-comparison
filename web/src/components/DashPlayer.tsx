@@ -35,8 +35,8 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
   onMetricsUpdate,
 }) => {
   // El navegador conecta siempre al servidor de DASH a través del router, y su propia conexión TCP es la que sufre la
-  // red emulada, como en MoQ y WebRTC. Sin URL (página HTTPS sin DASH_HOST) no hay camino directo y no se reproduce:
-  // no se recurre al punto de entrada, que es un proxy y terminaría la conexión TCP antes de la red emulada.
+  // red emulada, como en MoQ y WebRTC. Sin URL (página HTTPS sin SERVER_HOST) no hay camino directo y no se reproduce:
+  // no se recurre a nginx-web, que es un proxy y terminaría la conexión TCP antes de la red emulada.
   const url = manifestPath ?? '';
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLDivElement | null>(null); // zona de vídeo, la que pasa a pantalla completa
@@ -530,7 +530,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
               : DASH_NEEDS_HOST
           }
         >
-          {url ? t(`Directo · ${new URL(url).host}`, `Direct · ${new URL(url).host}`) : t('Sin camino directo (falta DASH_HOST)', 'No direct path (DASH_HOST missing)')}
+          {url ? t(`Directo · ${new URL(url).host}`, `Direct · ${new URL(url).host}`) : t('Sin camino directo (falta SERVER_HOST)', 'No direct path (SERVER_HOST missing)')}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <label

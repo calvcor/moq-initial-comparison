@@ -28,10 +28,10 @@ It is not one protocol but a stack of several, all mandatory:
 
 **Signalling.** Both ends must agree codecs, addresses and keys before sending anything. WebRTC does not say how to carry that exchange; each server does it its own way:
 
-- **mediasoup (default).** mediasoup is a library that does not speak SDP. The page uses `mediasoup-client` with the testbed's own signalling (`sfu/server.mjs`) over a **WebSocket** connection straight to the SFU on **8189/tcp**, through the emulation router (not through the HTTP entry point), so signalling suffers the same network profile as the video. From an HTTPS page it uses `wss://` with the `DASH_HOST` certificate; from an HTTP page, `ws://` to `MOQ_HOST` or the page's address (`rtc_signal_port` and `rtc_tls_host` in `GET /api/status`). **The session lives as long as that connection**: when the page reloads, the player is unmounted or the browser dies, the SFU closes the session at once.
-- **MediaMTX.** Uses **WHEP** (*WebRTC-HTTP Egress Protocol*), the standard way to play: a single HTTP `POST` with an SDP **offer** in the body and the SDP **answer** in the response, to `/rtc/<path>/whep` through the HTTP entry point. Only signalling goes over HTTP; media then goes directly over UDP.
+- **mediasoup (default).** mediasoup is a library that does not speak SDP. The page uses `mediasoup-client` with the testbed's own signalling (`sfu/server.mjs`) over a **WebSocket** connection straight to the SFU on **8189/tcp**, through the emulation router (not through `nginx-web`), so signalling suffers the same network profile as the video. From an HTTPS page it uses `wss://` with the `SERVER_HOST` certificate; from an HTTP page, `ws://` to the page's address (`rtc_signal_port` and `rtc_tls_host` in `GET /api/status`). **The session lives as long as that connection**: when the page reloads, the player is unmounted or the browser dies, the SFU closes the session at once.
+- **MediaMTX.** Uses **WHEP** (*WebRTC-HTTP Egress Protocol*), the standard way to play: a single HTTP `POST` with an SDP **offer** in the body and the SDP **answer** in the response, to `<host>:8189/<path>/whep`, straight to MediaMTX through the emulation router (HTTPS with the `SERVER_HOST` certificate, plain HTTP in local mode), so like mediasoup's it suffers the network profile. Only signalling goes over HTTP; media then goes over UDP.
 
-**ICE.** The procedure to find a network path between the two ends. Each gathers **candidates** (IP addresses and ports at which it could be reached), exchanges them, and tries combinations until one works. Usually **STUN** servers (to discover the public IP) and **TURN** servers (to relay when there is no direct path) are needed. Here it is simpler: the server has a reachable address and announces it directly as its candidate (`ANNOUNCED_ADDRESS` for mediasoup and `MTX_WEBRTCADDITIONALHOSTS` for MediaMTX, both taken from `MOQ_HOST`, `127.0.0.1` locally). There is no STUN or TURN. All media traffic uses a single UDP port, 8189 (mediasoup's `WebRtcServer`, or MediaMTX's local UDP address), so the router and its queues are the same for both servers.
+**ICE.** The procedure to find a network path between the two ends. Each gathers **candidates** (IP addresses and ports at which it could be reached), exchanges them, and tries combinations until one works. Usually **STUN** servers (to discover the public IP) and **TURN** servers (to relay when there is no direct path) are needed. Here it is simpler: the server has a reachable address and announces it directly as its candidate (mediasoup's `announcedAddress`, the IP that `SERVER_HOST` resolves to or `SERVER_IP`; MediaMTX's `MTX_WEBRTCADDITIONALHOSTS`, `SERVER_IP` or `SERVER_HOST`; `127.0.0.1` in local mode). There is no STUN or TURN. All media traffic uses a single UDP port, 8189 (mediasoup's `WebRtcServer`, or MediaMTX's local UDP address), so the router and its queues are the same for both servers.
 
 **DTLS and SRTP.** Over the chosen path a **DTLS** handshake (TLS adapted to UDP) produces the keys. Media is encrypted with **SRTP**. The certificate fingerprint travels in the signalling, so no certificate authority is needed.
 
@@ -93,7 +93,7 @@ FFmpeg -> UDP 5003 -> tsgate -> FFmpeg (-c copy, one RTP output per rendition) -
 
 **With MediaMTX:**
 
-1. **Ingest.** By default (`RTC_INGEST=udp`) the gate sends the MPEG-TS over UDP straight to MediaMTX, with only the first (highest) video rendition and, with `rtc_audio`, the audio, rewriting the PMT to announce only those tracks; packets pass untouched. There are two fixed paths, `liveudp` (video only) and `liveudpa` (video and audio), because MediaMTX fixes the tracks of a UDP path the first time it reads it. With `RTC_INGEST=rtsp`, an FFmpeg remuxes and publishes over RTSP (path `live`). The player footer shows the mode and the CSV records it in `rtc_ingest`.
+1. **Ingest.** The gate sends the MPEG-TS over UDP straight to MediaMTX, with only the first (highest) video rendition and, with `rtc_audio`, the audio, rewriting the PMT to announce only those tracks; packets pass untouched. There are two fixed paths, `liveudp` (video only) and `liveudpa` (video and audio), because MediaMTX fixes the tracks of a UDP path the first time it reads it. The CSV records it in `rtc_ingest` (`udp`).
 2. **Server.** MediaMTX splits the H.264 into RTP packets and sends them to each connected browser.
 3. **Browser.** `RTCPeerConnection` receives, reorders, decodes and paints.
 
@@ -146,7 +146,7 @@ It receives packets, decrypts them, rebuilds each frame from its pieces, request
 1. **Creates the connection**, without STUN or TURN servers: `new RTCPeerConnection()`.
 2. **Declares what it wants to receive**: one receive-only video transceiver (`addTransceiver('video', { direction: 'recvonly' })`), plus one for audio with `rtc_audio`.
 3. **Generates the SDP offer** and waits for the browser to gather its ICE candidates, up to 2 s.
-4. **Sends it by WHEP**: a `POST` to `/rtc/<path>/whep` (`liveudp`, `liveudpa` with audio, or `live` with the RTSP ingest; the path is given by `rtc_path` in `GET /api/status`) with the offer in the body (`Content-Type: application/sdp`).
+4. **Sends it by WHEP**: a `POST` to `<host>:8189/<path>/whep` (`liveudp`, or `liveudpa` with audio; the path is given by `rtc_path` in `GET /api/status`) with the offer in the body (`Content-Type: application/sdp`).
 5. **Applies the SDP answer** returned by MediaMTX.
 6. **Connects the video**: when the browser signals that the track is arriving, assigns it to the `<video>` (`video.srcObject`).
 
@@ -155,7 +155,7 @@ From step 5 on, the browser and MediaMTX complete ICE and DTLS on their own and 
 **WHEP in detail.** A minimal protocol: all signalling is one request and its response.
 
 ```
-POST /rtc/liveudp/whep
+POST /liveudp/whep
 Content-Type: application/sdp
 
 v=0

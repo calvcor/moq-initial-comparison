@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { DashPlayer } from './DashPlayer';
 import { MoqPlayer } from './MoqPlayer';
 import { RtcPlayer } from './RtcPlayer';
-import { sfuSignalUrl } from '../lib/rtcSession';
+import { rtcSignalUrl } from '../lib/rtcSession';
 import { gridCols } from '../lib/layout';
 import { syncClock, serverNowMs } from '../lib/clock';
 import { PLAYER_IDS, INITIAL_METRICS, IpRates, buildSampleRow } from '../lib/samples';
@@ -407,7 +407,6 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
             <MoqPlayer
               key={`moq-${mounted.run}`}
               url={`https://${status.moq_host || window.location.hostname}:${status.moq_port ?? 4433}/anon`}
-              spkiFingerprint={status.spki_fingerprint}
               timecodes={status.timecodes}
               renditions={status.config.renditions}
               isStreaming={isStreaming}
@@ -423,9 +422,7 @@ export const CampaignWorker: React.FC<{ name?: string | null }> = ({ name = null
               isStreaming={isStreaming}
               server={status.rtc_server ?? 'mediamtx'}
               renditions={status.config.renditions}
-              mtxPath={status.rtc_path ?? 'live'}
-              signalUrl={sfuSignalUrl(status)}
-              ingest={status.rtc_ingest ?? 'rtsp'}
+              signalUrl={rtcSignalUrl(status)}
               withAudio={status.config.rtc_audio}
               streamStartedMs={status.stream_ids?.rtc ?? 0}
               audible={false}

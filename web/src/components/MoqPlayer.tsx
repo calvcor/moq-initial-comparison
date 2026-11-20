@@ -35,7 +35,6 @@ function loadSwitching(): MoqSwitching {
 
 interface MoqPlayerProps {
   url: string;
-  spkiFingerprint?: string;
   isStreaming: boolean;
   timecodes?: TimecodeLayout[];
   renditions?: Rendition[];
@@ -48,7 +47,6 @@ interface MoqPlayerProps {
 
 export const MoqPlayer: React.FC<MoqPlayerProps> = ({
   url,
-  spkiFingerprint: _spkiFingerprint,
   isStreaming,
   timecodes,
   renditions,
@@ -218,7 +216,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
 
     async function initMoQ() {
       try {
-        // 1. Obtener certificado SHA-256 generado dinámicamente por moq-relay
+        // 1. Huella del certificado autofirmado del relay (solo en local; con SERVER_HOST, 404 y se valida la cadena)
         let hexFingerprint = '';
         try {
           const res = await fetch('/certificate.sha256', { cache: 'no-store' });

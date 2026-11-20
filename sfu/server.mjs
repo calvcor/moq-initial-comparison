@@ -6,25 +6,39 @@
 //   MPEG-TS hacia MediaMTX). El simulcast son los SSRC de las calidades, de la más baja a la más alta, que es el orden
 //   de mediasoup. Todo llega por un solo puerto, y lo que entra por él se aprende del primer paquete (comedia).
 // - Espectadores: una conexión WebSocket por espectador, directa a este servidor por el router (8189/tcp, sin pasar
-//   por el proxy de la página), como la aplicación del paper. Mientras está abierta, la sesión vive; si la página se
+//   por nginx-web), como la aplicación del paper. Mientras está abierta, la sesión vive; si la página se
 //   recarga o Chrome muere, el sistema del cliente cierra la conexión y la sesión se cierra al momento (con peticiones
 //   HTTP sueltas, el SFU no se enteraba y seguía enviando ~29 s, hasta dar ICE por perdido). El vídeo va después
 //   directo por UDP 8189, también por el router.
-// - TLS: con DASH_HOST y su certificado (el de DASH directo), el mismo puerto acepta wss://, para páginas en HTTPS; sin
-//   él, ws:// (en local). Se distinguen por el primer byte de la conexión.
+// - TLS: con SERVER_HOST y su certificado (el del contenedor cert), el mismo puerto acepta wss://, para páginas en HTTPS;
+//   sin él, ws:// (en local). Se distinguen por el primer byte de la conexión.
+// - Candidatos ICE: anuncian SERVER_IP o, si no se da, la IP a la que resuelve SERVER_HOST; en local, 127.0.0.1.
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import { readFileSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
 import * as mediasoup from 'mediasoup';
 import { WebSocketServer } from 'ws';
 
 const PORT = Number(process.env.PORT ?? 8890);
 const RTC_PORT = Number(process.env.RTC_PORT ?? 8189);
 const SIGNAL_PORT = Number(process.env.SIGNAL_PORT ?? 8189); // TCP: el mismo número que el vídeo, que va por UDP
-const DASH_HOST = (process.env.DASH_HOST ?? '').trim();
-const ANNOUNCED = process.env.ANNOUNCED_ADDRESS || '127.0.0.1';
+const SERVER_HOST = (process.env.SERVER_HOST ?? '').trim();
+async function announcedAddress() {
+	const ip = (process.env.SERVER_IP ?? '').trim();
+	if (ip) return ip;
+	if (!SERVER_HOST) return '127.0.0.1';
+	try {
+		return (await lookup(SERVER_HOST, { family: 4 })).address;
+	} catch (err) {
+		// Sin dirección que anunciar, el navegador no podría recibir el vídeo: se sale y Docker lo reintenta
+		console.error(`no se puede resolver ${SERVER_HOST} (${err.code ?? err}); pon su IP en SERVER_IP en el .env`);
+		process.exit(1);
+	}
+}
+const ANNOUNCED = await announcedAddress();
 // Búferes de los sockets UDP: el tamaño por defecto del sistema es menor que una ráfaga de keyframe
 const BUFFERS = { sendBufferSize: 4 << 20, recvBufferSize: 4 << 20 };
 
@@ -183,11 +197,11 @@ const wss = new WebSocketServer({ noServer: true });
 const upgrade = (req, socket, head) => wss.handleUpgrade(req, socket, head, handleViewer);
 const notFound = (_, res) => { res.writeHead(404); res.end(); };
 const plain = http.createServer(notFound).on('upgrade', upgrade);
-// Con certificado, servidor TLS; se vuelve a leer cada minuto, porque dash-cert lo emite y lo renueva
+// Con certificado, servidor TLS; se vuelve a leer cada minuto, porque el contenedor cert lo emite y lo renueva
 let secure = null, certStamp = 0;
 function loadCert() {
-	if (!DASH_HOST) return;
-	const cert = `/certs/certificates/${DASH_HOST}.crt`, key = `/certs/certificates/${DASH_HOST}.key`;
+	if (!SERVER_HOST) return;
+	const cert = `/certs/${SERVER_HOST}.crt`, key = `/certs/${SERVER_HOST}.key`;
 	try {
 		const stamp = statSync(cert).mtimeMs;
 		if (stamp === certStamp) return;
@@ -195,7 +209,7 @@ function loadCert() {
 		if (secure) secure.setSecureContext(options);
 		else secure = https.createServer(options, notFound).on('upgrade', upgrade);
 		certStamp = stamp;
-		console.log(`señalización con TLS para ${DASH_HOST}`);
+		console.log(`señalización con TLS para ${SERVER_HOST}`);
 	} catch {}
 }
 loadCert();

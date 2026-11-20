@@ -23,8 +23,6 @@ MIME = {"mpd": "application/dash+xml", "m4s": "video/mp4"}
 SEGMENT_RE = re.compile(r"chunk-stream(\d+)-(\d+)\.m4s$")
 INIT_RE = re.compile(r"init-stream(\d+)\.m4s$")
 AST_RE = re.compile(rb'availabilityStartTime="[^"]*"')
-UTC_VALUE = b'value="/api/utc"'
-ORIGIN_RE = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?")
 
 
 class LiveFile:
@@ -182,6 +180,14 @@ class Origin:
 origin = Origin()
 
 
+# Hora del servidor para el UTCTiming del manifiesto (xs:dateTime). Va con el resto de DASH: dash.js la pide a la
+# misma dirección que el manifiesto, a través del router, y sincroniza su reloj por el mismo camino que el vídeo, con la
+# red emulada (compensa la mitad del tiempo de ida y vuelta de la petición). Antes que la ruta genérica de GET.
+@router.get("/media/dash/utc")
+async def get_utc():
+    now = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return Response(now, media_type="text/plain", headers={"Cache-Control": "no-store"})
+
 @router.put("/media/dash/{name}")
 async def put_file(name: str, request: Request):
     if name.endswith(".mpd"):
@@ -239,12 +245,6 @@ async def get_file(name: str, request: Request):
         return Response(headers=headers, media_type=media_type)
     if is_manifest:
         body = AST_RE.sub(f'availabilityStartTime="{origin.format_ast()}"'.encode(), live.chunks[0])
-        # Con DASH directo el manifiesto llega desde otro origen, y una URL de UTCTiming relativa haría que
-        # dash.js sincronizara su reloj a través del router, con el retardo emulado. Se le da la del origen
-        # de la página, que no pasa por la red emulada.
-        page = request.headers.get("origin", "")
-        if ORIGIN_RE.fullmatch(page):
-            body = body.replace(UTC_VALUE, f'value="{page}/api/utc"'.encode())
         return Response(body, headers=headers, media_type=media_type)
     if live.done:
         return Response(b"".join(live.chunks), headers=headers, media_type=media_type)

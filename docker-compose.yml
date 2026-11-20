@@ -1,28 +1,32 @@
-# Un único punto de entrada HTTP (edge, puerto 80) más los puertos UDP de MoQ (4433) y WebRTC (8189). Un proxy inverso externo
-# con HTTPS (p. ej. Nginx Proxy Manager) solo tiene que reenviar al puerto 80.
-# Red de dos tramos: DASH y MoQ solo se alcanzan a través del router, que emula el enlace.
-# La ingesta (orquestador -> nginx / relay) va por la red interna "core" y no se degrada.
-#
-# Variables opcionales (fichero .env): HTTP_PORT (80), MOQ_PORT (4433), PUBLIC_HOST (localhost), el nombre
-# con el que el navegador accede, para el certificado autofirmado del relay, y MOQ_HOST, la dirección a la
-# que el navegador debe conectar por MoQ cuando el nombre de la página apunta a un proxy y no a este servidor.
-# DASH va siempre directo al router, como MoQ y WebRTC, nunca por el punto de entrada. Con DASH_HOST (un nombre DNS que
-# apunte a este servidor) y DUCKDNS_TOKEN (para obtener su certificado), por HTTPS a DASH_PORT (8443); sin ellas, solo
-# desde páginas HTTP, por HTTP a DASH_HTTP_PORT (8080). En una página HTTPS sin DASH_HOST no hay DASH.
+# Banco de pruebas en Docker Compose (docs/deployment.md). Dos modos, según el .env:
+# - En local, sin .env: http://localhost, sin certificado; el relay de MoQ genera uno autofirmado que el navegador fija
+#   por su huella, y DASH va por HTTP (8080).
+# - En un servidor: SERVER_HOST, un nombre DNS que apunta a él, y ACME_DNS con su token (.env.template). El contenedor
+#   cert obtiene un certificado de Let's Encrypt para ese nombre, que usan la página (443), DASH (8443), el relay (4433) y
+#   la señalización de mediasoup (8189/tcp). La página queda en https://<SERVER_HOST>.
+# Red de dos tramos: DASH, MoQ y WebRTC solo se alcanzan a través del router, que emula el enlace. La ingesta
+# (orquestador -> nginx-dash / relay / SFU) va por la red interna "core" y no se degrada. La página (nginx-web) no
+# pasa por el router.
 #
 # Las versiones de los servidores de terceros van fijadas (MOQ_RELAY_VERSION, MEDIAMTX_VERSION): con
 # "latest" cambiarían solas al volver a descargar la imagen y dos medidas dejarían de ser comparables.
 # Para actualizar, cambiar aquí los dos valores por defecto de cada una y volver a desplegar.
 services:
-  # Entrada HTTP única: reparte entre dashboard, API y huella del certificado (DASH no pasa por aquí)
-  edge:
+  # La página, la API y la huella del relay (DASH no pasa por aquí). Con SERVER_HOST, también por HTTPS
+  nginx-web:
     image: nginx:alpine
-    container_name: testbed-edge
+    container_name: testbed-nginx-web
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     ports:
-      - "${HTTP_PORT:-80}:80"
+      - "80:80"
+      - "443:443"
+    environment:
+      - SERVER_HOST=${SERVER_HOST:-}
     volumes:
-      - ./edge/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./edge/locations.conf:/etc/nginx/locations.conf:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ./nginx/web.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/web-tls.conf.template:/etc/nginx/tls.conf.template:ro
+      - ./certs:/certs:ro
     networks:
       - default
       - core
@@ -47,11 +51,11 @@ services:
       - MEDIAMTX_IP=172.30.50.12
       - SFU_IP=172.30.50.13
     ports:
-      - "${MOQ_PORT:-4433}:4433/udp"   # MoQ / QUIC -> moq-relay:4433 (el navegador va directo)
-      - "8189:8189/udp"                # WebRTC (ICE, DTLS, SRTP) -> servidor WebRTC:8189 (el navegador va directo)
-      - "8189:8189/tcp"                # WebRTC con mediasoup: señalización WebSocket -> sfu:8189 (el navegador va directo)
-      - "${DASH_PORT:-8443}:8443/tcp"  # LL-DASH con TLS -> nginx-dash:443 (el navegador va directo, si hay DASH_HOST)
-      - "${DASH_HTTP_PORT:-8080}:8080/tcp"  # LL-DASH sin TLS -> nginx-dash:80 (el navegador va directo: sin DASH_HOST, desde páginas HTTP)
+      - "4433:4433/udp"  # MoQ / QUIC -> moq-relay:4433
+      - "8189:8189/udp"  # WebRTC (ICE, DTLS, SRTP) -> servidor WebRTC:8189
+      - "8189:8189/tcp"  # WebRTC con mediasoup: señalización WebSocket -> sfu:8189
+      - "8443:8443/tcp"  # LL-DASH con TLS -> nginx-dash:443 (con SERVER_HOST)
+      - "8080:8080/tcp"  # LL-DASH sin TLS -> nginx-dash:80 (en local, desde páginas HTTP)
     networks:
       default:
       core:
@@ -60,7 +64,7 @@ services:
 
   # 1. MoQ Relay: la imagen oficial publicada (moqdev/moq-relay, versión fijada) o, con MOQ_RELAY_FROM=git,
   # compilado desde MOQ_RELAY_COMMIT (relay/Dockerfile). Los valores por defecto repiten los
-  # de relay/Dockerfile.
+  # de relay/Dockerfile. El certificado lo elige relay/entrypoint.sh: el de SERVER_HOST o uno autofirmado.
   moq-relay:
     build:
       context: ./relay
@@ -70,11 +74,10 @@ services:
         MOQ_RELAY_COMMIT: ${MOQ_RELAY_COMMIT:-c19c723d90c6e8df60c9a656cc2a4d92ee358295}
     image: testbed-moq-relay
     container_name: testbed-moq-relay
-    command: >
-      --listen 0.0.0.0:4433
-      --listen-tls-generate ${PUBLIC_HOST:-localhost}
-      --web-http-listen 0.0.0.0:8081
-      --auth-public anon/**
+    environment:
+      - SERVER_HOST=${SERVER_HOST:-}
+    volumes:
+      - ./certs:/certs:ro
     networks:
       core:
         ipv4_address: 172.30.50.11
@@ -86,13 +89,13 @@ services:
     build: ./sfu
     container_name: testbed-sfu
     environment:
-      # Como en MediaMTX: dirección que se anuncia al navegador en los candidatos ICE
-      - ANNOUNCED_ADDRESS=${MOQ_HOST:-127.0.0.1}
+      # Con SERVER_HOST, anuncia en los candidatos ICE la IP a la que resuelve (o SERVER_IP, si se da) y la señalización
+      # acepta también wss:// con su certificado; sin él, 127.0.0.1 y solo ws://
+      - SERVER_HOST=${SERVER_HOST:-}
+      - SERVER_IP=${SERVER_IP:-}
       - SFU_TRACE=${SFU_TRACE:-}  # 1: traza de la estimación y los sondeos en su registro (diagnóstico)
-      # Con DASH_HOST y su certificado (el de DASH directo), la señalización acepta también wss://, para páginas en HTTPS
-      - DASH_HOST=${DASH_HOST:-}
     volumes:
-      - ./certs/dash:/certs:ro
+      - ./certs:/certs:ro
     networks:
       core:
         ipv4_address: 172.30.50.13
@@ -100,55 +103,68 @@ services:
 
   # Servidor WebRTC alternativo (RTC_SERVER=mediamtx): recibe la calidad más alta, sin recodificar, y la sirve por WHEP
   mediamtx:
-    image: bluenviron/mediamtx:${MEDIAMTX_VERSION:-1.21.3}
+    build:
+      context: ./mediamtx
+      args:
+        MEDIAMTX_VERSION: ${MEDIAMTX_VERSION:-1.21.3}
+    image: testbed-mediamtx
     container_name: testbed-mediamtx
     environment:
-      # Dirección que se anuncia al navegador en los candidatos ICE: debe ser la de este servidor tal como
-      # la alcanza el navegador (la misma que MOQ_HOST detrás de un proxy; 127.0.0.1 en local)
-      - MTX_WEBRTCADDITIONALHOSTS=${MOQ_HOST:-127.0.0.1}
+      # Señalización WHEP en 8189/tcp, por el router como la de mediasoup; con SERVER_HOST, por HTTPS con su
+      # certificado (mediamtx/entrypoint.sh)
+      - SERVER_HOST=${SERVER_HOST:-}
+      - MTX_WEBRTCADDRESS=:8189
+      # Dirección que se anuncia al navegador en los candidatos ICE: la de este servidor tal como la alcanza el
+      # navegador (SERVER_IP o, si no se da, SERVER_HOST; 127.0.0.1 en local)
+      - MTX_WEBRTCADDITIONALHOSTS=${SERVER_IP:-${SERVER_HOST:-127.0.0.1}}
       - MTX_WEBRTCLOCALUDPADDRESS=:8189
       - MTX_WEBRTCIPSFROMINTERFACES=no
-      # Ingesta directa por UDP (RTC_INGEST=udp, por defecto): la compuerta de WebRTC envía aquí el MPEG-TS de la
-      # calidad más alta, sin audio a 5003 (liveudp) y con audio a 5013 (liveudpa): MediaMTX fija las pistas de
-      # un path UDP al empezar a leerlo. El path live, con publicación por RTSP, sigue para RTC_INGEST=rtsp.
+      # Ingesta directa por UDP: la compuerta de WebRTC envía aquí el MPEG-TS de la calidad más alta, sin audio a
+      # 5003 (liveudp) y con audio a 5013 (liveudpa): MediaMTX fija las pistas de un path UDP al empezar a leerlo.
       - MTX_PATHS_LIVEUDP_SOURCE=udp+mpegts://0.0.0.0:5003
       - MTX_PATHS_LIVEUDPA_SOURCE=udp+mpegts://0.0.0.0:5013
+      - MTX_RTSP=no
       - MTX_RTMP=no
       - MTX_HLS=no
       - MTX_SRT=no
+      - MTX_MOQ=no  # su propio servidor MoQ, encendido por defecto: aquí no se usa
+    volumes:
+      - ./certs:/certs:ro
     networks:
       core:
         ipv4_address: 172.30.50.12
     restart: unless-stopped
 
-  # 2. Servidor Nginx para entrega HTTP de LL-DASH: reenvía sin búfer al origen chunked del orquestador
+  # 2. LL-DASH, solo a través del router: reenvía sin búfer al origen chunked del orquestador. Con SERVER_HOST, por
+  # HTTPS (8443 en el router); sin él, por HTTP (8080)
   nginx-dash:
     image: nginx:alpine
     container_name: testbed-nginx-dash
-    entrypoint: ["/bin/sh", "/dash-entrypoint.sh"]
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     environment:
-      - DASH_HOST=${DASH_HOST:-}
+      - SERVER_HOST=${SERVER_HOST:-}
     volumes:
-      - ./server/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./server/dash-direct.conf.template:/etc/nginx/direct.conf.template:ro
-      - ./server/dash-entrypoint.sh:/dash-entrypoint.sh:ro
-      - ./certs/dash:/certs:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ./nginx/dash.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/dash-tls.conf.template:/etc/nginx/tls.conf.template:ro
+      - ./certs:/certs:ro
     networks:
       core:
         ipv4_address: 172.30.50.10
     restart: unless-stopped
 
-  # Certificado del puerto directo de DASH (Let's Encrypt, reto DNS de DuckDNS). Inactivo sin DASH_HOST.
-  dash-cert:
+  # Certificado de Let's Encrypt para SERVER_HOST (reto DNS con la API ACME_DNS de acme.sh). Inactivo sin SERVER_HOST.
+  # Lee el .env entero: las variables del token tienen el nombre que espera acme.sh (DuckDNS_Token, CF_Token...)
+  cert:
     image: neilpang/acme.sh:3.1.1
-    container_name: testbed-dash-cert
-    entrypoint: ["/bin/sh", "/dash-cert.sh"]
-    environment:
-      - DASH_HOST=${DASH_HOST:-}
-      - DUCKDNS_TOKEN=${DUCKDNS_TOKEN:-}
+    container_name: testbed-cert
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    env_file:
+      - path: .env
+        required: false
     volumes:
-      - ./server/dash-cert.sh:/dash-cert.sh:ro
-      - ./certs/dash:/certs
+      - ./cert/entrypoint.sh:/entrypoint.sh:ro
+      - ./certs:/certs
     restart: unless-stopped
 
   # 3. Orquestador FastAPI + FFmpeg (Codificación de BBB y publicación dual)
@@ -166,18 +182,12 @@ services:
     init: true  # recoge los procesos FFmpeg huérfanos al reiniciar pipelines
     environment:
       - MOQ_RELAY_URL=https://moq-relay:4433/anon
-      - ROUTER_URL=http://172.30.50.2:9000
-      - MOQ_PORT=${MOQ_PORT:-4433}
-      - MOQ_HOST=${MOQ_HOST:-}
-      - DASH_HOST=${DASH_HOST:-}
-      - DASH_PORT=${DASH_PORT:-8443}
-      - DASH_HTTP_PORT=${DASH_HTTP_PORT:-8080}
+      - SERVER_HOST=${SERVER_HOST:-}  # nombre al que el navegador pide DASH, MoQ y la señalización; vacío en local
       # Cámara RTSP como fuente alternativa al bucle (docs/measurement.md); la URL puede llevar credenciales
       - CAMERA_RTSP_URL=${CAMERA_RTSP_URL:-}
       - CAMERA_FPS=${CAMERA_FPS:-}
-      - RTC_PUBLISH_URL=rtsp://172.30.50.12:8554/live
       - RTC_SERVER=${RTC_SERVER:-mediasoup}  # mediasoup: SFU con simulcast; mediamtx: una calidad, sin adaptación
-      - RTC_INGEST=${RTC_INGEST:-udp}  # solo con MediaMTX. udp: directo; rtsp: con un FFmpeg intermedio que publica por RTSP
+      - RTC_PACING_FACTOR=${RTC_PACING_FACTOR:-2.5}  # ritmo del pacer de la ingesta (rtc_pacing) respecto al bitrate
       # Solo para mostrarlas en el dashboard: deben coincidir con las etiquetas de imagen de arriba
       - MOQ_RELAY_VERSION=${MOQ_RELAY_VERSION:-0.17.9}
       # Con el relay compilado (MOQ_RELAY_FROM=git), el panel y el CSV lo muestran como git@<commit>

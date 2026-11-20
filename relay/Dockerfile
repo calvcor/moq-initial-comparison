@@ -29,3 +29,6 @@ COPY --from=relay-build /usr/local/bin/moq-relay /bin/moq-relay
 ENTRYPOINT ["/bin/moq-relay"]
 
 FROM relay-${MOQ_RELAY_FROM}
+# Elige el certificado (el de SERVER_HOST o uno autofirmado) y arranca el relay (relay/entrypoint.sh)
+COPY entrypoint.sh /relay-entrypoint.sh
+ENTRYPOINT ["/bin/sh", "/relay-entrypoint.sh"]

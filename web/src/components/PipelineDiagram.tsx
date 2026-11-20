@@ -128,18 +128,18 @@ const LANES: { id: LaneId; title: string; color: string; bar: string; stages: St
         name: t('Entrada al empaquetador', 'Packager ingest'),
         nodes: ['tsgate'],
         includes:
-          t('Tiempo que el frame, ya codificado, espera a que el FFmpeg que lo publica por RTSP lo acepte. tsgate le entrega los datos por una tubería y se bloquea si no la vacía.', 'Time the already encoded frame waits for the FFmpeg that publishes it over RTSP to accept it. tsgate hands it the data through a pipe and blocks if it is not drained.'),
+          t('Tiempo que el frame, ya codificado, pasa en tsgate antes de salir por UDP hacia MediaMTX. Con la ingesta directa no hay nadie que pueda frenarla, así que debería ser casi cero.', 'Time the already encoded frame spends in tsgate before leaving over UDP to MediaMTX. With direct ingest nothing can hold it back, so it should be almost zero.'),
         from: t('la llegada del frame al socket de tsgate', 'the arrival of the frame at the tsgate socket'),
-        to: t('el instante en que tsgate lo lee y lo escribe hacia FFmpeg', 'the instant tsgate reads it and writes it to FFmpeg'),
+        to: t('el instante en que tsgate lo lee y lo envía por UDP a MediaMTX', 'the instant tsgate reads it and sends it over UDP to MediaMTX'),
         uncertainty: 'server',
       },
       {
         key: 'transport',
         name: t('Publicación y transporte', 'Publishing and transport'),
-        nodes: ['FFmpeg (RTSP)', 'MediaMTX', t('Router (emulación)', 'Router (emulation)'), t('Red SRTP', 'SRTP network')],
+        nodes: ['MediaMTX', t('Router (emulación)', 'Router (emulation)'), t('Red SRTP', 'SRTP network')],
         includes:
-          t('Reempaquetado a RTSP, MediaMTX y la red juntos: no se pueden separar sin instrumentar MediaMTX. Incluye las retransmisiones que pida el navegador si hay pérdidas.', 'Repackaging to RTSP, MediaMTX and the network together: they cannot be separated without instrumenting MediaMTX. Includes the retransmissions the browser requests if there is loss.'),
-        from: t('la entrega del frame al FFmpeg que publica', 'the delivery of the frame to the publishing FFmpeg'),
+          t('Lectura del MPEG-TS en MediaMTX, reempaquetado a RTP y la red, juntos: no se pueden separar sin instrumentar MediaMTX. Incluye las retransmisiones que pida el navegador si hay pérdidas.', 'MPEG-TS reading in MediaMTX, repackaging to RTP and the network, together: they cannot be separated without instrumenting MediaMTX. Includes the retransmissions the browser requests if there is loss.'),
+        from: t('el envío del frame por UDP a MediaMTX', 'the sending of the frame over UDP to MediaMTX'),
         to: t('la hora a la que el navegador recibe el último paquete de ese frame (la da el propio navegador con cada frame)', 'the time at which the browser receives the last packet of that frame (reported by the browser itself with each frame)'),
         uncertainty: 'both',
       },
@@ -155,22 +155,6 @@ const LANES: { id: LaneId; title: string; color: string; bar: string; stages: St
     ],
   },
 ];
-
-// Con la ingesta directa de WebRTC (RTC_INGEST=udp) no hay FFmpeg intermedio: tsgate envía el MPEG-TS
-// por UDP a MediaMTX. Cambian las etapas que lo mencionan.
-const RTC_UDP_STAGES: Record<string, Partial<Stage>> = {
-  ingest: {
-    includes:
-      t('Tiempo que el frame, ya codificado, pasa en tsgate antes de salir por UDP hacia MediaMTX. Con la ingesta directa no hay nadie que pueda frenarla, así que debería ser casi cero.', 'Time the already encoded frame spends in tsgate before leaving over UDP to MediaMTX. With direct ingest nothing can hold it back, so it should be almost zero.'),
-    to: t('el instante en que tsgate lo lee y lo envía por UDP a MediaMTX', 'the instant tsgate reads it and sends it over UDP to MediaMTX'),
-  },
-  transport: {
-    nodes: ['MediaMTX', t('Router (emulación)', 'Router (emulation)'), t('Red SRTP', 'SRTP network')],
-    includes:
-      t('Lectura del MPEG-TS en MediaMTX, reempaquetado a RTP y la red, juntos: no se pueden separar sin instrumentar MediaMTX. Incluye las retransmisiones que pida el navegador si hay pérdidas.', 'MPEG-TS reading in MediaMTX, repackaging to RTP and the network, together: they cannot be separated without instrumenting MediaMTX. Includes the retransmissions the browser requests if there is loss.'),
-    from: t('el envío del frame por UDP a MediaMTX', 'the sending of the frame over UDP to MediaMTX'),
-  },
-};
 
 // Con mediasoup (RTC_SERVER=mediasoup): FFmpeg pasa el MPEG-TS a RTP y el relay junta las pistas en un socket
 const RTC_RTP_STAGES: Record<string, Partial<Stage>> = {
@@ -188,7 +172,7 @@ const RTC_RTP_STAGES: Record<string, Partial<Stage>> = {
 };
 
 interface PipelineDiagramProps {
-  rtcIngest?: 'udp' | 'rtsp' | 'rtp';
+  rtcIngest?: 'udp' | 'rtsp' | 'rtp'; // rtsp solo en medidas guardadas antiguas
   players: Record<LaneId, boolean>;
   stages: Record<LaneId, StageBreakdown | null | undefined>;
   latency: Record<LaneId, number | null>;
@@ -232,7 +216,8 @@ const Particles: React.FC<{ stages: Stage[]; breakdown?: StageBreakdown | null; 
 };
 
 export const PipelineDiagram: React.FC<PipelineDiagramProps> = ({ rtcIngest, players, stages: data, latency }) => {
-  const rtcStages = rtcIngest === 'udp' ? RTC_UDP_STAGES : rtcIngest === 'rtp' ? RTC_RTP_STAGES : null;
+  // Las etapas base son las de MediaMTX (ingesta UDP directa); con mediasoup cambian las que mencionan la ingesta
+  const rtcStages = rtcIngest === 'rtp' ? RTC_RTP_STAGES : null;
   const allLanes = rtcStages
     ? LANES.map((l) => (l.id === 'rtc' ? { ...l, stages: l.stages.map((st) => ({ ...st, ...rtcStages[st.key] })) } : l))
     : LANES;

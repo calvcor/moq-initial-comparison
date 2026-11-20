@@ -25,7 +25,7 @@ git clone <repository-url> && cd <repository>
 docker compose up -d --build
 ```
 
-Open `http://localhost`. Locally no `.env` is needed. To deploy on a server, copy one of the two templates to `.env` and fill it in: [.env.template](.env.template) for a server behind an HTTPS reverse proxy, or [.env.tls.template](.env.tls.template) for a server with its own certificate. See [docs/deployment.md](docs/deployment.md).
+Open `http://localhost`. Locally no `.env` is needed. To deploy on a server, give it a DNS name, copy [.env.template](.env.template) to `.env` and fill in that name and the DNS provider used to obtain its certificate. The page is then at `https://<name>`. Update a server with `scripts/deploy.sh`. See [docs/deployment.md](docs/deployment.md).
 
 ## Documentation
 

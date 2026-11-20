@@ -254,7 +254,7 @@ All branches demultiplex (separate by PID, rebuild PES, extract frames with thei
 | DASH | `ffmpeg -f dash` (`-c copy`) | All video tracks and the audio | CMAF fragments: each frame goes into an `mdat` and its PTS into the `moof` timing. |
 | MoQ | `moq import ts` | All video tracks and the audio | One track per PID; each frame becomes a MoQ frame with its timestamp; each keyframe opens a group. |
 | WebRTC, `RTC_SERVER=mediasoup` (default) | `ffmpeg -c copy -f rtp`, one output per rendition, then `rtprelay.py` to mediasoup | All video tracks, and the audio with `rtc_audio` | RTP packets per rendition (one SSRC each), which the SFU forwards to the browser. |
-| WebRTC, `RTC_SERVER=mediamtx` | MediaMTX reading MPEG-TS over UDP from the gate (or, with `RTC_INGEST=rtsp`, an `ffmpeg -f rtsp` publisher) | Only the first video (PID 256), and the audio with `rtc_audio` | RTP packets to the browser. |
+| WebRTC, `RTC_SERVER=mediamtx` | MediaMTX reading MPEG-TS over UDP from the gate | Only the first video (PID 256), and the audio with `rtc_audio` | RTP packets to the browser. |
 
 None re-encodes: the H.264 bytes are unchanged; only the MPEG-TS wrapping is discarded (the MoQ importer summarises the tables in its catalog).
 

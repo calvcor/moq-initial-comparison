@@ -8,7 +8,6 @@ import subprocess
 import threading
 import logging
 import time
-from datetime import datetime, timezone
 from typing import Literal, Optional
 from urllib.parse import urlsplit
 import requests
@@ -47,23 +46,19 @@ app.include_router(origin_router)
 # Los empaquetadores publican en el origen en memoria de este mismo proceso (ver origin.py)
 DASH_PUBLISH_URL = "http://127.0.0.1:8000/media/dash/manifest.mpd"
 # Agente del router que emula la red entre el navegador y los servidores finales (ver router/agent.py)
-ROUTER_URL = os.getenv("ROUTER_URL", "http://172.30.50.2:9000")
+ROUTER_URL = os.getenv("ROUTER_URL", "http://router:9000")
 # Marca de "detenido a mano", junto al vídeo para que sobreviva a reinicios del contenedor
 STOPPED_MARKER = os.path.join(os.path.dirname(VIDEO_FILE), ".stopped")
 PACKAGERS = ("dash_pipeline", "moq_pipeline", "rtc_pipeline")
-RTC_PUBLISH_URL = os.getenv("RTC_PUBLISH_URL", "rtsp://172.30.50.12:8554/live")
-# Ingesta de la rama WebRTC. "udp" (por defecto): la compuerta envía el MPEG-TS por UDP directamente a MediaMTX,
-# que lo lee en el path liveudp. "rtsp": con un FFmpeg intermedio que lo remultiplexa y lo publica por
-# RTSP en el path live. Para usarla basta RTC_INGEST=rtsp en el .env y recrear el orquestador.
-RTC_INGEST = "rtsp" if os.getenv("RTC_INGEST", "udp").strip().lower() == "rtsp" else "udp"
+# Con MediaMTX, la compuerta envía el MPEG-TS por UDP directamente a MediaMTX, sin FFmpeg intermedio.
 # MediaMTX fija las pistas de un path UDP la primera vez que lo lee y no las vuelve a leer: con y sin audio
 # van a paths distintos, cada uno en su puerto (ver docker-compose.yml).
-RTC_UDP_HOST = os.getenv("RTC_UDP_HOST", "172.30.50.12")
+RTC_UDP_HOST = os.getenv("RTC_UDP_HOST", "mediamtx")
 # Servidor de la rama WebRTC. "mediasoup" (por defecto): SFU con simulcast, cada espectador recibe la capa que elige
 # mediasoup. "mediamtx": una sola calidad sin adaptación. Para usarlo basta RTC_SERVER=mediamtx en
 # el .env y recrear el router y el orquestador (docs/architecture.md): los dos servidores están siempre levantados.
 RTC_SERVER = "mediamtx" if os.getenv("RTC_SERVER", "mediasoup").strip().lower() == "mediamtx" else "mediasoup"
-SFU_URL = os.getenv("SFU_URL", "http://172.30.50.13:8890")
+SFU_URL = os.getenv("SFU_URL", "http://sfu:8890")
 SFU_HOST = urlsplit(SFU_URL).hostname
 RTPRELAY = os.path.join(os.path.dirname(__file__), "rtprelay.py")
 # Ingesta de mediasoup: un puerto RTP y su RTCP por pista, en este proceso, hacia el relay
@@ -75,21 +70,18 @@ RTP_FIRST_SSRC, RTP_AUDIO_SSRC = 0x11110000, 0x11119999
 
 def rtc_path() -> str:
     """Path de MediaMTX que lleva la emisión de WebRTC con la configuración actual."""
-    if RTC_INGEST == "rtsp":
-        return "live"
     return "liveudpa" if current_config.rtc_audio else "liveudp"
 TSGATE = os.path.join(os.path.dirname(__file__), "tsgate.py")
-# Reloj que usará dash.js; debe ser el mismo con el que se calcula el availabilityStartTime
-# Relativa al manifiesto: vale para cualquier nombre de host y para HTTP o HTTPS
-UTC_TIMING_URL = os.getenv("UTC_TIMING_URL", "/api/utc")
-CERTS_DIR = "/certs"
+# Reloj que usará dash.js; debe ser el mismo con el que se calcula el availabilityStartTime. Lo sirve el origen
+# (origin.py), y la URL es relativa al manifiesto: dash.js la pide por el router, como el vídeo
+UTC_TIMING_URL = os.getenv("UTC_TIMING_URL", "/media/dash/utc")
 
-# DASH va siempre directo al router, como MoQ y WebRTC, nunca por el punto de entrada ni por un proxy delante de la
-# página. Con DASH_HOST (nombre DNS que apunta a este servidor), por HTTPS a DASH_PORT; sin él, solo desde páginas HTTP,
-# por HTTP a DASH_HTTP_PORT. Los dos los reenvía el router a nginx-dash.
-DASH_HOST = os.getenv("DASH_HOST", "").strip()
-DASH_PORT = int(os.getenv("DASH_PORT", "8443"))
-DASH_HTTP_PORT = int(os.getenv("DASH_HTTP_PORT", "8080"))
+# Nombre DNS de este servidor (docs/deployment.md), al que el navegador pide DASH, MoQ y la señalización de mediasoup,
+# todos con el certificado de ese nombre. Vacío en local: el host de la página y, para DASH, HTTP.
+SERVER_HOST = os.getenv("SERVER_HOST", "").strip()
+# DASH va siempre al router, como MoQ y WebRTC, nunca por nginx-web: con SERVER_HOST, por HTTPS al 8443; sin él, solo
+# desde páginas HTTP, por HTTP al 8080. Los dos los reenvía el router a nginx-dash.
+DASH_PORT, DASH_HTTP_PORT, MOQ_PORT = 8443, 8080, 4433
 
 # Cámara RTSP como fuente alternativa al bucle. La URL suele llevar usuario y contraseña: solo vive en el
 # .env y nunca sale por la API ni al CSV. CAMERA_FPS fuerza la cadencia si la cámara no la anuncia bien.
@@ -101,8 +93,8 @@ CAMERA_FPS = os.getenv("CAMERA_FPS", "").strip()
 REFERENCE_QP = 10
 
 def dash_url() -> Optional[str]:
-    """URL del manifiesto con DASH_HOST; sin él, None: la arma el navegador con su host y DASH_HTTP_PORT (web/src/lib/dashUrl.ts)."""
-    return f"https://{DASH_HOST}:{DASH_PORT}/media/dash/manifest.mpd" if DASH_HOST else None
+    """URL del manifiesto con SERVER_HOST; sin él, None: la arma el navegador con su host y DASH_HTTP_PORT (web/src/lib/dashUrl.ts)."""
+    return f"https://{SERVER_HOST}:{DASH_PORT}/media/dash/manifest.mpd" if SERVER_HOST else None
 
 # MoQ relay URL dentro de la red docker
 MOQ_RELAY_URL = os.getenv("MOQ_RELAY_URL", "https://moq-relay:4433/anon")
@@ -174,7 +166,30 @@ class StreamConfig(BaseModel):
             raise ValueError("Hay calidades repetidas en la escalera")
         return self
 
-current_config = StreamConfig()
+# Última configuración de la emisión, junto al vídeo para que sobreviva a reinicios del orquestador: al arrancar, la
+# emisión sigue con ella y no con la escalera por defecto
+CONFIG_FILE = os.path.join(os.path.dirname(VIDEO_FILE), "stream-config.json")
+
+def load_config() -> StreamConfig:
+    try:
+        with open(CONFIG_FILE) as f:
+            return StreamConfig(**json.load(f))
+    except FileNotFoundError:
+        return StreamConfig()
+    except Exception as e:
+        logger.warning(f"Configuración guardada no válida ({e}): se usa la de por defecto")
+        return StreamConfig()
+
+def save_config(config: StreamConfig):
+    tmp = CONFIG_FILE + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(config.model_dump(), f)
+        os.replace(tmp, CONFIG_FILE)
+    except OSError as e:
+        logger.warning(f"No se pudo guardar la configuración de la emisión: {e}")
+
+current_config = load_config()
 
 class LinkProfile(BaseModel):
     rate_kbit: Optional[int] = Field(None, ge=100, le=1_000_000)  # None = sin límite
@@ -382,18 +397,6 @@ def get_font_path() -> str:
     if not os.path.exists(font_path):
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     return font_path
-
-def get_spki_fingerprint() -> str:
-    cert_path = os.path.join(CERTS_DIR, "cert.pem")
-    if not os.path.exists(cert_path):
-        return ""
-    try:
-        cmd = f"openssl x509 -in {cert_path} -outform der | openssl dgst -sha256 -binary | base64"
-        res = subprocess.check_output(cmd, shell=True, text=True).strip()
-        return res
-    except Exception as e:
-        logger.error(f"Error calculando fingerprint del certificado: {e}")
-        return ""
 
 def kill_proc(proc: Optional[subprocess.Popen]):
     """Termina el grupo de procesos y no vuelve hasta que ha muerto entero.
@@ -640,11 +643,6 @@ def get_versions():
     """Versiones desplegadas de los componentes de terceros y la última publicada de cada uno."""
     return versions.report()
 
-@app.get("/api/utc", response_class=PlainTextResponse)
-async def get_utc():
-    """Hora del servidor en xs:dateTime para el elemento UTCTiming del manifiesto DASH."""
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
 def alive(name: str) -> bool:
     return processes[name] is not None and processes[name].poll() is None
 
@@ -682,25 +680,23 @@ def get_status():
         "sources": source.states,
         "camera": camera_state,
         "restarts": restarts,
-        # El navegador pide DASH siempre directamente a este servidor por el router: con DASH_HOST, por HTTPS a
-        # dash_url; sin él, por HTTP a dash_http_port de moq_host o del host de la página (solo en páginas HTTP).
+        # El navegador pide DASH siempre directamente a este servidor por el router: con SERVER_HOST, por HTTPS a
+        # dash_url; sin él, por HTTP a dash_http_port del host de la página (solo en páginas HTTP).
         # dash_path "proxy" (a través del punto de entrada, un proxy) solo puede venir de medidas guardadas con otra configuración.
         "dash_url": dash_url(),
         "dash_http_port": DASH_HTTP_PORT,
         "dash_path": "direct",
         # Servidor de WebRTC, su ingesta y, con MediaMTX, el path que debe pedir el reproductor por WHEP
         "rtc_server": RTC_SERVER,
-        "rtc_ingest": "rtp" if RTC_SERVER == "mediasoup" else RTC_INGEST,
+        "rtc_ingest": "rtp" if RTC_SERVER == "mediasoup" else "udp",
         "rtc_path": rtc_path(),
-        # Con mediasoup, la señalización va por WebSocket directo al puerto TCP de WebRTC, por el router. En HTTPS hace
-        # falta wss:// con el certificado de DASH_HOST; en HTTP, la dirección directa (moq_host) o la de la página
+        # La señalización (WebSocket de mediasoup o WHEP de MediaMTX) va directa al puerto TCP de WebRTC, por el router.
+        # En HTTPS, con TLS y el certificado de SERVER_HOST; en HTTP, sin TLS al host de la página
         "rtc_signal_port": 8189,
-        "rtc_tls_host": DASH_HOST or None,
-        "moq_port": int(os.getenv("MOQ_PORT", "4433")),
-        # Vacío: el mismo nombre de host que la página. Detrás de un proxy HTTP ese nombre apunta al proxy,
-        # que no reenvía QUIC, y hay que indicar la dirección directa de este servidor.
-        "moq_host": os.getenv("MOQ_HOST") or None,
-        "spki_fingerprint": get_spki_fingerprint(),
+        "rtc_tls_host": SERVER_HOST or None,
+        "moq_port": MOQ_PORT,
+        # SERVER_HOST, el nombre del certificado del relay; vacío (en local), el host de la página
+        "moq_host": SERVER_HOST or None,
         "timecodes": [timecode_layout(r.width, r.height) for r in current_config.renditions],
         "ingest_anomalies": {name: count_anomalies(name) for name in log_state},
         # Cuánto va la fuente por detrás del tiempo real en los últimos 2 s (trace.FrameLog.source_lag)
@@ -782,7 +778,7 @@ def start_moq():
         f"moq --connect '{MOQ_RELAY_URL}' --connect-tls-insecure --broadcast live.hang import ts"
     )
     logger.info("Iniciando Empaquetador MoQ hacia moq-relay...")
-    # Sin las variables MOQ_* del orquestador (MOQ_HOST, MOQ_RELAY_URL...): moq-cli de main (desde ffcb7cd)
+    # Sin las variables MOQ_* del orquestador (MOQ_RELAY_URL, MOQ_RELAY_VERSION...): moq-cli de main (desde ffcb7cd)
     # se niega a arrancar con variables MOQ_* que no lee. Las suyas no se usan: todo va en la orden.
     env = {k: v for k, v in os.environ.items() if not k.startswith("MOQ_")}
     launch("moq_pipeline", moq_cmd, "/tmp/ffmpeg_moq.log", env)
@@ -833,8 +829,7 @@ def start_rtc():
     """Empaquetador WebRTC: lleva a MediaMTX la calidad más alta de UDP 5003, sin recodificar.
 
     El vídeo va tal cual. El audio, el Opus de la fuente, también tal cual, pero solo con rtc_audio; sin él,
-    solo vídeo. Con RTC_INGEST=udp la compuerta filtra las pistas y envía el MPEG-TS por UDP a MediaMTX; con
-    RTC_INGEST=rtsp, un FFmpeg lo remultiplexa y lo publica por RTSP.
+    solo vídeo. La compuerta filtra las pistas y envía el MPEG-TS por UDP a MediaMTX, sin FFmpeg intermedio.
     """
     kill_proc(processes.get("rtc_pipeline"))
     trace.frame_log.reset("rtc")
@@ -843,16 +838,8 @@ def start_rtc():
         stream_ids["rtc"] = int(started_at["rtc"] * 1000)
         start_rtc_mediasoup()
         return
-    if RTC_INGEST == "udp":
-        target, audio = (f"{RTC_UDP_HOST}:5013", " --audio") if current_config.rtc_audio else (f"{RTC_UDP_HOST}:5003", "")
-        rtc_cmd = f"python3 -u {TSGATE} 5003 rtc --udp {target} --first-video{audio}"
-    else:
-        audio = "-map 0:a:0 -c:a copy " if current_config.rtc_audio else "-an "
-        rtc_cmd = (
-            f"python3 -u {TSGATE} 5003 rtc | "
-            f"ffmpeg -y -fflags nobuffer -analyzeduration {int(PROBE_S * 1_000_000)} -i pipe:0 "
-            f"-map 0:v:0 -c:v copy {audio}-f rtsp -rtsp_transport tcp '{RTC_PUBLISH_URL}'"
-        )
+    target, audio = (f"{RTC_UDP_HOST}:5013", " --audio") if current_config.rtc_audio else (f"{RTC_UDP_HOST}:5003", "")
+    rtc_cmd = f"python3 -u {TSGATE} 5003 rtc --udp {target} --first-video{audio}"
     logger.info("Iniciando Empaquetador WebRTC hacia MediaMTX...")
     launch("rtc_pipeline", rtc_cmd, "/tmp/ffmpeg_rtc.log")
     started_at["rtc"] = time.time()
@@ -986,6 +973,7 @@ def start_pipeline(config: Optional[StreamConfig] = None, restart_source: bool =
         if current_config.seg_duration < min_seg:
             logger.info(f"Ajustando seg_duration a {min_seg}s para alinear con GOP de {current_config.gop_size} frames")
             current_config.seg_duration = min_seg
+        save_config(current_config)
 
         start_all(restart_master=need_restart_master or not alive("master_source"))
         desired_running = True
@@ -1372,8 +1360,7 @@ class WorkerBeat(BaseModel):
     info: dict = {}
 
 def client_ip(request: Request) -> Optional[str]:
-    """La IP del navegador: la primera de X-Forwarded-For (la añaden el proxy de entrada y, delante, NPM) o, sin ella,
-    la de la conexión. Es la que ve el router en el tráfico de los reproductores si el navegador llega igual a los dos."""
+    """La IP del navegador: la primera de X-Forwarded-For (la añade nginx-web) o, sin ella, la de la conexión. Es la que ve el router en el tráfico de los reproductores si el navegador llega igual a los dos."""
     forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
     return forwarded or (request.client.host if request.client else None)
 
@@ -1399,8 +1386,8 @@ def worker_script():
 
 @app.get("/api/worker/install.sh", response_class=PlainTextResponse)
 def worker_installer(request: Request):
-    """El instalador, con este orquestador como dirección por defecto: la de la petición (tras un proxy, la que
-    diga X-Forwarded-Proto). El comando del panel la pasa además con --url."""
+    """El instalador, con este orquestador como dirección por defecto: la de la petición, con el esquema que diga
+    X-Forwarded-Proto (lo pone nginx-web: el orquestador solo ve HTTP). El comando del panel la pasa además con --url."""
     proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     script = read_script("install-worker.sh").replace("__ORCHESTRATOR_URL__", f"{proto}://{host}")

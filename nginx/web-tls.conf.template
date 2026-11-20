@@ -1,0 +1,6 @@
+# Puerto 443 de nginx-web, con el certificado de SERVER_HOST. entrypoint.sh lo rellena y lo deja dentro del server de
+# web.conf, que pone las rutas: son las mismas que las del 80.
+listen 443 ssl;
+ssl_certificate     __CERT__;
+ssl_certificate_key __KEY__;
+ssl_protocols       TLSv1.2 TLSv1.3;

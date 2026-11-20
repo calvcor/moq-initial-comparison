@@ -203,7 +203,8 @@ if __name__ == "__main__":
     target = None
     if "--udp" in args:
         host, _, udp_port = args[args.index("--udp") + 1].rpartition(":")
-        target = (host, int(udp_port))
+        # El nombre se resuelve una vez: con él en sendto, Python lo buscaría en cada datagrama
+        target = (socket.gethostbyname(host), int(udp_port))
     try:
         main(int(sys.argv[1]), sys.argv[2], target, "--first-video" in args, "--audio" in args)
     except (BrokenPipeError, KeyboardInterrupt):

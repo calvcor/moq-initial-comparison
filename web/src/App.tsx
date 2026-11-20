@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { DashPlayer } from './components/DashPlayer';
 import { MoqPlayer } from './components/MoqPlayer';
 import { RtcPlayer } from './components/RtcPlayer';
-import { sfuSignalUrl } from './lib/rtcSession';
+import { rtcSignalUrl } from './lib/rtcSession';
 import { MetricsDashboard } from './components/MetricsDashboard';
 import { ControlPanel } from './components/ControlPanel';
 import { NetworkPanel } from './components/NetworkPanel';
@@ -22,7 +22,7 @@ import { Activity, Radio, Cpu, Network } from 'lucide-react';
 import { dashManifestUrl } from './lib/dashUrl';
 import { locale, t } from './lib/i18n';
 
-// Mismo origen que el dashboard: el punto de entrada (edge) reparte /api y el resto (DASH va directo al router: lib/dashUrl.ts)
+// Mismo origen que el dashboard: nginx-web reparte /api y el resto (DASH va directo al router: lib/dashUrl.ts)
 const API_BASE = '';
 
 const PLAYERS_KEY = 'testbed.players';
@@ -535,7 +535,6 @@ export function App() {
           {players.moq && !campaignRunning && <MoqPlayer
             key={`moq-${moqStreamId}`}
             url={`https://${serverStatus?.moq_host || window.location.hostname}:${serverStatus?.moq_port ?? 4433}/anon`}
-            spkiFingerprint={serverStatus?.spki_fingerprint}
             timecodes={serverStatus?.timecodes}
             renditions={serverStatus?.config.renditions}
             isStreaming={isStreaming}
@@ -549,9 +548,7 @@ export function App() {
             isStreaming={isStreaming}
             server={serverStatus?.rtc_server ?? 'mediamtx'}
             renditions={serverStatus?.config.renditions ?? []}
-            mtxPath={serverStatus?.rtc_path ?? 'live'}
-            signalUrl={sfuSignalUrl(serverStatus)}
-            ingest={serverStatus?.rtc_ingest ?? 'rtsp'}
+            signalUrl={rtcSignalUrl(serverStatus)}
             withAudio={rtcAudio}
             streamStartedMs={rtcStreamId}
             audible={audioPlayer === 'rtc'}

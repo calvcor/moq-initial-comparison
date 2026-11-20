@@ -42,13 +42,13 @@ The panel offers these presets (`PRESETS` in `web/src/components/NetworkPanel.ts
 
 | Browser port | Destination | Use |
 | :--- | :--- | :--- |
-| 8443/tcp | `nginx-dash:443` | LL-DASH with TLS (with `DASH_HOST`) |
-| 8080/tcp | `nginx-dash:80` | LL-DASH without TLS (without `DASH_HOST`, from HTTP pages) |
+| 8443/tcp | `nginx-dash:443` | LL-DASH with TLS (server mode, with `SERVER_HOST`) |
+| 8080/tcp | `nginx-dash:80` | LL-DASH without TLS (local mode, from HTTP pages) |
 | 4433/udp | `moq-relay:4433` | MoQ over QUIC (WebTransport) |
 | 8189/udp | `RTC_IP:8189` | WebRTC: ICE, DTLS and SRTP |
 | 8189/tcp | `RTC_IP:8189` | mediasoup WebSocket signalling; it goes through the WebRTC queue and suffers its profile |
 
-`RTC_IP` is `SFU_IP` with `RTC_SERVER=mediasoup` (default) and `MEDIAMTX_IP` with `RTC_SERVER=mediamtx`. MediaMTX does not use 8189/tcp: it negotiates over WHEP through the HTTP entry point.
+`RTC_IP` is `SFU_IP` with `RTC_SERVER=mediasoup` (default) and `MEDIAMTX_IP` with `RTC_SERVER=mediamtx`. Both use 8189/tcp for signalling: mediasoup's WebSocket and MediaMTX's WHEP.
 
 Each port has a DNAT rule in `nat`/`PREROUTING`, and a single `MASQUERADE` rule in `nat`/`POSTROUTING` covers everything that went through a DNAT (`--ctstate DNAT`), so the server answers to the router and conntrack undoes both translations on the way back. The container needs `NET_ADMIN` and `net.ipv4.ip_forward=1` (`docker-compose.yml`).
 
@@ -144,7 +144,7 @@ Below the network panel, and on the campaigns page while a campaign runs, the co
 
 ## Router agent API (`:9000`)
 
-Only the orchestrator uses it (`ROUTER_URL`, default `http://172.30.50.2:9000`), over the internal `core` network; the browser cannot reach it.
+Only the orchestrator uses it (`ROUTER_URL`, default `http://router:9000`); the port is not published, so the browser cannot reach it.
 
 | Method | Effect | Called by |
 | :--- | :--- | :--- |
@@ -188,7 +188,7 @@ Emulation needs `sch_prio`, `sch_tbf`, `sch_netem` and `cls_u32` in the kernel. 
 | `RTC_SERVER` | `mediasoup` (default) or `mediamtx`: selects `RTC_IP` |
 | `SFU_IP`, `MEDIAMTX_IP` | SFU and MediaMTX containers; both are required even if only one is used |
 
-The IPs are fixed on the `core` network (`docker-compose.yml`); the router is `172.30.50.2`. Changing `RTC_SERVER` only needs the router to be recreated, not rebuilt. Restarting the router loses the applied profiles (the network goes back to unrestricted) and resets the counters; the stream configuration belongs to the orchestrator and is kept.
+The media servers' IPs are fixed on the `core` network (`docker-compose.yml`), because the forwarding and tc rules match addresses; the router is `172.30.50.2`. Changing `RTC_SERVER` only needs the router to be recreated, not rebuilt. Restarting the router loses the applied profiles (the network goes back to unrestricted) and resets the counters; the stream configuration belongs to the orchestrator and is kept.
 
 ## Inspecting by hand
 

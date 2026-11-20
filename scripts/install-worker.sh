@@ -151,7 +151,7 @@ if [ "$DESKTOP" = 1 ]; then
   done
   cat > "$UNIT_DIR/moq-worker.service" << EOF
 [Unit]
-Description=Trabajador de campañas moq-dash ($NAME, $URL), en la pantalla de este equipo
+Description=Trabajador de campañas moq-initial-comparison ($NAME, $URL), en la pantalla de este equipo
 After=graphical-session.target
 
 [Service]
@@ -195,7 +195,7 @@ step "Servicios de systemd"
 if [ "$WITH_DISPLAY" = 1 ]; then
   cat > /etc/systemd/system/moq-worker-xvfb.service << EOF
 [Unit]
-Description=Pantalla virtual del trabajador de campañas moq-dash ($SCREEN)
+Description=Pantalla virtual del trabajador de campañas moq-initial-comparison ($SCREEN)
 
 [Service]
 User=$USER_NAME
@@ -224,7 +224,7 @@ fi
 
 cat > /etc/systemd/system/moq-worker.service << EOF
 [Unit]
-Description=Trabajador de campañas moq-dash ($NAME, $URL)
+Description=Trabajador de campañas moq-initial-comparison ($NAME, $URL)
 Wants=network-online.target
 After=$AFTER
 $REQUIRES

@@ -181,7 +181,7 @@ The encoder-output time is the kernel's arrival stamp (`SO_TIMESTAMPNS`), indepe
 | :--- | :--- | :--- |
 | Encoding | Burn → encoder output | As in DASH. |
 | Packager ingest | Encoder output → hand-off | As in MoQ. |
-| Publishing and transport | Hand-off → arrival | With `RTC_SERVER=mediasoup` (default): FFmpeg repackaging to RTP, `rtprelay.py`, the mediasoup SFU, emulation router and network. With `RTC_SERVER=mediamtx`: MediaMTX (fed over UDP by the gate, or by FFmpeg over RTSP with `RTC_INGEST=rtsp`), router and network. Includes any retransmissions the browser requests. |
+| Publishing and transport | Hand-off → arrival | With `RTC_SERVER=mediasoup` (default): FFmpeg repackaging to RTP, `rtprelay.py`, the mediasoup SFU, emulation router and network. With `RTC_SERVER=mediamtx`: MediaMTX (fed over UDP by the gate), router and network. Includes any retransmissions the browser requests. |
 | Jitter buffer and rendering | Arrival → painted | Browser jitter buffer, decoding and presentation. |
 
 Encoding is the same measurement in all branches (before the fan-out); small differences come from sampling different frames. **The resolution is that of the measurement points**: in MoQ, importer, relay and network go together because the third-party relay has nowhere to record a time.

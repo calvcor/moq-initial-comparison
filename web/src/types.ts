@@ -118,17 +118,16 @@ export interface ServerStatus {
   processes: {
     pipeline: boolean;
   };
-  dash_url: string | null; // con DASH_HOST, https://DASH_HOST:8443/…; sin él, null (lib/dashUrl.ts)
-  dash_http_port?: number; // sin DASH_HOST: puerto HTTP directo de DASH en el router, solo desde páginas HTTP
+  dash_url: string | null; // con SERVER_HOST, https://SERVER_HOST:8443/…; sin él, null (lib/dashUrl.ts)
+  dash_http_port?: number; // sin SERVER_HOST: puerto HTTP de DASH en el router, solo desde páginas HTTP
   rtc_server?: RtcServer;
-  rtc_ingest?: 'udp' | 'rtsp' | 'rtp'; // rtp: mediasoup; udp: MediaMTX lee el MPEG-TS por UDP; rtsp: con el FFmpeg intermedio
+  rtc_ingest?: 'udp' | 'rtp'; // rtp: mediasoup; udp: MediaMTX lee el MPEG-TS por UDP
   rtc_path?: string; // path de MediaMTX para WHEP
   dash_path?: 'direct' | 'proxy'; // direct: el navegador va al servidor de DASH por el router (siempre); proxy: a través del punto de entrada (solo en medidas guardadas con otra configuración)
   moq_port?: number;
-  moq_host?: string | null; // dirección directa para MoQ; null = el host de la página
+  moq_host?: string | null; // SERVER_HOST; null (en local) = el host de la página
   rtc_signal_port?: number; // con mediasoup, puerto TCP de la señalización WebSocket (directa, por el router)
-  rtc_tls_host?: string | null; // nombre del certificado para wss:// en páginas HTTPS (DASH_HOST)
-  spki_fingerprint: string;
+  rtc_tls_host?: string | null; // nombre del certificado para wss:// en páginas HTTPS (SERVER_HOST)
   master_start_time_ms?: number;
   timecodes?: TimecodeLayout[]; // uno por calidad de la escalera
   ingest_anomalies?: { master: number; dash: number; moq: number; rtc: number };

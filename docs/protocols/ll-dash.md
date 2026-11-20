@@ -56,8 +56,8 @@ Because addresses are computed from the clock, **if the player's clock or the st
    - `-method PUT -http_persistent 1`: uploads each file by chunked HTTP PUT as it is generated.
 2. **Origin.** An in-memory server inside the orchestrator (`origin.py`) receives those PUTs and serves the GETs. If a GET arrives while the PUT is still open, it forwards the bytes as they come in.
 3. **Delivery.** nginx forwards without buffering (`proxy_buffering off`). The browser always connects directly, over HTTP/1.1, to the server through the emulation router, which forwards to the DASH nginx; the browser's own TCP connection crosses the emulated network, as in MoQ and WebRTC:
-   - **With `DASH_HOST`**: over HTTPS to port 8443.
-   - **Without `DASH_HOST`**, only from HTTP pages: over HTTP to port 8080. From an HTTPS page there is no path and DASH does not play.
+   - **In server mode** (`SERVER_HOST`): over HTTPS to port 8443.
+   - **In local mode**, only from HTTP pages: over HTTP to port 8080. From an HTTPS page there is no path and DASH does not play.
 4. **Playback.** `dash.js` downloads with `fetch`, reading the body in pieces, and appends each fragment to an MSE `SourceBuffer` (*Media Source Extensions*). From there the browser decodes and paints the `<video>` element ([section 8](#8-the-player-dashjs-inside)).
 
 This branch makes one HTTP request per segment and per component: one for video and one for audio every segment duration (2 s by default). The data of each request arrive spread over those 2 s.

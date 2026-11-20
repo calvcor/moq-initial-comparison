@@ -222,7 +222,6 @@ Why it underestimates the link is summarised in [limitations.md](limitations.md#
 | :--- | :--- | :--- |
 | `netem rate` limiter | `shaper: "netem"` in a link profile | How the router enforces the rate ([network-emulation.md](network-emulation.md#rate-limiter-tbf-or-netem-rate)) |
 | WebRTC through MediaMTX | `RTC_SERVER=mediamtx` in the `.env` | A single rendition over WHEP, no adaptation ([protocols/webrtc.md](protocols/webrtc.md)); recorded in `rtc_server` |
-| MediaMTX ingest over RTSP | `RTC_INGEST=rtsp` (MediaMTX only) | An extra FFmpeg publishing over RTSP instead of direct UDP; recorded in `rtc_ingest` |
 | MoQ components from a git commit | `MOQ_RELAY_FROM`, `MOQ_CLI_FROM`, `MOQ_WATCH_FROM` = `git` with their `*_COMMIT` | Relay, publisher or player built from an unreleased commit; versions shown as `git@<commit>` in the panel and in `versions` ([deployment.md](deployment.md)) |
 | DASH catch-up settings | **Seek to live** (`maxDrift`, default 1.5 s) and **Minimum buffer** (`playbackBufferMin`, 0 on load; dash.js default 0.5 s) | How dash.js chases its target; recorded in `dash_max_drift_s` and `dash_playback_buffer_min_s` |
 | One player per test | `player_mode: "each"` in a campaign | Controls interference between players in the same browser ([campaigns.md](campaigns.md)) |

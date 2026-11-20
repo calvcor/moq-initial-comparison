@@ -32,7 +32,7 @@ The example is one rendition (1080p at 4000 kbit/s), 2 s segments and 100 ms fra
                       width="1920" height="1080" sar="1:1">
         <ProducerReferenceTime id="0" inband="true" type="captured"
                                wallClockTime="2030-01-01T12:00:00.973Z" presentationTime="0">
-          <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014" value="/api/utc"/>
+          <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014" value="/media/dash/utc"/>
         </ProducerReferenceTime>
         <Resync dT="1000000" type="1"/>
         <SegmentTemplate timescale="1000000" duration="2000000"
@@ -59,11 +59,11 @@ The example is one rendition (1080p at 4000 kbit/s), 2 s segments and 100 ms fra
       </Representation>
     </AdaptationSet>
   </Period>
-  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014" value="/api/utc"/>
+  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-xsdate:2014" value="/media/dash/utc"/>
 </MPD>
 ```
 
-FFmpeg writes it (`-f dash`, `start_dash()` in `server/app/main.py`). The testbed intervenes in three places, flagged below: the origin rewrites `availabilityStartTime` and, depending on the request, the `UTCTiming` URL, and the video `bandwidth` is declared to FFmpeg by hand. The packager command with the defaults:
+FFmpeg writes it (`-f dash`, `start_dash()` in `server/app/main.py`). The testbed intervenes in three places, flagged below: the origin rewrites `availabilityStartTime`, it serves the `UTCTiming` clock itself, and the video `bandwidth` is declared to FFmpeg by hand. The packager command with the defaults:
 
 ```
 python3 -u tsgate.py 5001 dash | ffmpeg -y -analyzeduration 1000000 -i pipe:0 \
@@ -71,12 +71,12 @@ python3 -u tsgate.py 5001 dash | ffmpeg -y -analyzeduration 1000000 -i pipe:0 \
   -f dash -dash_segment_type mp4 -adaptation_sets 'id=0,streams=v id=1,streams=a' -seg_duration 2.0 \
   -frag_type duration -frag_duration 0.1 \
   -streaming 1 -ldash 1 -use_template 1 -use_timeline 0 \
-  -utc_timing_url '/api/utc' \
+  -utc_timing_url '/media/dash/utc' \
   -window_size 15 -extra_window_size 15 \
   -method PUT -http_persistent 1 'http://127.0.0.1:8000/media/dash/manifest.mpd'
 ```
 
-A fragment duration of 0 ("1 frame" in the panel) becomes `-frag_type every_frame`; `-b:v:i` is repeated per rendition; `-utc_timing_url` comes from `UTC_TIMING_URL` (default `/api/utc`).
+A fragment duration of 0 ("1 frame" in the panel) becomes `-frag_type every_frame`; `-b:v:i` is repeated per rendition; `-utc_timing_url` comes from `UTC_TIMING_URL` (default `/media/dash/utc`).
 
 ## Notations used in the manifest
 
@@ -352,18 +352,18 @@ All of the above needs the player's "now" to be the server's; `UTCTiming` says w
 | Attribute | Value here | Meaning |
 | :--- | :--- | :--- |
 | `schemeIdUri` | `urn:mpeg:dash:utc:http-xsdate:2014` | The method. |
-| `value` | `/api/utc` (as written by FFmpeg) | Method-dependent; here, the URL to query. |
+| `value` | `/media/dash/utc` (as written by FFmpeg) | Method-dependent; here, the URL to query. |
 
 With `http-xsdate`, the player makes a GET request and receives the time as text:
 
 ```
-GET /api/utc
+GET /media/dash/utc
 → 2030-01-01T15:05:35.940Z
 ```
 
-`dash.js` applies the offset from its own clock to all its computations. The orchestrator serves the endpoint with the clock it uses to calibrate the AST.
+`dash.js` applies the offset from its own clock to all its computations. It takes the time as the midpoint of the request, compensating half its round trip. The origin serves the endpoint with the clock it uses to calibrate the AST.
 
-> **Testbed intervention.** DASH media reaches the browser directly through the network-emulation router, on a different origin from the page, so FFmpeg's relative `/api/utc` would synchronise the clock through the emulated delay. When the manifest request carries an `Origin` header (`scheme://host[:port]`), the origin replaces `value="/api/utc"` with `value="<page origin>/api/utc"`, the page's undegraded path; without one, the relative URL stays.
+> **Testbed intervention.** The clock is served by the testbed origin, next to the manifest. The URL is relative, so the player resolves it against the manifest's address and queries it through the network-emulation router, like the media: the emulated network acts on the clock sync too.
 
 Other methods defined by the standard:
 
@@ -393,7 +393,7 @@ With one rendition the player keeps two downloads in progress: the video segment
 | Field | Set by | Panel control |
 | :--- | :--- | :--- |
 | `availabilityStartTime` | The origin, by measurement | — |
-| `UTCTiming@value` | `-utc_timing_url` (`UTC_TIMING_URL`), rewritten by the origin to the page origin | — |
+| `UTCTiming@value` | `-utc_timing_url` (`UTC_TIMING_URL`); the origin serves it | — |
 | `SegmentTemplate@duration`, `maxSegmentDuration` | `-seg_duration` | DASH segment (-seg_duration) |
 | `availabilityTimeOffset`, `Resync@dT` (type 0) | `-seg_duration` and `-frag_duration` (or `-frag_type every_frame`) | DASH segment and CMAF fragment |
 | `Resync@dT` (type 1, video) | The source GOP | GOP |

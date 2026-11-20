@@ -12,9 +12,7 @@ interface RtcPlayerProps {
   isStreaming: boolean;
   server: 'mediasoup' | 'mediamtx'; // servidor de la rama (RTC_SERVER)
   renditions: Rendition[]; // escalera de la emisión: con mediasoup, las capas posibles
-  mtxPath: string; // con MediaMTX, path que se pide por WHEP
-  signalUrl: string; // con mediasoup, WebSocket de señalización (sfuSignalUrl)
-  ingest: 'udp' | 'rtsp' | 'rtp'; // cómo le llega el flujo al servidor
+  signalUrl: string; // señalización por el router (rtcSignalUrl): WebSocket de mediasoup o URL WHEP de MediaMTX
   withAudio: boolean; // la rama lleva audio (opción rtc_audio del servidor): se pide también la pista de audio
   audible: boolean; // sonido activado (selector de sonido del dashboard)
   streamStartedMs: number; // hora del servidor (ms epoch) a la que arrancó el empaquetador WebRTC (stream_ids.rtc)
@@ -23,9 +21,6 @@ interface RtcPlayerProps {
   onMetricsUpdate: (metrics: Partial<PlayerMetrics>) => void;
 }
 
-// Señalización de MediaMTX por WHEP, a través del punto de entrada. El vídeo va después directo por UDP.
-// El path depende de la ingesta del servidor: liveudp (MPEG-TS por UDP) o live (RTSP, con un FFmpeg intermedio).
-const whepUrl = (path: string) => `/rtc/${path}/whep`;
 
 // Tras un reinicio de la emisión no se conecta hasta que esta lleva unos segundos publicada. Una conexión
 // abierta en los primeros segundos recibe de golpe el último segundo de media y, con audio, el navegador
@@ -41,7 +36,7 @@ function sfuLayerHeight(sfu: SfuStats | null, renditions: { height: number }[]):
   return [...renditions].sort((a, b) => a.height - b.height)[sfu.spatial_layer]?.height ?? null;
 }
 
-export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, renditions, mtxPath, signalUrl, ingest, withAudio, audible, streamStartedMs, timecodes, preset, onMetricsUpdate }) => {
+export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, renditions, signalUrl, withAudio, audible, streamStartedMs, timecodes, preset, onMetricsUpdate }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const screenRef = useRef<HTMLDivElement | null>(null); // zona de vídeo, la que pasa a pantalla completa
 
@@ -132,7 +127,7 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
         applyTarget(receiver, targetRef.current);
       },
     };
-    const session = server === 'mediasoup' ? openMediasoup(signalUrl, withAudio, callbacks) : openWhep(whepUrl(mtxPath), withAudio, callbacks);
+    const session = server === 'mediasoup' ? openMediasoup(signalUrl, withAudio, callbacks) : openWhep(signalUrl, withAudio, callbacks);
 
     async function negotiate() {
       try {
@@ -246,7 +241,7 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
       session.close();
       video.srcObject = null;
     };
-  }, [isStreaming, attempt, withAudio, streamStartedMs, mtxPath, server, signalUrl]);
+  }, [isStreaming, attempt, withAudio, streamStartedMs, server, signalUrl]);
 
   return (
     <div className="flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
@@ -328,13 +323,9 @@ export const RtcPlayer: React.FC<RtcPlayerProps> = ({ isStreaming, server, rendi
           </span>
         ) : (
           <span
-            title={
-              ingest === 'udp'
-                ? t('MediaMTX lee el MPEG-TS de la fuente por UDP, sin FFmpeg intermedio (RTC_INGEST=udp).', 'MediaMTX reads the source MPEG-TS over UDP, with no intermediate FFmpeg (RTC_INGEST=udp).')
-                : t('Un FFmpeg remultiplexa el MPEG-TS y lo publica en MediaMTX por RTSP (RTC_INGEST=rtsp, con un FFmpeg intermedio).', 'An FFmpeg remuxes the MPEG-TS and publishes it to MediaMTX over RTSP (RTC_INGEST=rtsp, with an intermediate FFmpeg).')
-            }
+            title={t('MediaMTX lee el MPEG-TS de la fuente por UDP, sin FFmpeg intermedio.', 'MediaMTX reads the source MPEG-TS over UDP, with no intermediate FFmpeg.')}
           >
-            MediaMTX · {ingest === 'udp' ? t('UDP directo', 'direct UDP') : t('vía RTSP', 'via RTSP')} · {whepUrl(mtxPath)}
+            MediaMTX · {t('UDP directo', 'direct UDP')} · {new URL(signalUrl).host}{new URL(signalUrl).pathname}
           </span>
         )}
         <span>{server === 'mediasoup' ? 'mediasoup-client' : 'RTCPeerConnection'} + &lt;video&gt;</span>

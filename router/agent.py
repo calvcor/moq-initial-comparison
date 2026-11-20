@@ -4,10 +4,10 @@ Reenvía a nivel IP (DNAT, sin terminar conexiones) los puertos que usa el naveg
 finales y degrada ese tráfico con tc en los dos sentidos:
 
     navegador -> :8443/tcp -> nginx-dash:443     (LL-DASH directo, con TLS)
-    navegador -> :8080/tcp -> nginx-dash:80      (LL-DASH directo, sin TLS: sin DASH_HOST, desde páginas HTTP)
+    navegador -> :8080/tcp -> nginx-dash:80      (LL-DASH directo, sin TLS: sin SERVER_HOST, desde páginas HTTP)
     navegador -> :4433/udp -> moq-relay:4433     (MoQ sobre QUIC)
     navegador -> :8189/udp -> sfu o mediamtx:8189 (WebRTC: ICE, DTLS y SRTP; el servidor lo elige RTC_SERVER)
-    navegador -> :8189/tcp -> sfu o mediamtx:8189 (señalización WebSocket de mediasoup; va en la cola de WebRTC)
+    navegador -> :8189/tcp -> sfu o mediamtx:8189 (señalización: WebSocket de mediasoup o WHEP de MediaMTX; va en la cola de WebRTC)
 
 La ingesta (orquestador -> nginx / relay) va por la red interna sin pasar por aquí, así que la emulación
 solo afecta al tramo servidor-cliente y lo hace igual para las dos ramas.

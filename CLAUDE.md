@@ -56,9 +56,11 @@ cerrar una versión, se publica solo esa instantánea en un repositorio nuevo.
 | Origen LL-DASH | `server/app/origin.py` | En memoria; recalibra `availabilityStartTime` y reescribe `UTCTiming` al origen de la página |
 | Publicador MoQ | `moq import ts` (moq-cli) en el orquestador | El **publicador**; no confundir con el relay |
 | Relay MoQ | contenedor `moq-relay`, `relay/Dockerfile` | Solo reparte; el catálogo lo escribe el publicador. Imagen publicada o, con `MOQ_RELAY_FROM=git`, compilado desde `MOQ_RELAY_COMMIT` |
-| WebRTC | `sfu/` (mediasoup) y `server/app/rtprelay.py`; o MediaMTX | `RTC_SERVER` en el `.env`. `mediasoup` (por defecto): FFmpeg pasa la escalera a RTP sin recodificar, el relay la junta en un socket y el SFU elige la capa. `mediamtx`: una sola calidad por WHEP; lee el MPEG-TS por UDP de la compuerta, y `RTC_INGEST=rtsp` usa un FFmpeg + RTSP intermedio |
+| WebRTC | `sfu/` (mediasoup) y `server/app/rtprelay.py`; o MediaMTX | `RTC_SERVER` en el `.env`. `mediasoup` (por defecto): FFmpeg pasa la escalera a RTP sin recodificar, el relay la junta en un socket y el SFU elige la capa. `mediamtx`: una sola calidad por WHEP; lee el MPEG-TS por UDP de la compuerta. La señalización de los dos (WebSocket o WHEP) va por el router, 8189/tcp |
 | Router | `router/agent.py` (reenvío, tc y perfiles) y `router/api.py` (agente HTTP, contadores) | DNAT + tc/netem, una cola por protocolo y sentido, con 8 plazas por cliente (marca por IP) que solo usan las pruebas en paralelo (docs/network-emulation.md) |
-| Entrada HTTP | `edge/nginx.conf` | Único puerto HTTP (80): página, API y huella del relay. DASH no pasa por aquí: va directo al router (8443 con `DASH_HOST`, 8080 sin él) |
+| nginx-web | `nginx/web*.conf` | Página, API y huella del relay (80, y 443 con `SERVER_HOST`), sin pasar por el router. DASH no pasa por aquí |
+| nginx-dash | `nginx/dash*.conf` | LL-DASH, solo a través del router: 8443 con TLS y `SERVER_HOST`; 8080 sin TLS en local |
+| Certificado | `cert/entrypoint.sh` (contenedor `cert`, acme.sh) | Let's Encrypt para `SERVER_HOST` por reto DNS (`ACME_DNS`); lo usan los dos nginx, el relay y la señalización de WebRTC (SFU y MediaMTX). En local no hay: el relay usa uno autofirmado fijado por huella |
 | Dashboard | `web/` (React + Vite) | Reproductores (cada uno se puede apagar; el CSV registra los activos en `players`), medidor, esquema de etapas, CSV |
 | Campañas | `server/app/campaign.py`, `web/src/components/Campaign*.tsx`, `scripts/campaign-worker.mjs` | Baterías desatendidas; el servidor lleva red y emisión, el navegador (la página o Chrome headless con el script) es el trabajador (docs/campaigns.md). Con `workers` en el plan, un trabajador independiente por reproductor (`--name`), headless o en quiosco, con la ventana de la calidad más alta; con `parallel` y `worker_pool`, cada prueba toma uno libre y se miden a la vez las de la misma emisión, cada trabajador con su red en su propia cola del router (por IP: dos con la misma no van a la vez); sin ellos, un único trabajador. Cada prueba guarda su trabajador. Mientras corre, la API manual responde 409 |
 | Versiones | `server/app/versions.py`, `web/src/components/VersionsPanel.tsx` | Instalado frente a última publicada |
@@ -79,7 +81,7 @@ cerrar una versión, se publica solo esa instantánea en un repositorio nuevo.
   `--headless=new --use-angle=metal --enable-gpu --ignore-gpu-blocklist --autoplay-policy=no-user-gesture-required`,
   con un `--user-data-dir` desechable. Abre la pestaña con `about:blank` y navega después con
   `Page.navigate` (abrir directamente la URL en `/json/new` ha dado pestañas sin el reproductor MoQ).
-- Contra un servidor por su proxy HTTPS no hacen falta banderas. Por IP sin HTTPS:
+- Contra un servidor por `https://<SERVER_HOST>` no hacen falta banderas. Por IP sin HTTPS:
   `--unsafely-treat-insecure-origin-as-secure=http://<IP>`. Las direcciones de los servidores, en `CLAUDE.local.md`.
 - **Cierra cada Chrome headless por su PID y comprueba que no queda ninguno** (`pgrep -f <user-data-dir>`).
   Lanzado con `&` desde el shell de las herramientas, `kill %1` no lo cierra: una vez quedaron ocho reproduciendo
@@ -97,29 +99,31 @@ cerrar una versión, se publica solo esa instantánea en un repositorio nuevo.
   se sube al repositorio. **Nada propio de los despliegues va en un fichero del repositorio**: ni nombres, IP, rutas o
   dominios, ni alias que solo entienda quien los conoce. Se escribe para alguien de fuera: se describe la configuración
   (versiones, recursos) en vez del servidor, y si hace falta una dirección, un ejemplo genérico (`testbed.example.org`).
-- Actualizar: el servidor no tiene credenciales de GitHub, así que `git pull` falla; el código llega con un
-  `git bundle` copiado por scp (`git pull --ff-only /tmp/x.bundle main`). Después, reconstruir **solo lo que haya cambiado**:
-  - web: `docker compose up -d --build --no-deps web` (**sin `--no-deps` también recrea el
-    orquestador**). Los trabajadores de campañas recargan solos entre pruebas al ver otra `/build.json`, y el
-    orquestador no les da pruebas mientras tanto; uno que no anuncia su construcción no lo hace y hay que
-    reiniciarlo (docs/campaigns.md);
-  - orquestador: `docker compose up -d --build --no-deps orchestrator`.
+- Dos modos (docs/deployment.md): local, sin `.env`, en `http://localhost`; y servidor, con `SERVER_HOST` (un nombre
+  que resuelve al servidor), `ACME_DNS` y su token, en `https://<SERVER_HOST>`. No hay modo con proxy delante: los
+  medios tienen que ir al propio servidor y con un solo nombre basta.
+- Actualizar: `scripts/deploy.sh <ssh-destino>`. El servidor no tiene credenciales de GitHub; el script le manda un
+  `git bundle`, avanza su checkout y reconstruye o reinicia **solo lo que haya cambiado** (siempre con `--no-deps`: sin
+  él, Compose recrea también el orquestador). Se niega si hay una campaña en marcha. Los trabajadores de campañas recargan
+  solos entre pruebas al ver otra `/build.json`; uno que no anuncia su construcción no lo hace y hay que reiniciarlo
+  (docs/campaigns.md). Los cambios del `.env` no viajan con él: `docker compose up -d` en el servidor.
 - **No despliegues mientras corre una campaña** (compruébalo en `GET /api/status`).
 - Cualquier salida nueva de la fuente maestra comparte proceso con la escalera y puede frenarla: FFmpeg
   hace avanzar todas las salidas a la par. Mide el retraso del codificador (`POST /api/trace`) con y sin
   ella, alternando (la referencia de la cámara sin `-tune zerolatency` lo subía de 6 a ~80 ms).
-- **Reiniciar el orquestador pierde la configuración de la emisión**: vuelve a la escalera por defecto
-  de tres calidades. Restáurala después con `POST /api/config` (normalmente el usuario usa una sola
-  calidad: `{"gop_size":60,"fps":60,"seg_duration":2.0,"frag_duration":0.1,"renditions":[{"height":1080,"bitrate_kbps":4000}]}`).
+- La configuración de la emisión se guarda en `media/stream-config.json` y sobrevive a los reinicios del orquestador
+  (la última aplicada, también por una campaña). Normalmente el usuario usa una sola calidad:
+  `{"gop_size":60,"fps":60,"seg_duration":2.0,"frag_duration":0.1,"renditions":[{"height":1080,"bitrate_kbps":4000}]}`.
   Comprueba siempre el estado con `GET /api/status` antes y después. **`POST /api/config` arranca la
-  emisión**: si estaba parada, haz `POST /api/stop` justo después (la configuración se queda en memoria).
+  emisión**: si estaba parada, haz `POST /api/stop` justo después.
 - Son servidores domésticos: **no dejes la emisión en marcha si el usuario la tenía detenida**
   (`POST /api/stop` para la fuente también). Sin permisos para subir prioridades (`renice` a 0 falla).
 - La primera vez que se trae `sfu/` hay que construir el SFU y el router (`docker compose up -d --build --no-deps sfu router`). Cambiar `RTC_SERVER` después no reconstruye nada.
-- Puertos: 80/tcp (página, por el proxy), 8443/tcp (DASH directo; DASH no pasa nunca por el proxy ni por el punto de entrada), 8080/tcp (DASH directo sin TLS: solo sin `DASH_HOST` y desde páginas HTTP), 4433/udp (MoQ), 8189/udp (WebRTC), 8189/tcp (señalización WebSocket de mediasoup, con `wss://` y el certificado de `DASH_HOST`).
-- `.env` del servidor (permisos 600, nunca en el repositorio; plantillas en `.env.template` y `.env.tls.template`).
-  El certificado de DASH vive en `certs/dash/` y lo renueva `dash-cert` (acme.sh, sin correo). Si se borra esa
-  carpeta, reinicia `nginx-dash`.
+- Puertos, fijos: 80/tcp y 443/tcp (página, nginx-web), 8443/tcp (DASH con TLS, por el router; DASH no pasa nunca por nginx-web), 8080/tcp (DASH sin TLS: solo en local), 4433/udp (MoQ), 8189/udp (WebRTC), 8189/tcp (señalización de WebRTC: WebSocket de mediasoup o WHEP de MediaMTX, con TLS y el certificado de `SERVER_HOST`).
+- `.env` del servidor (permisos 600, nunca en el repositorio; plantilla en `.env.template`). El certificado vive en
+  `certs/` (`<SERVER_HOST>.crt` y `.key`, y el estado de acme.sh en `certs/acme/`) y lo renueva el contenedor `cert`;
+  los dos nginx recargan cada 12 h. El SFU anuncia en ICE la IP a la que resuelve `SERVER_HOST` desde el contenedor
+  (`SERVER_IP` la fuerza).
 
 ## Versiones de terceros
 
@@ -194,9 +198,7 @@ Su descripción para el lector está en `docs/limitations.md`; aquí, lo que imp
   limitador `tbf` se infla (con `netem rate` no). Con MoQ de `main`, usa retardo base o declara que no lo hay; y declara
   el limitador (`net_down_shaper`, `net_up_shaper`).
 - En WebRTC, el reparto del desglose entre "transporte" y "búfer" no es fiable (`receiveTime`).
-- La configuración de la emisión no persiste entre reinicios del orquestador.
 - Con la escalera de tres calidades, la fuente se queda a ratos por detrás del tiempo real y los tres reproductores
   lo ven como menos latencia (no reproducido a voluntad). Se mide en cada segundo (`source_lag_ms`): revísalo antes de
   interpretar una latencia por debajo del objetivo.
-- `RTC_PACING_FACTOR` lo lee el orquestador, pero `docker-compose.yml` no se lo pasa: desde el `.env` no tiene efecto.
 - `scripts/l2a-units-experiment.mjs` no pasa `node --check` (comillas invertidas sin escapar en la línea 71).

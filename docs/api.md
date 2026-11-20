@@ -1,6 +1,6 @@
 # Orchestrator API
 
-The orchestrator (`server/app/main.py`, FastAPI) serves its API under `/api` through the HTTP entry point (port 80). Interactive OpenAPI documentation is at `/docs` (for example <http://localhost/docs>) and the schema at `/openapi.json`. Error responses carry a `detail` string.
+The orchestrator (`server/app/main.py`, FastAPI) serves its API under `/api` through `nginx-web` (port 80, and 443 in server mode). Interactive OpenAPI documentation is at `/docs` (for example <http://localhost/docs>) and the schema at `/openapi.json`. Error responses carry a `detail` string.
 
 General conventions:
 
@@ -26,7 +26,6 @@ General conventions:
 | :--- | :--- |
 | `GET /api/status` | Overall state (see below) |
 | `GET /api/time` | Server clock, `{"t_ms": …}`; the same clock FFmpeg burns into the timecode, used for glass-to-glass latency |
-| `GET /api/utc` | Server clock as ISO 8601 text (`xs:dateTime`, ms precision), for the manifest's `UTCTiming` |
 | `GET /api/versions` | Deployed version of each third-party component and the latest published one |
 
 `GET /api/status` returns:
@@ -42,8 +41,8 @@ General conventions:
 | `camera` | Last known camera probe |
 | `restarts` | Automatic supervisor restarts (`master`, `dash`, `moq`, `rtc`) |
 | `dash_url`, `dash_http_port`, `dash_path` | Where the browser fetches LL-DASH (always `direct`, through the router) |
-| `rtc_server`, `rtc_ingest`, `rtc_path`, `rtc_signal_port`, `rtc_tls_host` | WebRTC server (`mediasoup` or `mediamtx`), its ingest, the WHEP path with MediaMTX, and the mediasoup WebSocket signalling port and TLS host |
-| `moq_port`, `moq_host`, `spki_fingerprint` | MoQ relay port, direct host when the page is behind a proxy, and certificate fingerprint |
+| `rtc_server`, `rtc_ingest`, `rtc_path`, `rtc_signal_port`, `rtc_tls_host` | WebRTC server (`mediasoup` or `mediamtx`), its ingest, the WHEP path with MediaMTX, and the signalling port (mediasoup WebSocket or MediaMTX WHEP, through the router) and TLS host |
+| `moq_port`, `moq_host` | MoQ relay port and host: `SERVER_HOST`, or `null` in local mode (the page's host) |
 | `timecodes` | Timecode layout per rendition |
 | `ingest_anomalies` | Ingest anomaly count per branch |
 | `source_lag_ms` | How far the source is behind real time over the last 2 s |
@@ -56,7 +55,7 @@ General conventions:
 
 | Method and path | Description |
 | :--- | :--- |
-| `POST /api/config` | Applies a stream configuration and restarts what is needed. **Starts the stream** if it was stopped |
+| `POST /api/config` | Applies a stream configuration and restarts what is needed. **Starts the stream** if it was stopped. The configuration is saved in `media/stream-config.json` and the stream resumes with it after an orchestrator restart |
 | `POST /api/start` | Starts the packagers (optional body: a configuration) |
 | `POST /api/stop` | Stops everything, including source encoding. The stop is remembered across restarts: nothing streams again until `POST /api/start` or `POST /api/config` |
 | `GET /api/camera` | Probes the RTSP camera: host (without credentials), codec, resolution, fps, audio and last error. While the camera is streaming, returns the last known state without opening another session |
@@ -213,4 +212,4 @@ Heartbeat body: `worker_id` (1-80 chars), `name` (independent workers only), `mo
 | `GET`, `HEAD /media/dash/{name}` | Manifest and segments for the player |
 | `DELETE /media/dash/{name}` | Delete |
 
-The origin is in memory (`server/app/origin.py`). The browser reaches it directly through the router and the DASH nginx (port 8443 with `DASH_HOST`, 8080 without it), never through the HTTP entry point, which answers 404 for `/media/dash/`. See [protocols/ll-dash.md](protocols/ll-dash.md) and [deployment.md](deployment.md).
+The origin is in memory (`server/app/origin.py`). The browser reaches it directly through the router and the DASH nginx (port 8443 with `SERVER_HOST`, 8080 without it), never through `nginx-web`. See [protocols/ll-dash.md](protocols/ll-dash.md) and [deployment.md](deployment.md). It also serves `GET /media/dash/utc`, the server clock as ISO 8601 text (`xs:dateTime`, ms precision) for the manifest's `UTCTiming`, through the same path.
