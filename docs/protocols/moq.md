@@ -86,7 +86,7 @@ Roles are **per track, not per connection**: one session can publish some tracks
 
 ## The session: from URL to first frame
 
-1. **Connection.** The browser opens a **WebTransport** session to `https://<host>:4433/anon`. WebTransport is the browser API for QUIC: an HTTP/3 session that exposes QUIC streams and datagrams. `/anon` is the path the relay allows without authentication (`--auth-public anon/**`); a real deployment would use a JWT.
+1. **Connection.** The browser opens a **WebTransport** session to `https://<host>:4433/anon`. WebTransport is the browser API for QUIC: an HTTP/3 session that exposes QUIC streams and datagrams. `/anon` is the path where the relay lets anyone subscribe without authentication; publishing there needs the publisher's JWT (see [architecture.md](../architecture.md)).
 2. **Certificate.** QUIC requires TLS. In local mode the relay generates a self-signed certificate at start-up (`--listen-tls-generate`) and serves its SHA-256 fingerprint over HTTP at `/certificate.sha256`. The player downloads it and passes it to WebTransport as `serverCertificateHashes`, so the browser accepts that specific certificate without a certificate authority. Browsers accept this only for short-lived certificates (two weeks at most). In server mode the relay uses the Let's Encrypt certificate of `SERVER_HOST` instead (`--listen-tls-cert`, `--listen-tls-key`) and reloads it on renewal (see [deployment.md](../deployment.md)). Which of the two is used is a confounder to declare.
 3. **Negotiation.** Client and server agree the protocol version through the WebTransport subprotocol (`moq-lite-06`). Each end also opens a unidirectional stream with a single **SETUP** message declaring its capabilities, including the **PROBE** level it supports (see [Bandwidth estimation](#bandwidth-estimation-probe)).
 4. **Discovery (ANNOUNCE).** The subscriber opens an announce stream and sends an **ANNOUNCE_REQUEST** with a path prefix. The relay replies with the active broadcasts under that prefix and keeps reporting additions and removals while the stream lives. This is how the player learns that `live.hang` exists before asking for anything.
@@ -413,7 +413,7 @@ The player is available in the browser console as `window.moqPlayer`.
 | `webtransport.serverCertificateHashes` | Fingerprint of the self-signed certificate. |
 | `websocket` | WebSocket fallback (over TCP) when WebTransport is unavailable or takes more than 500 ms; over TCP the QUIC advantages are lost. Only the UDP port is published, so this path does not reach the relay. |
 
-**Relay (`moq-relay`)**, options that affect what is measured. The testbed runs it with `--listen 0.0.0.0:4433 --listen-tls-generate localhost --web-http-listen 0.0.0.0:8081 --auth-public anon/**` (with `--listen-tls-cert`/`--listen-tls-key` in server mode; `relay/entrypoint.sh`); everything else is at its default.
+**Relay (`moq-relay`)**, options that affect what is measured. The testbed runs it with `--listen 0.0.0.0:4433 --listen-tls-generate localhost --web-http-listen 0.0.0.0:8081 --auth-url unix:///run/moq-auth/auth.sock` (with `--listen-tls-cert`/`--listen-tls-key` in server mode; `relay/entrypoint.sh`); everything else is at its default.
 
 | Option | Default | Effect |
 | :--- | :--- | :--- |
@@ -424,7 +424,7 @@ The player is available in the browser console as `window.moqPlayer`.
 | `--quic-gso` | on | Batches UDP sends (GSO). This is why the router puts a `tbf` in front of `netem` (see [network-emulation.md](../network-emulation.md)). |
 | `--quic-receive-window`, `--quic-send-window` | 64 MiB | Flow-control windows. |
 | `--cache-duration`, `--cache-capacity` | unlimited | How much the relay keeps for late joiners. |
-| `--auth-public`, `--auth-url` | — | Which paths allow anonymous sessions; authentication server. |
+| `--auth-public`, `--auth-url` | — | Static anonymous grant, or the authorisation server asked for every session. The testbed uses `--auth-url` with `moq auth serve --public-subscribe anon/**`: anonymous sessions may only subscribe. |
 | `--cluster-*` | — | Chain several relays. |
 | `--quic-qlog` | — | Dump QUIC qlog traces, useful to analyse loss and congestion window. |
 

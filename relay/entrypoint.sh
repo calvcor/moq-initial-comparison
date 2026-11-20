@@ -14,4 +14,6 @@ if [ -n "$SERVER_HOST" ]; then
 else
     set -- --listen-tls-generate localhost
 fi
-exec /bin/moq-relay --listen 0.0.0.0:4433 "$@" --web-http-listen 0.0.0.0:8081 --auth-public 'anon/**'
+# Autorización: el relay pregunta por cada sesión al servidor del orquestador (server/app/moqauth.py), que deja a
+# cualquiera suscribirse a anon/** y publicar solo al publicador, con su token. Mientras no responde, no admite a nadie.
+exec /bin/moq-relay --listen 0.0.0.0:4433 "$@" --web-http-listen 0.0.0.0:8081 --auth-url unix:///run/moq-auth/auth.sock

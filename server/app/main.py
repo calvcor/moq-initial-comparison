@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
-from . import qoe, source, trace, versions
+from . import moqauth, qoe, source, trace, versions
 from .campaign import WORKER_NAME, campaigns
 from . import compare as campaign_compare
 from . import analysis as campaign_analysis
@@ -773,9 +773,10 @@ def start_moq():
     """Empaquetador MoQ: lee de UDP 5002 y publica a moq-relay, sin remultiplexado intermedio."""
     kill_proc(processes.get("moq_pipeline"))
     trace.frame_log.reset("moq")
+    # Con el token del publicador: sin él, el relay solo deja suscribirse (moqauth.py)
     moq_cmd = (
         f"python3 -u {TSGATE} 5002 moq | "
-        f"moq --connect '{MOQ_RELAY_URL}' --connect-tls-insecure --broadcast live.hang import ts"
+        f"moq --connect '{MOQ_RELAY_URL}?jwt={moqauth.token()}' --connect-tls-insecure --broadcast live.hang import ts"
     )
     logger.info("Iniciando Empaquetador MoQ hacia moq-relay...")
     # Sin las variables MOQ_* del orquestador (MOQ_RELAY_URL, MOQ_RELAY_VERSION...): moq-cli de main (desde ffcb7cd)
@@ -1504,6 +1505,11 @@ def boot():
 
 @app.on_event("startup")
 def on_startup():
+    # Antes que la emisión: el publicador necesita su token, y el relay, a quien preguntar por cada sesión
+    try:
+        moqauth.start()
+    except Exception as e:
+        logger.error(f"No se pudo arrancar la autorización de MoQ: {e}")
     # En segundo plano: la descarga inicial tarda minutos y la API debe responder mientras tanto
     threading.Thread(target=boot, daemon=True).start()
     threading.Thread(target=supervise, daemon=True).start()

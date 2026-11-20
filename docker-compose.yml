@@ -78,6 +78,8 @@ services:
       - SERVER_HOST=${SERVER_HOST:-}
     volumes:
       - ./certs:/certs:ro
+      # Socket del servidor de autorización, que corre en el orquestador (server/app/moqauth.py)
+      - moq-auth:/run/moq-auth
     networks:
       core:
         ipv4_address: 172.30.50.11
@@ -202,6 +204,7 @@ services:
       - ./media:/data  # vídeo fuente; si falta, el orquestador lo descarga aquí al arrancar
       - ./server/app:/app/app
       - ./scripts:/app/scripts:ro  # el trabajador de campañas y su instalador, que sirve /api/worker/
+      - moq-auth:/run/moq-auth  # socket de la autorización del relay de MoQ (server/app/moqauth.py)
     depends_on:
       - moq-relay
       - nginx-dash
@@ -226,6 +229,10 @@ services:
     depends_on:
       - orchestrator
     restart: unless-stopped
+
+volumes:
+  # Solo el socket por el que el relay pregunta al orquestador si admite cada sesión de MoQ
+  moq-auth:
 
 networks:
   core:
