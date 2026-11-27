@@ -394,7 +394,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       <div className="flex items-center justify-between px-4 py-2.5 bg-slate-800/80 border-b border-slate-700/50">
         <div className="flex items-center space-x-2">
           <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
-          <h3 className="font-semibold text-sm text-slate-200">LL-DASH (CMAF / HTTP/1.1-H2)</h3>
+          <h3 className="font-semibold text-sm text-slate-200">LL-DASH (CMAF / HTTP/1.1)</h3>
         </div>
         <span className="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300 border border-blue-700/40 font-mono">
           dash.js lowLatency
