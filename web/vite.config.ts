@@ -12,23 +12,45 @@ const gitLabel = existsSync(new URL('./moq-pkgs/label', import.meta.url))
   : ''
 const moq = (name: string): string => gitLabel || installed(name)
 
-// L2A (bugfix), experimento declarado (docs/adaptation-and-experiments.md, docs/adaptation-and-experiments.md): una copia de dash.js en la
-// que la fase estable de L2A usa kbit/s en el multiplicador Q y en la subida prudente, como dash.js 4.x. En dash.js 5
-// esas dos cuentas toman rep.bandwidth (bit/s) frente a un caudal en kbit/s. El cambio es una sola expresión del
-// build minificado: si no aparece exactamente una vez (otra versión de dash.js), la construcción falla en vez de
-// servir otra cosa. El reproductor solo carga esta copia con la opción L2A (bugfix); las demás usan dash.js tal cual.
+// L2A (bugfix), experimento declarado (docs/adaptation-and-experiments.md): una copia de dash.js en la que la fase
+// estable de L2A usa kbit/s en el multiplicador Q y en la subida prudente, como dash.js 4.x. En dash.js 5.2 esas dos
+// cuentas toman rep.bandwidth (bit/s) frente a un caudal en kbit/s. Solo se compila y se ofrece en la interfaz si el
+// patrón exacto aparece una vez en el dash.js instalado; en versiones que ya no lo tienen se sirve un módulo vacío.
 const DASHJS_L2AFIX = 'virtual:dashjs-l2afix'
 const L2A_UNITS = /(const \w+=\w+\.map\(\(\w=>\w\.)bandwidth(\)\);\w+\.Q=Math\.max\()/g
+const dashjsCode = readFileSync(fileURLToPath(new URL('./node_modules/dashjs/dist/modern/esm/dash.all.min.js', import.meta.url)), 'utf8')
+const dashL2aFixAvailable = (dashjsCode.match(L2A_UNITS) ?? []).length === 1
+
+// El experimento de sondeo de MoQ (probe / probe2) usa la API de pistas anterior a `viewers` (bc64b9c / @moq/net 0.4.x).
+// Con la API nueva (`viewers` en @moq/net o @moq/watch) no se compila ni se puede seleccionar.
+const hasViewersApi = (rel: string): boolean => {
+  const url = new URL(rel, import.meta.url)
+  return existsSync(url) && /\bviewers\b/.test(readFileSync(url, 'utf8'))
+}
+const moqProbeAvailable = !hasViewersApi('./node_modules/@moq/net/connection/pool.js') && !hasViewersApi('./node_modules/@moq/watch/player.d.ts')
+// El experimento de cambio de calidad hacia abajo (`switching`) solo existe con el parche de web/patches/
+const moqSwitchingAvailable = gitLabel.includes('+switching')
+
 function dashjsL2aFix(): Plugin {
   return {
     name: 'dashjs-l2afix',
     resolveId: (id) => (id === DASHJS_L2AFIX ? `\0${DASHJS_L2AFIX}` : null),
     load(id) {
       if (id !== `\0${DASHJS_L2AFIX}`) return null
-      const code = readFileSync(fileURLToPath(new URL('./node_modules/dashjs/dist/modern/esm/dash.all.min.js', import.meta.url)), 'utf8')
-      const found = code.match(L2A_UNITS) ?? []
-      if (found.length !== 1) throw new Error(`L2A (bugfix): se esperaba una aparición del cálculo de Q de L2A en dash.js ${installed('dashjs')} y hay ${found.length}`)
-      return code.replace(L2A_UNITS, '$1bitrateInKbit$2')
+      if (!dashL2aFixAvailable) return 'export default {};'
+      return dashjsCode.replace(L2A_UNITS, '$1bitrateInKbit$2')
+    },
+  }
+}
+
+function moqProbeGate(): Plugin {
+  return {
+    name: 'moq-probe-gate',
+    load(id) {
+      if (!moqProbeAvailable && /\/src\/lib\/moqProbe\.ts$/.test(id.replace(/\\/g, '/'))) {
+        return 'export const MoqProbeAbr = null;\nexport const takeProbeSpans = () => null;\n'
+      }
+      return null
     },
   }
 }
@@ -61,11 +83,17 @@ export default defineConfig(({ command }) => {
       dashjs: installed('dashjs'),
       mediasoup_client: installed('mediasoup-client'),
     }),
+    __EXPERIMENTS__: JSON.stringify({
+      dashL2aFix: dashL2aFixAvailable,
+      moqProbe: moqProbeAvailable,
+      moqSwitching: moqSwitchingAvailable,
+    }),
   },
   plugins: [
     react(),
     tailwindcss(),
     dashjsL2aFix(),
+    moqProbeGate(),
     webBuild(build),
   ],
   server: {

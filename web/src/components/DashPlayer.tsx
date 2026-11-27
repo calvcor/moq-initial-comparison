@@ -119,6 +119,8 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
   // solo la elegida, como en su ejemplo de baja latencia. Cambiarlo recrea el reproductor: el ejemplo
   // oficial pide recargar porque las dos guardan estado desde el arranque.
   const [abr, setAbr] = useState<DashAbr>(preset?.options?.dash_abr ?? 'default');
+  const l2afixSupported = __EXPERIMENTS__.dashL2aFix;
+  const effectiveAbr: DashAbr = !l2afixSupported && abr === 'l2afix' ? 'default' : abr;
   const abrSettings = (mode: DashAbr) =>
     mode === 'default'
       ? {}
@@ -145,8 +147,8 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
   };
 
   useEffect(() => {
-    onMetricsUpdate({ targetLatencyMs: targetLatency === null ? null : Math.round(targetLatency * 1000), maxDriftSec: maxDrift, playbackBufferMinSec: playbackBufferMin, abr });
-  }, [targetLatency, maxDrift, playbackBufferMin, abr]);
+    onMetricsUpdate({ targetLatencyMs: targetLatency === null ? null : Math.round(targetLatency * 1000), maxDriftSec: maxDrift, playbackBufferMinSec: playbackBufferMin, abr: effectiveAbr });
+  }, [targetLatency, maxDrift, playbackBufferMin, effectiveAbr]);
 
   useEffect(() => {
     const glassMeter = new GlassMeter(() => grabFromVideo(videoRef.current), () => timecodesRef.current);
@@ -245,8 +247,8 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       }
 
       // L2A (bugfix): copia de dash.js con el fallo de unidades de L2A corregido (vite.config.ts, docs/adaptation-and-experiments.md). Solo se
-      // carga con esta opción; las demás usan dash.js tal cual
-      const lib: typeof dashjs = abr === 'l2afix' ? await import('virtual:dashjs-l2afix') : dashjs;
+      // compila y carga si la versión instalada de dash.js tiene el patrón esperado; si no, se usa dash.js tal cual
+      const lib: typeof dashjs = __EXPERIMENTS__.dashL2aFix && effectiveAbr === 'l2afix' ? await import('virtual:dashjs-l2afix') : dashjs;
       if (isCancelled || !videoRef.current) return;
       const player = lib.MediaPlayer().create();
       playerRef.current = player;
@@ -277,7 +279,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
           },
         },
       });
-      player.updateSettings(abrSettings(abr));
+      player.updateSettings(abrSettings(effectiveAbr));
 
       player.on(lib.MediaPlayer.events.STREAM_INITIALIZED, () => {
         console.log('[dash.js] Stream inicializado');
@@ -383,7 +385,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         playerRef.current = null;
       }
     };
-  }, [url, isStreaming, attempt, abr]);
+  }, [url, isStreaming, attempt, effectiveAbr]);
 
   useEffect(() => {
     onMetricsUpdate({ status: playerStatus });
@@ -542,13 +544,13 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
         >
           <span>ABR:</span>
           <select
-            value={abr}
+            value={effectiveAbr}
             onChange={(e) => setAbr(e.target.value as DashAbr)}
             className="bg-slate-900 border border-slate-700 text-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-500"
           >
             <option value="default">{t('Por defecto', 'Default')}</option>
             <option value="l2a">L2A</option>
-            <option value="l2afix">L2A (bugfix)</option>
+            <option value="l2afix" disabled={!l2afixSupported}>L2A (bugfix){!l2afixSupported ? t(' (no con esta versión)', ' (not with this version)') : ''}</option>
             <option value="lolp">LoL+</option>
           </select>
         </label>
@@ -580,7 +582,7 @@ export const DashPlayer: React.FC<DashPlayerProps> = ({
       {showExplain && (
         <div className="px-4 py-3 bg-slate-950/80 border-t border-slate-800/60 text-[11px] leading-relaxed text-slate-400">
           <DashExplain
-            abr={abr}
+            abr={effectiveAbr}
             quality={quality}
             targetLatency={targetLatency ?? playerRef.current?.getTargetLiveDelay() ?? 0}
             maxDrift={maxDrift}

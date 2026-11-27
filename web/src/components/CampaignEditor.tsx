@@ -336,7 +336,10 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                       <select className={input} disabled={!on} value={options.dash_abr} onChange={(e) => setOption('dash_abr', e.target.value as DashAbr)}>
                         <option value="default">{t('Por defecto', 'Default')}</option>
                         <option value="l2a">L2A</option>
-                        <option value="l2afix">{t('L2A (bugfix, experimento)', 'L2A (bugfix, experiment)')}</option>
+                        <option value="l2afix" disabled={!__EXPERIMENTS__.dashL2aFix}>
+                          {t('L2A (bugfix, experimento)', 'L2A (bugfix, experiment)')}
+                          {!__EXPERIMENTS__.dashL2aFix ? t(' (no con esta versión)', ' (not with this version)') : ''}
+                        </option>
                         <option value="lolp">LoL+</option>
                       </select>
                     </label>
@@ -358,16 +361,22 @@ export const CampaignEditor: React.FC<Props> = ({ defaultStream, rtcServer, init
                         <span className={label}>{t('Adaptación', 'Adaptation')}</span>
                         <select className={input} disabled={!on} value={options.moq_abr} onChange={(e) => setOption('moq_abr', e.target.value as MoqAbr)}>
                           <option value="watch">{t('Librería', 'Library')}</option>
-                          <option value="probe">{t('Sondeo (experimento)', 'Probing (experiment)')}</option>
-                          <option value="probe2">{t('Sondeo v2 (experimento)', 'Probing v2 (experiment)')}</option>
+                          <option value="probe" disabled={!__EXPERIMENTS__.moqProbe}>
+                            {t('Sondeo (experimento)', 'Probing (experiment)')}
+                            {!__EXPERIMENTS__.moqProbe ? t(' (no con esta versión)', ' (not with this version)') : ''}
+                          </option>
+                          <option value="probe2" disabled={!__EXPERIMENTS__.moqProbe}>
+                            {t('Sondeo v2 (experimento)', 'Probing v2 (experiment)')}
+                            {!__EXPERIMENTS__.moqProbe ? t(' (no con esta versión)', ' (not with this version)') : ''}
+                          </option>
                         </select>
                       </label>
                       <label className="flex flex-col gap-1" title={t('Qué hacer al bajar de calidad (opción switching del parche de web/patches, docs/adaptation-and-experiments.md). Sin corte: el original de @moq/watch. Cancelar y Prioridad son el experimento. Sin el parche no tiene efecto.', 'What to do when switching down (switching option of the patch in web/patches, docs/adaptation-and-experiments.md). Seamless: the original @moq/watch behaviour. Cancel and Priority are the experiment. Without the patch it has no effect.')}>
                         <span className={label}>{t('Cambio', 'Switching')}</span>
-                        <select className={input} disabled={!on} value={options.moq_switching} onChange={(e) => setOption('moq_switching', e.target.value as MoqSwitching)}>
+                        <select className={input} disabled={!on || !__EXPERIMENTS__.moqSwitching} value={options.moq_switching} onChange={(e) => setOption('moq_switching', e.target.value as MoqSwitching)}>
                           <option value="seamless">{t('Sin corte', 'Seamless')}</option>
-                          <option value="cancel">{t('Cancelar (experimento)', 'Cancel (experiment)')}</option>
-                          <option value="priority">{t('Prioridad (experimento)', 'Priority (experiment)')}</option>
+                          <option value="cancel" disabled={!__EXPERIMENTS__.moqSwitching}>{t('Cancelar (experimento)', 'Cancel (experiment)')}</option>
+                          <option value="priority" disabled={!__EXPERIMENTS__.moqSwitching}>{t('Prioridad (experimento)', 'Priority (experiment)')}</option>
                         </select>
                       </label>
                     </div>

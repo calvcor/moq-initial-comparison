@@ -79,7 +79,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
   // el primero llega a los pocos segundos de cargar, así que tiene que estar puesta antes de conectar.
   const [switching, setSwitching] = useState<MoqSwitching>(() => (preset ? (preset.options?.moq_switching ?? 'seamless') : loadSwitching()));
   const switchingSignalRef = useRef(new Signal<MoqSwitching>(switching));
-  const [switchingSupported, setSwitchingSupported] = useState<boolean | null>(null);
+  const [switchingSupported, setSwitchingSupported] = useState<boolean>(__EXPERIMENTS__.moqSwitching);
   const handleSwitchingChange = (value: MoqSwitching) => {
     setSwitching(value);
     switchingSignalRef.current.set(value);
@@ -106,9 +106,9 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
   };
   // El experimento de sondeo usa la API de pistas de bc64b9c (prioridad y maxDelay); con la de c19c723 en adelante
   // (lib/moqApi.ts) no arranca, y decide la librería: el panel y el CSV anotan entonces 'watch', la que decide de verdad
-  const [abrSupported, setAbrSupported] = useState<boolean | null>(null);
-  const abrSupportedRef = useRef<boolean | null>(null);
-  const effectiveAbr: MoqAbr = abrSupported === false ? 'watch' : abr;
+  const [abrSupported, setAbrSupported] = useState<boolean>(__EXPERIMENTS__.moqProbe);
+  const abrSupportedRef = useRef<boolean>(__EXPERIMENTS__.moqProbe);
+  const effectiveAbr: MoqAbr = !abrSupported ? 'watch' : abr;
   useEffect(() => {
     onMetricsUpdate({ moqAbr: effectiveAbr });
   }, [effectiveAbr]);
@@ -242,7 +242,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
             : undefined,
         });
         connectionRef.current = connection;
-        abrSupportedRef.current = !isViewersApi(connection);
+        abrSupportedRef.current = __EXPERIMENTS__.moqProbe && !isViewersApi(connection);
         setAbrSupported(abrSupportedRef.current);
         // @moq/net solo abre el canal PROBE con el relay mientras alguien observa connection.probe, y @moq/watch deja de
         // observarlo cuando se le pide una calidad por nombre (el sondeo o una calidad fijada a mano): sin esto, en esos
@@ -278,7 +278,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
           }),
         );
         delaySignal.set(delayValue(player, targetLatencyMs));
-        setSwitchingSupported('switching' in (player.in as object));
+        setSwitchingSupported(__EXPERIMENTS__.moqSwitching && 'switching' in (player.in as object));
         playerRef.current = player;
         // Acceso desde la consola del navegador para depurar
         (window as any).moqPlayer = player;
@@ -333,7 +333,7 @@ export const MoqPlayer: React.FC<MoqPlayerProps> = ({
               probeAbrRef.current.close();
               probeAbrRef.current = null;
             }
-            if (probing && !probeAbrRef.current) {
+            if (__EXPERIMENTS__.moqProbe && MoqProbeAbr && probing && !probeAbrRef.current) {
               probeAbrRef.current = new MoqProbeAbr(player, variant);
               // Acceso desde la consola, como window.moqPlayer
               (window as any).moqProbeAbr = probeAbrRef.current;

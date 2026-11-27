@@ -3,6 +3,7 @@
 declare const __WEB_BUILD__: string;
 
 declare const __PLAYER_VERSIONS__: { moq_watch: string; moq_net: string; moq_hang: string; dashjs: string; mediasoup_client: string };
+declare const __EXPERIMENTS__: { dashL2aFix: boolean; moqProbe: boolean; moqSwitching: boolean };
 
 // Copia de dash.js con la fase estable de L2A corregida (vite.config.ts); misma interfaz que 'dashjs'
 declare module 'virtual:dashjs-l2afix' {
