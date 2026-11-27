@@ -28,16 +28,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # acumula retraso sin parar (16-18 s de espera al minuto y medio). Con 0.14.5 aguanta
 # sin espectadores, pero con uno se queda atrás (tres calidades: 3 s de espera mediana y MoQ
 # a 2 s de latencia; con una calidad, 49 congelados en 85 s frente a 13 con 0.14.3).
-ARG MOQ_CLI_VERSION=0.14.7
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "aarch64" ]; then TRIPLE=aarch64-unknown-linux-gnu; else TRIPLE=x86_64-unknown-linux-gnu; fi && \
-    URL="https://github.com/moq-dev/moq/releases/download/moq-cli-v${MOQ_CLI_VERSION}/moq-cli-v${MOQ_CLI_VERSION}-${TRIPLE}.tar.gz" && \
-    echo "Descargando moq-cli oficial desde $URL..." && \
-    curl -fsSL "$URL" -o /tmp/moq.tar.gz && \
-    tar -xzf /tmp/moq.tar.gz -C /tmp && \
-    mv /tmp/moq-cli-*/bin/moq /usr/local/bin/moq && \
-    chmod +x /usr/local/bin/moq && \
-    rm -rf /tmp/moq* && \
+ARG MOQ_CLI_VERSION=latest
+RUN set -e; \
+    VER="${MOQ_CLI_VERSION}"; \
+    if [ "$VER" = "latest" ] || [ -z "$VER" ]; then \
+        VER=$(python3 -c 'import json, re, urllib.request; \
+            data = json.load(urllib.request.urlopen("https://api.github.com/repos/moq-dev/moq/releases?per_page=100")); \
+            rx = re.compile(r"^moq-cli-v(\d+)\.(\d+)\.(\d+)$"); \
+            vers = [(tuple(map(int, m.groups())), f"{m.group(1)}.{m.group(2)}.{m.group(3)}") \
+                    for r in data if not r.get("prerelease") and (m := rx.match(r["tag_name"]))]; \
+            print(max(vers)[1])'); \
+    fi; \
+    ARCH=$(uname -m); \
+    if [ "$ARCH" = "aarch64" ]; then TRIPLE=aarch64-unknown-linux-gnu; else TRIPLE=x86_64-unknown-linux-gnu; fi; \
+    URL="https://github.com/moq-dev/moq/releases/download/moq-cli-v${VER}/moq-cli-v${VER}-${TRIPLE}.tar.gz"; \
+    echo "Descargando moq-cli oficial ${VER} desde $URL..."; \
+    curl -fsSL "$URL" -o /tmp/moq.tar.gz; \
+    tar -xzf /tmp/moq.tar.gz -C /tmp; \
+    mv /tmp/moq-cli-*/bin/moq /usr/local/bin/moq; \
+    chmod +x /usr/local/bin/moq; \
+    rm -rf /tmp/moq*; \
     mkdir -p /usr/local/share && : > /usr/local/share/moq-cli-build
 
 # moq-cli compilado desde un commit, con MOQ_CLI_FROM=git. Perfil release con LTO thin: el LTO completo del

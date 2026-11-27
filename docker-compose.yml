@@ -62,15 +62,14 @@ services:
         ipv4_address: 172.30.50.2
     restart: unless-stopped
 
-  # 1. MoQ Relay: la imagen oficial publicada (moqdev/moq-relay, versión fijada) o, con MOQ_RELAY_FROM=git,
-  # compilado desde MOQ_RELAY_COMMIT (relay/Dockerfile). Los valores por defecto repiten los
-  # de relay/Dockerfile. El certificado lo elige relay/entrypoint.sh: el de SERVER_HOST o uno autofirmado.
+  # 1. MoQ Relay: por defecto la última imagen publicada (moqdev/moq-relay:latest), o una versión concreta
+  # (MOQ_RELAY_VERSION) o compilado desde commit (MOQ_RELAY_FROM=git + MOQ_RELAY_COMMIT).
   moq-relay:
     build:
       context: ./relay
       args:
         MOQ_RELAY_FROM: ${MOQ_RELAY_FROM:-release}
-        MOQ_RELAY_VERSION: ${MOQ_RELAY_VERSION:-0.17.9}
+        MOQ_RELAY_VERSION: ${MOQ_RELAY_VERSION:-latest}
         MOQ_RELAY_COMMIT: ${MOQ_RELAY_COMMIT:-c19c723d90c6e8df60c9a656cc2a4d92ee358295}
     image: testbed-moq-relay
     container_name: testbed-moq-relay
@@ -80,15 +79,19 @@ services:
       - ./certs:/certs:ro
       # Socket del servidor de autorización, que corre en el orquestador (server/app/moqauth.py)
       - moq-auth:/run/moq-auth
+      - versions:/run/versions
     networks:
       core:
         ipv4_address: 172.30.50.11
     restart: unless-stopped
 
   # SFU de WebRTC (RTC_SERVER=mediasoup, por defecto): recibe por RTP todas las calidades, sin recodificar, y elige
-  # la capa de cada espectador. La versión de mediasoup está fijada en sfu/package.json y sfu/package-lock.json.
+  # la capa de cada espectador. Por defecto instala la última versión de mediasoup salvo MEDIASOUP_VERSION en el .env.
   sfu:
-    build: ./sfu
+    build:
+      context: ./sfu
+      args:
+        MEDIASOUP_VERSION: ${MEDIASOUP_VERSION:-latest}
     container_name: testbed-sfu
     environment:
       # Con SERVER_HOST, anuncia en los candidatos ICE la IP a la que resuelve (o SERVER_IP, si se da) y la señalización
@@ -108,7 +111,7 @@ services:
     build:
       context: ./mediamtx
       args:
-        MEDIAMTX_VERSION: ${MEDIAMTX_VERSION:-1.21.3}
+        MEDIAMTX_VERSION: ${MEDIAMTX_VERSION:-latest}
     image: testbed-mediamtx
     container_name: testbed-mediamtx
     environment:
@@ -132,6 +135,7 @@ services:
       - MTX_MOQ=no  # su propio servidor MoQ, encendido por defecto: aquí no se usa
     volumes:
       - ./certs:/certs:ro
+      - versions:/run/versions
     networks:
       core:
         ipv4_address: 172.30.50.12
@@ -178,7 +182,7 @@ services:
       # MOQ_CLI_COMMIT). Los valores por defecto repiten los de server/Dockerfile.
       args:
         MOQ_CLI_FROM: ${MOQ_CLI_FROM:-release}
-        MOQ_CLI_VERSION: ${MOQ_CLI_VERSION:-0.14.7}
+        MOQ_CLI_VERSION: ${MOQ_CLI_VERSION:-latest}
         MOQ_CLI_COMMIT: ${MOQ_CLI_COMMIT:-bc64b9c52561209322dcb8dec9992bf867f499f7}
     container_name: testbed-orchestrator
     init: true  # recoge los procesos FFmpeg huérfanos al reiniciar pipelines
@@ -190,13 +194,6 @@ services:
       - CAMERA_FPS=${CAMERA_FPS:-}
       - RTC_SERVER=${RTC_SERVER:-mediasoup}  # mediasoup: SFU con simulcast; mediamtx: una calidad, sin adaptación
       - RTC_PACING_FACTOR=${RTC_PACING_FACTOR:-2.5}  # ritmo del pacer de la ingesta (rtc_pacing) respecto al bitrate
-      # Solo para mostrarlas en el dashboard: deben coincidir con las etiquetas de imagen de arriba
-      - MOQ_RELAY_VERSION=${MOQ_RELAY_VERSION:-0.17.9}
-      # Con el relay compilado (MOQ_RELAY_FROM=git), el panel y el CSV lo muestran como git@<commit>
-      - MOQ_RELAY_FROM=${MOQ_RELAY_FROM:-release}
-      - MOQ_RELAY_COMMIT=${MOQ_RELAY_COMMIT:-c19c723d90c6e8df60c9a656cc2a4d92ee358295}
-      - MEDIAMTX_VERSION=${MEDIAMTX_VERSION:-1.21.3}
-      - MEDIASOUP_VERSION=3.32.1  # debe coincidir con sfu/package.json
     networks:
       - default
       - core
@@ -205,6 +202,7 @@ services:
       - ./server/app:/app/app
       - ./scripts:/app/scripts:ro  # el trabajador de campañas y su instalador, que sirve /api/worker/
       - moq-auth:/run/moq-auth  # socket de la autorización del relay de MoQ (server/app/moqauth.py)
+      - versions:/run/versions:ro  # versiones reales anotadas por moq-relay y mediamtx al arrancar
     depends_on:
       - moq-relay
       - nginx-dash
@@ -218,13 +216,16 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-      # @moq/watch y sus @moq/*: "release" (npm, por defecto) o "git" (compilados desde MOQ_WATCH_COMMIT).
-      # Los valores por defecto repiten los de web/Dockerfile.
+      # Reproductores: por defecto la última versión publicada en npm, salvo que se fije en el .env
+      # (o MOQ_WATCH_FROM=git para compilar @moq/* desde MOQ_WATCH_COMMIT).
       args:
         MOQ_WATCH_FROM: ${MOQ_WATCH_FROM:-release}
+        MOQ_WATCH_VERSION: ${MOQ_WATCH_VERSION:-latest}
         MOQ_WATCH_COMMIT: ${MOQ_WATCH_COMMIT:-bc64b9c52561209322dcb8dec9992bf867f499f7}
         MOQ_WATCH_PATCHES: ${MOQ_WATCH_PATCHES:-1}  # 0: sin los parches de web/patches/ (otro commit)
         MOQ_WATCH_BUN: ${MOQ_WATCH_BUN:-1.3.5}  # bun para compilar moq: 1.4.4 con commits desde c19c723
+        DASHJS_VERSION: ${DASHJS_VERSION:-latest}
+        MEDIASOUP_CLIENT_VERSION: ${MEDIASOUP_CLIENT_VERSION:-latest}
     container_name: testbed-web
     depends_on:
       - orchestrator
@@ -233,6 +234,8 @@ services:
 volumes:
   # Solo el socket por el que el relay pregunta al orquestador si admite cada sesión de MoQ
   moq-auth:
+  # Versiones reales que moq-relay y mediamtx anotan al arrancar para el panel del dashboard
+  versions:
 
 networks:
   core:

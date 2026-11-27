@@ -3,6 +3,14 @@
 # toma solo el renovado). Sin él (en local), un certificado autofirmado que el navegador fija por su huella, servida
 # en /certificate.sha256 desde el puerto 8081.
 set -e
+# Anota la versión real del binario para que el orquestador la lea sin depender del .env
+if [ -d /run/versions ]; then
+    if [ -s /usr/local/share/moq-relay-build ]; then
+        cat /usr/local/share/moq-relay-build > /run/versions/moq_relay
+    else
+        /bin/moq-relay --version 2>/dev/null | awk '{print $2}' > /run/versions/moq_relay || true
+    fi
+fi
 if [ -n "$SERVER_HOST" ]; then
     CERT="/certs/${SERVER_HOST}.crt"
     KEY="/certs/${SERVER_HOST}.key"

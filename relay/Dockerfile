@@ -4,7 +4,7 @@
 # docs/limitations.md). Docker solo construye la etapa que se elige, así que con
 # "release" no se compila nada. Se pasa desde docker-compose.yml (variables del .env).
 ARG MOQ_RELAY_FROM=release
-ARG MOQ_RELAY_VERSION=0.17.9
+ARG MOQ_RELAY_VERSION=latest
 
 FROM moqdev/moq-relay:${MOQ_RELAY_VERSION} AS relay-release
 
@@ -19,13 +19,15 @@ RUN mkdir /src && curl -fsSL "https://codeload.github.com/moq-dev/moq/tar.gz/${M
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/target-relay \
     cd /src && CARGO_TARGET_DIR=/target-relay CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
     cargo build --release --locked -p moq-relay && \
-    install -m 755 /target-relay/release/moq-relay /usr/local/bin/moq-relay
+    install -m 755 /target-relay/release/moq-relay /usr/local/bin/moq-relay && \
+    mkdir -p /usr/local/share && printf 'git@%.7s' "${MOQ_RELAY_COMMIT}" > /usr/local/share/moq-relay-build
 
 # Mismo punto de entrada que la imagen publicada (/bin/entry.sh ejecuta /bin/moq-relay con los argumentos)
 FROM debian:bookworm-slim AS relay-git
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=relay-build /usr/local/bin/moq-relay /bin/moq-relay
+COPY --from=relay-build /usr/local/share/moq-relay-build /usr/local/share/moq-relay-build
 ENTRYPOINT ["/bin/moq-relay"]
 
 FROM relay-${MOQ_RELAY_FROM}

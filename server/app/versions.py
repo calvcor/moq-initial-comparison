@@ -28,19 +28,47 @@ def run_version(cmd: list[str], pattern: str):
         return None
 
 
-# Lo instalado en el servidor. El relay y MediaMTX corren en otros contenedores: su versión es la etiqueta
-# de imagen fijada en docker-compose.yml, que llega aquí como variable de entorno.
+def read_version_file(path: str) -> str | None:
+    try:
+        text = open(path).read().strip()
+        return text or None
+    except OSError:
+        return None
+
+
+def sfu_version() -> str | None:
+    try:
+        return requests.get("http://sfu:8890/health", timeout=1.5).json().get("version") or None
+    except Exception:
+        return None
+
+
+# Lo instalado en el servidor. moq-cli y FFmpeg corren en este contenedor; moq-relay y MediaMTX anotan su versión
+# real en /run/versions al arrancar, y mediasoup la expone en /health: así no depende de variables del .env.
 installed = {
-    # Compilado desde un commit (MOQ_RELAY_FROM=git, relay/Dockerfile), como moq-cli: git@<commit>
-    "moq_relay": (f"git@{os.getenv('MOQ_RELAY_COMMIT', '')[:7]}" if os.getenv("MOQ_RELAY_FROM") == "git" else None)
-    or os.getenv("MOQ_RELAY_VERSION") or None,
+    "moq_relay": read_version_file("/run/versions/moq_relay"),
     # Compilado desde un commit (MOQ_CLI_FROM=git en el Dockerfile), su --version no lo identifica: git@<commit>
-    "moq_cli": (open("/usr/local/share/moq-cli-build").read().strip() if os.path.exists("/usr/local/share/moq-cli-build") else "")
+    "moq_cli": read_version_file("/usr/local/share/moq-cli-build")
     or run_version(["moq", "--version"], r"moq (\S+)"),
-    "mediamtx": os.getenv("MEDIAMTX_VERSION") or None,
-    "mediasoup": os.getenv("MEDIASOUP_VERSION") or None,
+    "mediamtx": read_version_file("/run/versions/mediamtx"),
+    "mediasoup": sfu_version(),
     "ffmpeg": run_version(["ffmpeg", "-version"], r"ffmpeg version (\d+(?:\.\d+)+)"),
 }
+_sfu_checked_at = time.time() if installed["mediasoup"] else 0.0
+
+
+def refresh_installed():
+    """Relee las versiones de contenedores vecinos (pueden arrancar después o reconstruirse con --no-deps)."""
+    global _sfu_checked_at
+    if (v := read_version_file("/run/versions/moq_relay")):
+        installed["moq_relay"] = v
+    if (v := read_version_file("/run/versions/mediamtx")):
+        installed["mediamtx"] = v
+    now = time.time()
+    if installed["mediasoup"] is None or now - _sfu_checked_at > 30:
+        if (v := sfu_version()):
+            installed["mediasoup"] = v
+            _sfu_checked_at = now
 
 latest: dict = {"versions": {}, "checked_at": None, "errors": []}
 
@@ -105,4 +133,5 @@ def start():
 
 
 def report() -> dict:
+    refresh_installed()
     return {"installed": installed, "latest": latest["versions"], "checked_at_ms": latest["checked_at"] and int(latest["checked_at"] * 1000), "errors": latest["errors"]}

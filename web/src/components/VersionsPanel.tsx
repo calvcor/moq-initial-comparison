@@ -4,15 +4,15 @@ import { locale, t } from '../lib/i18n';
 
 // Componentes de terceros de los que dependen las medidas, con dónde se fija la versión de cada uno
 const COMPONENTS: { key: string; name: string; where: string }[] = [
-  { key: 'moq_relay', name: 'moq-relay', where: 'docker-compose.yml (MOQ_RELAY_VERSION)' },
-  { key: 'moq_cli', name: 'moq-cli', where: 'server/Dockerfile' },
-  { key: 'moq_watch', name: '@moq/watch', where: 'web/package.json' },
-  { key: 'moq_net', name: '@moq/net', where: t('dependencia de @moq/watch, fijada en web/package-lock.json', 'dependency of @moq/watch, pinned in web/package-lock.json') },
-  { key: 'moq_hang', name: '@moq/hang', where: t('dependencia de @moq/watch, fijada en web/package-lock.json', 'dependency of @moq/watch, pinned in web/package-lock.json') },
-  { key: 'dashjs', name: 'dash.js', where: 'web/package.json' },
-  { key: 'mediasoup', name: 'mediasoup', where: 'sfu/package.json' },
-  { key: 'mediasoup_client', name: 'mediasoup-client', where: 'web/package.json' },
-  { key: 'mediamtx', name: 'MediaMTX', where: 'docker-compose.yml (MEDIAMTX_VERSION)' },
+  { key: 'moq_relay', name: 'moq-relay', where: '.env (MOQ_RELAY_VERSION / MOQ_RELAY_COMMIT)' },
+  { key: 'moq_cli', name: 'moq-cli', where: '.env (MOQ_CLI_VERSION / MOQ_CLI_COMMIT)' },
+  { key: 'moq_watch', name: '@moq/watch', where: '.env (MOQ_WATCH_VERSION / MOQ_WATCH_COMMIT)' },
+  { key: 'moq_net', name: '@moq/net', where: t('dependencia de @moq/watch', 'dependency of @moq/watch') },
+  { key: 'moq_hang', name: '@moq/hang', where: t('dependencia de @moq/watch', 'dependency of @moq/watch') },
+  { key: 'dashjs', name: 'dash.js', where: '.env (DASHJS_VERSION)' },
+  { key: 'mediasoup', name: 'mediasoup', where: '.env (MEDIASOUP_VERSION)' },
+  { key: 'mediasoup_client', name: 'mediasoup-client', where: '.env (MEDIASOUP_CLIENT_VERSION)' },
+  { key: 'mediamtx', name: 'MediaMTX', where: '.env (MEDIAMTX_VERSION)' },
   { key: 'ffmpeg', name: 'FFmpeg', where: t('paquete de Debian de la imagen del orquestador', 'Debian package in the orchestrator image') },
 ];
 

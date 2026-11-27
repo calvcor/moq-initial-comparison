@@ -84,24 +84,43 @@ FROM moqwatch-${MOQ_WATCH_FROM} AS moqwatch
 
 FROM node:22-alpine AS build
 
+ARG MOQ_WATCH_VERSION=latest
+ARG DASHJS_VERSION=latest
+ARG MEDIASOUP_CLIENT_VERSION=latest
+
 WORKDIR /app
 
 COPY package*.json ./
 # Con MOQ_WATCH_FROM=git, los @moq/* apuntan a los paquetes compilados (también los que llegan como
-# dependencia, con overrides) y se descarta el lockfile, que fija los de npm
+# dependencia, con overrides). En modo release (o para dash.js / mediasoup-client), por defecto se instala
+# la última versión salvo que se fije una concreta en el .env; si todo coincide con package.json se usa el lockfile.
 COPY --from=moqwatch /pkgs ./moq-pkgs
-RUN if ls moq-pkgs/*.tgz >/dev/null 2>&1; then \
-      node -e ' \
-        const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json")); \
-        const tgz = fs.readdirSync("moq-pkgs").filter((f) => f.endsWith(".tgz")); \
+RUN set -e; \
+    node -e ' \
+      const fs = require("fs"); \
+      const p = JSON.parse(fs.readFileSync("package.json")); \
+      let changed = false; \
+      const tgz = fs.existsSync("moq-pkgs") ? fs.readdirSync("moq-pkgs").filter((f) => f.endsWith(".tgz")) : []; \
+      if (tgz.length > 0) { \
         const file = (n) => "file:moq-pkgs/" + tgz.find((f) => f.startsWith(n.slice(1).replace("/", "-") + "-") && /^[0-9]/.test(f.slice(n.length))); \
         const names = tgz.map((f) => "@" + f.replace(/-[0-9][^-]*\.tgz$/, "").replace("-", "/")); \
         p.overrides = Object.fromEntries(names.map((n) => [n, file(n)])); \
         p.dependencies["@moq/watch"] = file("@moq/watch"); \
+        changed = true; \
+        console.log(p.overrides); \
+      } else if (process.env.MOQ_WATCH_VERSION && process.env.MOQ_WATCH_VERSION !== p.dependencies["@moq/watch"]) { \
+        p.dependencies["@moq/watch"] = process.env.MOQ_WATCH_VERSION; \
+        changed = true; \
+      } \
+      for (const [pkg, env] of [["dashjs", "DASHJS_VERSION"], ["mediasoup-client", "MEDIASOUP_CLIENT_VERSION"]]) { \
+        const v = process.env[env]; \
+        if (v && v !== p.dependencies[pkg]) { p.dependencies[pkg] = v; changed = true; } \
+      } \
+      if (changed) { \
         fs.writeFileSync("package.json", JSON.stringify(p, null, 2)); \
-        console.log(p.overrides);' && \
-      rm -f package-lock.json; \
-    fi && npm install
+        fs.rmSync("package-lock.json", { force: true }); \
+      }' && \
+    if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY . .
 RUN npm run build
